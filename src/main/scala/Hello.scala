@@ -1,13 +1,18 @@
 
 import chisel3._
 
-class Hello extends Module {
-  val io = IO(new Bundle{
-    val o = Output(UInt(32.W))
+class Hello(n: Int) extends Module {
+  val io = IO(new Bundle {
+    val ports = Vec(n, new CpuInterface())
   })
-  io.o := 42.U
+
+  for (i <- 0 until n) {
+    io.ports(i).ack := true.B
+    io.ports(i).rdData := 0.U
+  }
 }
 
 object Hello extends App {
-  emitVerilog(new Hello())
+  println("Generating Verilog")
+  emitVerilog(new Hello(4))
 }
