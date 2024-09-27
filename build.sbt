@@ -15,6 +15,8 @@ libraryDependencies += "edu.berkeley.cs" %% "chiseltest" % "0.5.5"
 // For FIFO buffers
 libraryDependencies += "edu.berkeley.cs" % "ip-contributions" % "0.5.1"
 
+libraryDependencies += "org.scalatest" %% "scalatest" % "3.2.19" % "test"
+
 // library name
 name := "soc-comm"
 

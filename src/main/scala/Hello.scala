@@ -13,6 +13,7 @@ class Hello(n: Int) extends Module {
 }
 
 object Hello extends App {
-  println("Generating Verilog")
+  println(scala.util.Properties.versionString)
   emitVerilog(new Hello(4))
 }
+
