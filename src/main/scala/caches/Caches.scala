@@ -34,6 +34,8 @@ abstract class SoftCache(lineLength: Int, ways: Int, sets: Int, shortLatency: In
    * @return how many cycles later the response begins
    */
   def getCacheLine(addr: Int, core: Int): Int
+
+  def advanceCycle() = {}
 }
 
 abstract class TrackingLruCache[T](lineLength: Int, ways: Int, sets: Int, shortLatency: Int, longLatency: Int) extends
@@ -265,5 +267,95 @@ class ContentionCache(lineLength: Int, ways: Int, sets: Int, shortLatency: Int, 
 
   def setCriticality(coreId: Int, contentionLimit: Int): Unit = {
     _contention(coreId) = contentionLimit;
+  }
+}
+
+class TimeoutCache(lineLength: Int, ways: Int, sets: Int, shortLatency: Int, longLatency: Int, timeout: Int)
+// T is the timout of the line. If 0, the timeout has lapsed
+  extends TrackingLruCache[Int](lineLength, ways, sets, shortLatency, longLatency)
+{
+  // For each way, element contains the core with the priority to this line.
+  private var _priorities: Array[Option[Int]] = Array.fill(ways){None};
+
+  private def hasPriority(setIdx: Int, wayIdx: Int): Boolean = {
+    val line = _setArr(setIdx)(wayIdx)
+    line.isDefined && line.get._3 != 0
+  }
+
+  override def onHit(coreId: Int, setIdx: Int, wayIdx: Int): Unit = {
+    // Refresh timer if prioritized
+    if(_priorities(wayIdx).contains(coreId)){
+      val line = _setArr(setIdx)(wayIdx).get;
+      _setArr(setIdx)(wayIdx) = Some((line._1, line._2, timeout));
+    }
+  }
+
+  /**
+   * Performs 'onMiss' assuming 'coreId' does not have priority anywhere.
+   * @param coreId
+   * @param setIdx
+   * @return
+   */
+  def onMissWithoutPriority(coreId: Int, setIdx: Int): Option[(Int, Int)] = {
+    val set = _setArr(setIdx)
+    val lru = getLeastRecentryUseOrder(set);
+
+    val firstWithoutPrio = lru.find((wayIdx) => {
+      val line = set(wayIdx);
+      line.isEmpty || !hasPriority(setIdx, wayIdx)
+    });
+
+    if(firstWithoutPrio.isDefined) {
+      // Found way without priority, evict it
+      Some((firstWithoutPrio.get, 0))
+    } else {
+      // No way without priority, evict none
+      None
+    }
+  }
+
+  override def onMiss(coreId: Int, setIdx: Int): Option[(Int, Int)] = {
+    val set = _setArr(setIdx)
+
+    val coreHasPrio = _priorities.zipWithIndex.filter((prio)=> {
+      val (prioId, idx) = prio;
+      prioId.contains(coreId)
+    });
+
+    if(coreHasPrio.length>0) {
+
+      // First, look for any priority ways that have expired
+      val expired = coreHasPrio.find((prio) => {
+        val wayIdx = prio._2;
+        val line = set(wayIdx);
+        line.isEmpty || line.get._3 == 0
+      });
+
+      if(expired.isDefined) {
+        // Found prioritized way with expired timout, evict it
+        Some((expired.get._2, timeout))
+      } else {
+        // No prioritized way has expired. Just use default behavior then
+        onMissWithoutPriority(coreId, setIdx)
+      }
+    } else {
+      onMissWithoutPriority(coreId, setIdx)
+    }
+  }
+
+  override def advanceCycle() = {
+    for(setIdx <- 0 until sets) {
+      for(wayIdx <- 0 until ways) {
+        val line = _setArr(setIdx)(wayIdx);
+        if(line.isDefined && line.get._3 > 0) {
+          _setArr(setIdx)(wayIdx) = Some((line.get._1, line.get._2, line.get._3-1))
+        }
+      }
+    }
+  }
+
+  def setPriority(coreId: Int, wayIdx: Int) = {
+    assert(wayIdx < ways);
+    _priorities(wayIdx) = Some(coreId);
   }
 }

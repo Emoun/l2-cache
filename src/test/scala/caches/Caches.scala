@@ -273,3 +273,125 @@ class ContentionCacheTest extends AnyFunSuite with SimpleLruCacheTests[Contentio
 
 
 }
+
+class TimeoutCacheTest extends AnyFunSuite with SimpleLruCacheTests[TimeoutCache, Int] {
+  override def className: String = "TimeoutCache"
+
+  override def createInstance(lineLength: Int, ways: Int, sets: Int, shortLatency: Int, longLatency: Int): TimeoutCache = {
+    new TimeoutCache(lineLength, ways, sets, shortLatency,longLatency, 0)
+  }
+  def createInstance(lineLength: Int, ways: Int, sets: Int, shortLatency: Int, longLatency: Int, timeout: Int): TimeoutCache = {
+    new TimeoutCache(lineLength, ways, sets, shortLatency,longLatency, timeout)
+  }
+
+  test("Low criticality cannot evict high criticality before timeout") {
+    val cache = createInstance(2,2,2,1,10,2);
+    cache.setPriority(0, 0); // Assign all to core 0
+    cache.setPriority(0, 1);
+
+    // Fill up set 0
+    cache.getCacheLine(0,0) // way 0
+    cache.getCacheLine(4,0) // way 1
+
+    assert(cache.getCacheLine(8,1) == 10) // try to use set 0 again
+    assert(cache.getCacheLine(8,1) == 10) // Ensure did not get saved
+
+    assert(cache.getCacheLine(0,0) == 1) // Ensure did get saved
+    assert(cache.getCacheLine(4,0) == 1)
+  }
+
+  test("Low criticality can evict high-criticality in in unprioritized way") {
+    val cache = createInstance(2,2,2,1,10,2);
+    cache.setPriority(0, 0);
+
+    // Fill up set 0
+    cache.getCacheLine(0,0) // way 0, with prio
+    cache.getCacheLine(4,0) // way 1, without prio
+
+    assert(cache.getCacheLine(8,1) == 10) // try to use set 0 again
+    assert(cache.getCacheLine(8,1) == 1) // Ensure did get saved
+
+    assert(cache.getCacheLine(0,0) == 1) // Ensure did get saved
+  }
+
+  test("High-criticality prefers timedout ways") {
+    val cache = createInstance(2,3,2,1,10,2);
+    cache.setPriority(0, 0);
+    cache.setPriority(1, 1);
+
+    // Fill up set 0
+    cache.getCacheLine(0,0) // way 0, with prio
+    cache.getCacheLine(4,1) // way 1, with prio
+    cache.getCacheLine(8,2) // way 2, without prio
+
+    assert(cache.getCacheLine(16,0) == 10) // try to use set 0 again
+    assert(cache.getCacheLine(16,1) == 1) // Ensure did get saved
+
+    assert(cache.getCacheLine(0,0) == 1) // Ensure did get saved
+    assert(cache.getCacheLine(4,1) == 1) // Ensure did get saved
+  }
+
+  test("High-criticality prefers own ways") {
+    val cache = createInstance(2,3,2,1,10,2);
+    cache.setPriority(0, 0);
+
+    // Fill up set 0
+    cache.getCacheLine(0,1) // way 0, without prio
+    cache.getCacheLine(4,1) // way 1, with prio
+    cache.getCacheLine(8,1) // way 2, without prio
+    cache.getCacheLine(0,1) // make sure way 0 isn't LRU
+
+    assert(cache.getCacheLine(16,0) == 10) // try to use set 0 again
+    assert(cache.getCacheLine(16,0) == 1) // Ensure did get saved
+
+    assert(cache.getCacheLine(4,0) == 1) // Ensure did get saved
+    assert(cache.getCacheLine(8,0) == 1) // Ensure did get saved
+  }
+
+  test("Cycles reduce timeout") {
+    val cache = createInstance(2,2,2,1,10,1);
+    cache.setPriority(0, 0);
+    cache.setPriority(0, 1);
+
+    // Fill up set 0
+    cache.getCacheLine(0,0) // way 0, with prio
+    cache.getCacheLine(4,0) // way 1, with prio
+
+    assert(cache.getCacheLine(8,1) == 10) // try to use without prio
+    assert(cache.getCacheLine(8,1) == 10) // Ensure didn't get saved
+
+    cache.advanceCycle() // Make the timeouts run out
+
+    assert(cache.getCacheLine(8,1) == 10) // try to use without prio
+    assert(cache.getCacheLine(12,1) == 10) // try to use without prio
+    assert(cache.getCacheLine(8,1) == 1) // Ensure did get saved
+    assert(cache.getCacheLine(12,1) == 1) // Ensure did get saved
+  }
+
+  test("Timeout as given") {
+    val cache = createInstance(2,2,2,1,10,5);
+    cache.setPriority(0, 0);
+    cache.setPriority(0, 1);
+
+    // Fill up set 0
+    cache.getCacheLine(0,0) // way 0, with prio
+    cache.getCacheLine(4,0) // way 1, with prio
+
+
+    cache.advanceCycle() // Make timout reach 1
+    cache.advanceCycle()
+    cache.advanceCycle()
+    cache.advanceCycle()
+
+    assert(cache.getCacheLine(8,1) == 10) // Ensure timeout hasn't been reached
+    assert(cache.getCacheLine(8,1) == 10) // Ensure didn't get saved
+
+    cache.advanceCycle() // Timeout reached
+
+    assert(cache.getCacheLine(8,1) == 10) // Ensure didn't get saved
+    assert(cache.getCacheLine(12,1) == 10) // try to use without prio
+    assert(cache.getCacheLine(8,1) == 1) // Ensure did get saved
+    assert(cache.getCacheLine(12,1) == 1) // Ensure did get saved
+  }
+
+}
