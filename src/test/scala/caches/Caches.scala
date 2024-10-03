@@ -3,7 +3,7 @@ package caches
 import org.scalatest.funsuite.AnyFunSuite
 
 
-trait SimpleLruCacheTests[C<: TrackingLruCache[T], T] extends AnyFunSuite {
+trait SimpleLruCacheTests[C<: SoftCache] extends AnyFunSuite {
   def className: String
   def createInstance(lineLength: Int, ways: Int, sets: Int, shortLatency: Int, longLatency: Int): C
 
@@ -48,9 +48,10 @@ trait SimpleLruCacheTests[C<: TrackingLruCache[T], T] extends AnyFunSuite {
     cache.getCacheLine(2,0) // set 1, way 0
     cache.getCacheLine(4,0) // set 0, way 1
     cache.getCacheLine(6,0) // set 1, way 1
-
+cache.printAll()
     // Set 0 is full, with '0' being least recently used
     assert(cache.getCacheLine(8,0) == 130)
+    cache.printAll()
     assert(cache.getCacheLine(5,0) == 14)
     assert(cache.getCacheLine(1,0) == 130)
     assert(cache.getCacheLine(9,0) == 130)
@@ -74,7 +75,7 @@ trait SimpleLruCacheTests[C<: TrackingLruCache[T], T] extends AnyFunSuite {
   }
 }
 
-class LruCacheTest extends AnyFunSuite with SimpleLruCacheTests[LruCache, Unit] {
+class LruCacheTest extends AnyFunSuite with SimpleLruCacheTests[LruCache] {
   override def className: String = "LruCache"
 
   override def createInstance(lineLength: Int, ways: Int, sets: Int, shortLatency: Int, longLatency: Int): LruCache = {
@@ -82,7 +83,7 @@ class LruCacheTest extends AnyFunSuite with SimpleLruCacheTests[LruCache, Unit] 
   }
 }
 
-class ContentionCacheTest extends AnyFunSuite with SimpleLruCacheTests[ContentionCache, Int] {
+class ContentionCacheTest extends AnyFunSuite with SimpleLruCacheTests[ContentionCache] {
   override def className: String = "ContentionCache"
 
   override def createInstance(lineLength: Int, ways: Int, sets: Int, shortLatency: Int, longLatency: Int): ContentionCache = {
@@ -271,10 +272,65 @@ class ContentionCacheTest extends AnyFunSuite with SimpleLruCacheTests[Contentio
     assert(cache.getCacheLine(12,1) == 5)
   }
 
+  test("Critical hit on non-critical line increases contention limit") {
+    val cache = createInstance(2,2,2,5, 25);
+    cache.setCriticality(0, 0);
 
+    // Fill up set 0 with non-critical
+    cache.getCacheLine(0,1) // way 0
+    cache.getCacheLine(4,1) // way 1
+    // Fill up set 1 with critical
+    cache.getCacheLine(2,0) // way 0
+    cache.getCacheLine(6,0) // way 1
+
+    assert(cache.getCacheLine(4,0) == 5) // try to use set 0 with critical
+
+    assert(cache.getCacheLine(10,1) == 25) // try to overwrite set 1 with non-critical
+    assert(cache.getCacheLine(10,1) == 5) // Ensure was saved
+    assert(cache.getCacheLine(6,1) == 5)
+  }
+
+  test("Critical hit on non-critical line makes it critical") {
+    val cache = createInstance(2,2,2,5, 25);
+    cache.setCriticality(0, 0);
+
+    // Fill up set 0 with non-critical
+    cache.getCacheLine(0,1) // way 0
+    cache.getCacheLine(4,1) // way 1
+    // Fill up set 1 with critical
+    cache.getCacheLine(2,0) // way 0
+    cache.getCacheLine(6,0) // way 1
+
+    assert(cache.getCacheLine(0,0) == 5) // try to use set 0 with critical
+    assert(cache.getCacheLine(10,1) == 25) // overwrite set 1 with non-critical, negating the previous win
+    assert(cache.getCacheLine(8,0) == 25) // overwrite set 0 way 1 with critical
+
+    assert(cache.getCacheLine(12,1) == 25) // try to use set 0 with non-critical
+    assert(cache.getCacheLine(12,1) == 25) //
+  }
+
+  test("Critical hit on critical line does not increase contention count") {
+    val cache = createInstance(2,2,2,5, 25);
+    cache.setCriticality(0, 0);
+    cache.setCriticality(1, 0);
+
+    // Fill up set 0 with crit 0
+    cache.getCacheLine(0,0) // way 0
+    cache.getCacheLine(4,0) // way 1
+    // Fill up set 1 with crit 1
+    cache.getCacheLine(2,1) // way 0
+    cache.getCacheLine(6,1) // way 1
+
+    assert(cache.getCacheLine(3,0) == 5) // Hit on other crit
+
+    assert(cache.getCacheLine(8,2) == 25) // Try to evict crit
+    assert(cache.getCacheLine(8,2) == 25) // Ensure did not work
+    assert(cache.getCacheLine(0,0) == 5) // Ensure was not evicted
+    assert(cache.getCacheLine(4,0) == 5) // Ensure was not evicted
+  }
 }
 
-class TimeoutCacheTest extends AnyFunSuite with SimpleLruCacheTests[TimeoutCache, Int] {
+class TimeoutCacheTest extends AnyFunSuite with SimpleLruCacheTests[TimeoutCache] {
   override def className: String = "TimeoutCache"
 
   override def createInstance(lineLength: Int, ways: Int, sets: Int, shortLatency: Int, longLatency: Int): TimeoutCache = {
