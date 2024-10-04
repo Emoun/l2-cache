@@ -219,6 +219,43 @@ trait LRUReplacement[T] extends ReplacementPolicy[(Int, T)] {self: TrackingCache
   }
 }
 
+trait PartitionedReplacement[T] extends ReplacementPolicy[T] {self: TrackingCache[T] =>
+
+  var _partitions: Array[Option[Int]] = Array.fill(ways){None};
+
+  /**
+   * Assign the given core to the given way
+   * @param coreId
+   * @param wayIdx
+   */
+  def assignWay(coreId: Int, wayIdx: Int): Unit = {
+    _partitions(wayIdx) = Some(coreId);
+  }
+
+  override def getValidWays(coreId: Int, setIdx: Int): Array[Int] = {
+
+    if(applyPartitioning(coreId)) {
+      _partitions.zipWithIndex.filter(entry => {
+        if(entry._1.isDefined){
+          entry._1.contains(coreId)
+        } else {
+          true
+        }
+      }).map(entry => entry._2)
+    } else {
+      Array.range(0, ways)
+    }
+  }
+
+  /**
+   * Returns whether the given core should be bound by partitioning. If not, it may evict anything.
+   * @param coreId
+   * @return
+   */
+  def applyPartitioning(coreId: Int): Boolean;
+
+}
+
 class LruCache(lineLength: Int, ways: Int, sets: Int, shortLatency: Int, longLatency: Int) extends
   TrackingCache[(Int,Unit)](lineLength, ways, sets, shortLatency, longLatency) with LRUReplacement[Unit]
 {
@@ -229,6 +266,19 @@ class LruCache(lineLength: Int, ways: Int, sets: Int, shortLatency: Int, longLat
   override def defaultPayload(coreId: Int, setIdx: Int, wayIdx: Int): (Int, Unit) = {
     (0, Unit)
 
+  }
+}
+
+class PartitionedCache(lineLength: Int, ways: Int, sets: Int, shortLatency: Int, longLatency: Int) extends
+  TrackingCache[(Int,Unit)](lineLength, ways, sets, shortLatency, longLatency) with LRUReplacement[Unit] with PartitionedReplacement[(Int,Unit)]
+{
+  override def defaultPayload(coreId: Int, setIdx: Int, wayIdx: Int): (Int, Unit) = {
+    (0, Unit)
+
+  }
+
+  override def applyPartitioning(coreId: Int): Boolean = {
+    true
   }
 }
 
@@ -417,5 +467,117 @@ class TimeoutCache(lineLength: Int, ways: Int, sets: Int, shortLatency: Int, lon
       (0,0)
     }
 
+  }
+}
+
+class ContentionPartCache(lineLength: Int, ways: Int, sets: Int, shortLatency: Int, longLatency: Int)
+// T is the ID of the core that loaded the line
+  extends TrackingCache[(Int,Int)](lineLength, ways, sets, shortLatency, longLatency) with LRUReplacement[Int] with PartitionedReplacement[(Int,Int)]
+{
+
+  /**
+   * Tracks contention for each core.
+   * Tracks the available amount of contention
+   * When is reaches zero, no more contention is allowed
+   */
+  private var _contention: mutable.Map[Int, Int] = mutable.Map.empty;
+
+  // Reduces the contention count for the given core (assuming it is high-criticality)
+  def triggerContention(coreId: Int): Unit = {
+    assert(_contention.contains(coreId));
+    _contention(coreId) -= longLatency - shortLatency;
+  }
+
+  def setCriticality(coreId: Int, contentionLimit: Int): Unit = {
+    _contention(coreId) = contentionLimit;
+  }
+
+  override def defaultPayload(coreId: Int, setIdx: Int, wayIdx: Int): (Int, Int) = {
+    (0, coreId)
+  }
+
+  override def getValidWays(coreId: Int, setIdx: Int): Array[Int] = {
+    val notLimited = super.getValidWays(coreId, setIdx).filter(wayIdx => {
+      _setArr(setIdx)(wayIdx) match {
+        case Some((_, (_, cId))) => !_contention.contains(cId) || (_contention(cId) != 0);
+        case None => true
+      }
+    });
+
+    if (notLimited.length > 0) {
+      // There are some that are not limited, choose from them
+      notLimited
+    } else {
+      // All lines are occupied by limited cores
+
+      if (_contention.contains(coreId)) {
+        // Request is also from critical core, so choose any
+        super.getValidWays(coreId, setIdx)
+      } else {
+        // Request is not critical, no eviction is allowed
+        Array.empty
+      }
+    }
+  }
+
+  override def onHit(coreId: Int, setIdx: Int, wayIdx: Int): Unit = {
+    super.onHit(coreId, setIdx, wayIdx);
+    if(_contention.contains(coreId)) {
+      val line = _setArr(setIdx)(wayIdx).get;
+      val hitOwnerId = line._2._2;
+      if(hitOwnerId != coreId && !_contention.contains(hitOwnerId) ) {
+        // The core got a free hit, so increase its contention limit to match
+        _contention(coreId) += longLatency-shortLatency;
+        // Assign the line to the core
+        _setArr(setIdx)(wayIdx) = Some(line._1, (line._2._1, coreId));
+      }
+    }
+  }
+
+  override def onMiss(coreId: Int, setIdx: Int): Option[(Int, (Int, Int))] = {
+    val miss = super.onMiss(coreId, setIdx);
+
+    if(miss.isDefined) {
+      val (evictedWayIdx, _) = miss.get;
+
+      val evictedWay = _setArr(setIdx)(evictedWayIdx);
+      if(evictedWay.isDefined) {
+        val evictedCoreId = evictedWay.get._2._2;
+
+        if(_contention.contains(evictedCoreId)) {
+          // Evicted a critical core, check contention
+
+          // Trigger if critical is evicted by non-critical
+          val evictedByNonCrit = !_contention.contains(coreId);
+
+          // If another way contains a non-critical line
+          val existOtherNonCritWays = Array.range(0, ways).find( wayIdx =>{
+            _setArr(setIdx)(wayIdx) match {
+              case Some((_,(_,c))) => !_contention.contains(c);
+              case None => false;
+            }
+          });
+
+          if(!_contention.contains(coreId) || existOtherNonCritWays.isDefined) {
+            assert(_contention(evictedCoreId) > 0);
+            triggerContention(evictedCoreId);
+          }
+        }
+      }
+    }
+    miss
+  }
+
+  override def printAll() {
+    super.printAll()
+    print("{ ")
+    for( entry <- _contention) {
+      printf("(%d: %d) ", entry._1, entry._2)
+    }
+    println("}")
+  }
+
+  override def applyPartitioning(coreId: Int): Boolean = {
+    _contention.contains(coreId)
   }
 }
