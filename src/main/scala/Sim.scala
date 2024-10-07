@@ -1,21 +1,133 @@
 import caches.LruCache
+import scala.io.Source
+import scala.util.matching.Regex
+
+
+
+// Define case classes for DAW and DAR
+sealed trait LogEntry
+case class DAW(dsz: Int, addr: Long, timeStamp: Long) extends LogEntry
+case class DAR(dsz: Int, addr: Long, timeStamp: Long) extends LogEntry
+case class DAWS(dsz: Int, addr: Long, timeStamp: Long) extends LogEntry
+case class DARS(dsz: Int, addr: Long, timeStamp: Long) extends LogEntry
+
+class MemAccess (dataType:Int, r:Boolean, addr: Long, t:Long ){
+  /**
+   * Size of the access in bytes
+   */
+  val accessSize: Int = scala.math.pow(2, dataType).intValue()
+
+  val isRead:Boolean = r
+  val address: Long = addr
+  val time:Long = t
+
+
+  def prettyPrint(): Unit = {
+    printf("{%d, %s, 0x%s, %d}", accessSize, if(isRead) "Read" else "Write", addr.toHexString, time)
+  }
+
+}
+
+
 
 // Can be run using the command: sbt "runMain Sim"
 object Sim {
+  private val DAWPattern: Regex = """DAW \[ dsz=(\d+), uaddr=(0x[0-9a-f]+), faddr=(0x[0-9a-f]+), faddr_valid=(\d+), icnt=(0x[0-9a-f]+), tstamp=(\d+), iaddr=(0x[0-9a-f]+), iaddr_valid=(\d+), absolute_tstamp=(\d+), abtst_valid=(\d+)  \]""".r
+  private val DARPattern: Regex = """DAR \[ dsz=(\d+), uaddr=(0x[0-9a-f]+), faddr=(0x[0-9a-f]+), faddr_valid=(\d+), icnt=(0x[0-9a-f]+), tstamp=(\d+), iaddr=(0x[0-9a-f]+), iaddr_valid=(\d+), absolute_tstamp=(\d+), abtst_valid=(\d+)  \]""".r
+  private val DAWSPattern: Regex = """DAWS \[ dsz=(\d+), faddr=(0x[0-9a-f]+), icnt=(0x[0-9a-f]+), iaddr=(0x[0-9a-f]+), iaddr_valid=(\d+), absolute_tstamp=(\d+), abtst_valid=(\d+)  \]""".r
+  private val DARSPattern: Regex = """DARS \[ dsz=(\d+), faddr=(0x[0-9a-f]+), icnt=(0x[0-9a-f]+), iaddr=(0x[0-9a-f]+), iaddr_valid=(\d+), absolute_tstamp=(\d+), abtst_valid=(\d+)  \]""".r
+
+
+
+  def sanitizeDsz(dsz: Int): Int = {
+    if(0 <= dsz || dsz <= 6) {
+      dsz
+    } else {
+      throw new IllegalArgumentException(s"Invalid dsz: $dsz")
+    }
+  }
+  def sanitizeAddr(faddr: Long, faddrValid: Int): Long = {
+    if(faddrValid == 1) {
+      faddr
+    } else {
+      throw new IllegalArgumentException(s"Invalid faddr_valid: $faddrValid")
+    }
+  }
+  def sanitizeTstamp(absoluteTstamp: Long, abtstValid: Int, lastTime: Long): Long = {
+
+    if((lastTime %10) == 0) {
+      var time = absoluteTstamp * 10
+      if (abtstValid == 1) {
+        if (time == (lastTime % 10)) {
+          time = lastTime + 1
+        }
+        time
+      } else {
+        throw new IllegalArgumentException(s"Invalid abtst_valid: $abtstValid")
+      }
+    }  else {
+      throw new IllegalArgumentException(s"More than 10 identical times: $absoluteTstamp")
+    }
+
+  }
+
   def main(args: Array[String]): Unit = {
     println("Running Simulator")
 
-    //val trace_path = args(0)
-    var cache = new LruCache(2,2,2,14,130);
-    cache.getCacheLine(0,0) // set 0, way 0
-    cache.getCacheLine(2,0) // set 1, way 0
-    cache.getCacheLine(4,0) // set 0, way 1
-    cache.getCacheLine(6,0) // set 1, way 1
+    var cache = new LruCache(32, 8, 16, 4, 12)
 
-    // Set 0 is full, with '0' being least recently used
-    println(cache.getCacheLine(8,0))
-    println(cache.getCacheLine(5,0))
 
+    val source = Source.fromFile("2024-05-21-Trace/Trace_dtu/dtrace_64.txt")
+    var count = 0
+    var lastTime:Long = 0
+    var hits = 0
+    var misses = 0
+    source.getLines().foreach( line => {
+      val obj = line match {
+        case DAWPattern(dsz, uaddr, faddr, faddr_valid, icnt, tstamp, iaddr, iaddr_valid, absolute_tstamp, abtst_valid) =>
+          Some(new MemAccess(
+            sanitizeDsz(dsz.toInt),
+            false,
+            sanitizeAddr(java.lang.Long.parseLong(faddr.drop(2), 16), faddr_valid.toInt),
+            sanitizeTstamp(absolute_tstamp.toLong, abtst_valid.toInt, lastTime)
+          ))
+        case DARPattern(dsz, uaddr, faddr, faddr_valid, icnt, tstamp, iaddr, iaddr_valid, absolute_tstamp, abtst_valid) =>
+          Some(new MemAccess(
+            sanitizeDsz(dsz.toInt),
+            true,
+            sanitizeAddr(java.lang.Long.parseLong(faddr.drop(2), 16), faddr_valid.toInt),
+            sanitizeTstamp(absolute_tstamp.toLong, abtst_valid.toInt, lastTime)
+          ))
+        case DAWSPattern(dsz, faddr, icnt, iaddr, iaddr_valid, absolute_tstamp, abtst_valid) =>
+          Some(new MemAccess(
+            sanitizeDsz(dsz.toInt),
+            false,
+            java.lang.Long.parseLong(faddr.drop(2), 16),
+            sanitizeTstamp(absolute_tstamp.toLong, abtst_valid.toInt, lastTime)
+          ))
+        case DARSPattern(dsz, faddr, icnt, iaddr, iaddr_valid, absolute_tstamp, abtst_valid) =>
+          Some(new MemAccess(
+            sanitizeDsz(dsz.toInt),
+            true,
+            java.lang.Long.parseLong(faddr.drop(2), 16),
+            sanitizeTstamp(absolute_tstamp.toLong, abtst_valid.toInt, lastTime)
+          ))
+        case _ => None
+      }
+
+      obj.foreach(a => {
+        lastTime = a.time
+        count += 1
+        a.prettyPrint()
+        val latency = cache.getCacheLine(a.address, 0)
+        if(latency == 4) hits +=1 else misses += 1
+        printf(": %d\n", cache.getCacheLine(a.address, 0))
+      })
+    })
+    printf("Count: %d\n", count)
+    printf("Hits: %d\n", hits)
+    printf("Misses: %d\n", misses)
+    printf("Hit percentage: %f\n", (hits).toDouble/((hits+misses).toDouble))
   }
 
 }

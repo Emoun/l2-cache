@@ -20,8 +20,8 @@ abstract class SoftCache(l: Int, w: Int, s: Int, so: Int, lo: Int) {
    * @param addr
    * @return The index of the set that should cache the given address
    */
-  def setIdxForAddr(addr: Int): Int = {
-    (addr / lineLength)%sets
+  def setIdxForAddr(addr: Long): Int = {
+    ((addr / lineLength)%sets).toInt
   }
 
   /**
@@ -29,7 +29,7 @@ abstract class SoftCache(l: Int, w: Int, s: Int, so: Int, lo: Int) {
    * @param addr
    * @return The lowest address in the cache line containing the given address
    */
-  def lineHeadForAddr(addr: Int): Int = {
+  def lineHeadForAddr(addr: Long): Long = {
     (addr/lineLength) * lineLength
   }
 
@@ -39,7 +39,7 @@ abstract class SoftCache(l: Int, w: Int, s: Int, so: Int, lo: Int) {
    *
    * @return how many cycles later the response begins
    */
-  def getCacheLine(addr: Int, core: Int): Int
+  def getCacheLine(addr: Long, core: Int): Int
 
   def advanceCycle() = {}
 
@@ -48,7 +48,7 @@ abstract class SoftCache(l: Int, w: Int, s: Int, so: Int, lo: Int) {
    * @param addr
    * @return
    */
-  def isHit(addr: Int): Option[(Int, Int)];
+  def isHit(addr: Long): Option[(Int, Int)];
 
   def printAll();
 }
@@ -61,11 +61,11 @@ abstract class TrackingCache[T](l: Int, w: Int, s: Int, so: Int, lo: Int) extend
    * Each way tracks the address its caching and how many times is has not been used.
    * The highest "use" is the least recently used
    */
-  var _setArr: Array[Array[Option[(Int, T)]]] = {
+  var _setArr: Array[Array[Option[(Long, T)]]] = {
     Array.fill(sets){Array.fill(ways){None}}
   };
 
-  def setForAddr(addr: Int): Array[Option[(Int, T)]] =
+  def setForAddr(addr: Long): Array[Option[(Long, T)]] =
   {
     _setArr(setIdxForAddr(addr))
   }
@@ -94,7 +94,7 @@ abstract class TrackingCache[T](l: Int, w: Int, s: Int, so: Int, lo: Int) extend
    * @param addr
    * @return
    */
-  override def isHit(addr: Int): Option[(Int, Int)] = {
+  override def isHit(addr: Long): Option[(Int, Int)] = {
     val set = setForAddr(addr);
     val headAddr = lineHeadForAddr(addr);
     for(i <- 0 until set.length) {
@@ -121,7 +121,7 @@ abstract class TrackingCache[T](l: Int, w: Int, s: Int, so: Int, lo: Int) extend
    */
   def onMiss(coreId: Int, setIdx: Int): Option[(Int, T)];
 
-  override def getCacheLine(addr: Int, core: Int): Int =
+  override def getCacheLine(addr: Long, core: Int): Int =
   {
     val set = setForAddr(addr);
     val headAddr = lineHeadForAddr(addr);
@@ -176,7 +176,7 @@ trait ReplacementPolicy[T]  {self: TrackingCache[T] =>
 trait LRUReplacement[T] extends ReplacementPolicy[(Int, T)] {self: TrackingCache[(Int, T)] =>
   def increaseUse(setIdx: Int) = {
     var set = _setArr(setIdx)
-    for(i <- 0 until sets) {
+    for(i <- 0 until ways) {
       val way = set(i);
       if(way.isDefined) {
         val (address, (useCount, payload)) = way.get;

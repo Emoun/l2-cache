@@ -34,6 +34,13 @@ trait SimpleCacheTests[C<: SoftCache] extends AnyFunSuite {
     assert(cache.getCacheLine(7,0) == 2)
   }
 
+  test("More sets than ways") {
+    val cache = createInstance(3,2,3,2,20);
+    assert(cache.getCacheLine(0,0) == 20)
+    assert(cache.getCacheLine(9,0) == 20)
+    assert(cache.getCacheLine(18,0) == 20)
+  }
+
   test("Get Cold Addresses") {
     val cache = createInstance(2,4,4,11,17);
     assert(cache.getCacheLine(0,0) == 17)
