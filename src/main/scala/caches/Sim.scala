@@ -1,5 +1,6 @@
-import caches.LruCache
-import scala.io.Source
+package caches
+
+import scala.io.{BufferedSource, Source}
 import scala.util.matching.Regex
 
 
@@ -28,7 +29,124 @@ class MemAccess (dataType:Int, r:Boolean, addr: Long, t:Long ){
 
 }
 
+trait Traffic {
 
+  def burstSize: Int;
+  require(isPowerOfTwo(burstSize))
+
+  def triggerCycle();
+
+  def requestMemoryAccess(): Option[Long];
+
+  def serveMemoryAccess();
+
+  def isPowerOfTwo(x: Int): Boolean =
+  {
+    (x & (x - 1)) == 0
+  }
+
+}
+
+class CacheArbiter(burstSize: Int, cache: SoftCache, cores: Array[Traffic]) {
+  require(cache.lineLength>=burstSize)
+  require(cache.lineLength%burstSize == 0)
+  require(cores.forall( t => t.burstSize == burstSize))
+
+  /**
+   * Which core that should access memory next.
+   */
+  var nextAccess: Int = 0
+
+  /**
+   * Used for tracking if the cache is busy. First comes the cores being serviced, then how long is left.
+   * When at 0, it means the cache is ready to service
+   * When the cache returns a latency, the busy will be set to it and reduced each cycle trigger
+   * While busy > 0 the cache should not service any access
+   */
+  var busy: Option[(Int,Int)] = None
+
+  /**
+   * Triggers a "round" of memory access.
+   * A round start by allowing 1 core to access memory (if cache not busy), then it triggers a cycle.
+   * @return The core that accesses the cache and whether it was a hit
+   */
+  def trigger(): Option[(Int, Boolean)]   = {
+
+    if(busy.isDefined && busy.get._2 == 0) {
+      cores(busy.get._1).serveMemoryAccess()
+      busy = None
+    }
+
+    val result = if(busy.isDefined && busy.get._2>0) {
+      busy = Some((busy.get._1, busy.get._2-1))
+      None
+    } else {
+      val result = cores(nextAccess).requestMemoryAccess().map( addr => {
+        cache.getCacheLine(addr, nextAccess)
+      }).map(latency => {
+        busy = Some((nextAccess, latency))
+        (nextAccess, latency == cache.shortLatency)
+      })
+
+      nextAccess = (nextAccess+1)%cores.length
+      result
+    }
+    cache.advanceCycle()
+    cores.foreach(core => core.triggerCycle())
+
+    result
+  }
+}
+
+class TraceTraffic(s: Int, source: Iterator[MemAccess]) extends Traffic {
+
+  override def burstSize: Int = s
+
+  var nextAccess: Array[MemAccess] = Array.empty
+
+  override def triggerCycle(): Unit = {
+
+
+  }
+
+
+  def log2(x: Int): Int = {
+    (math.log(x) / math.log(2)).toInt
+  }
+
+  override def requestMemoryAccess(): Option[Long] = {
+    if(nextAccess.length>0) {
+      val access = nextAccess(0)
+      nextAccess = nextAccess.drop(1)
+
+      if(access.accessSize>burstSize) {
+        // We need to split the access into chunks
+        val chunks = access.accessSize/burstSize
+        Range.apply(0, chunks).foreach(idx => {
+          nextAccess = nextAccess :+ new MemAccess(log2(burstSize),access.isRead, access.address + (burstSize*idx), access.time)
+        })
+
+        // Run again on the split accesses
+        requestMemoryAccess()
+      } else {
+        Some(access.address)
+      }
+    } else {
+      if(source.hasNext) {
+        nextAccess = nextAccess :+ source.next()
+        requestMemoryAccess()
+      } else {
+        // We are done
+        None
+      }
+    }
+  }
+
+  override def serveMemoryAccess(): Unit = {
+
+
+  }
+}
 
 // Can be run using the command: sbt "runMain Sim"
 object Sim {
