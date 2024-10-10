@@ -2,13 +2,11 @@ package caches
 
 import scala.collection.mutable
 
-abstract class SoftCache(l: Int, w: Int, s: Int, so: Int, lo: Int) {
+abstract class SoftCache(l: Int, w: Int, s: Int) {
 
   val lineLength: Int = l;
   val ways: Int = w;
   val sets: Int = s;
-  val shortLatency: Int = so;
-  val longLatency: Int = lo;
 
   /**
    * The total capacity (in bytes) of the cache.
@@ -34,12 +32,11 @@ abstract class SoftCache(l: Int, w: Int, s: Int, so: Int, lo: Int) {
   }
 
   /**
-   * Takes a cache line requests and returns how many cycles later the line
-   * will be bursted
+   * Takes a cache line requests and returns if it is a hit or a miss
    *
-   * @return how many cycles later the response begins
+   * @return Whether it is a cache hit
    */
-  def getCacheLine(addr: Long, core: Int): Int
+  def getCacheLine(addr: Long, core: Int): Boolean
 
   def advanceCycle() = {}
 
@@ -53,8 +50,8 @@ abstract class SoftCache(l: Int, w: Int, s: Int, so: Int, lo: Int) {
   def printAll();
 }
 
-abstract class TrackingCache[T](l: Int, w: Int, s: Int, so: Int, lo: Int) extends
-  SoftCache(l, w, s, so, lo)
+abstract class TrackingCache[T](l: Int, w: Int, s: Int) extends
+  SoftCache(l, w, s)
 {
   /**
    * Each set contains some ways.
@@ -121,7 +118,7 @@ abstract class TrackingCache[T](l: Int, w: Int, s: Int, so: Int, lo: Int) extend
    */
   def onMiss(coreId: Int, setIdx: Int): Option[(Int, T)];
 
-  override def getCacheLine(addr: Long, core: Int): Int =
+  override def getCacheLine(addr: Long, core: Int): Boolean =
   {
     val set = setForAddr(addr);
     val headAddr = lineHeadForAddr(addr);
@@ -130,7 +127,7 @@ abstract class TrackingCache[T](l: Int, w: Int, s: Int, so: Int, lo: Int) extend
       // Hit
       case Some((setIdx, wayIdx)) => {
         onHit(core, setIdx, wayIdx);
-        shortLatency
+        true
       }
       // Miss
       case None => {
@@ -140,7 +137,7 @@ abstract class TrackingCache[T](l: Int, w: Int, s: Int, so: Int, lo: Int) extend
           }
           case None => ;
         }
-        longLatency
+        false
       }
     }
   }
@@ -256,8 +253,8 @@ trait PartitionedReplacement[T] extends ReplacementPolicy[T] {self: TrackingCach
 
 }
 
-class LruCache(lineLength: Int, ways: Int, sets: Int, shortLatency: Int, longLatency: Int) extends
-  TrackingCache[(Int,Unit)](lineLength, ways, sets, shortLatency, longLatency) with LRUReplacement[Unit]
+class LruCache(lineLength: Int, ways: Int, sets: Int) extends
+  TrackingCache[(Int,Unit)](lineLength, ways, sets) with LRUReplacement[Unit]
 {
   override def getValidWays(coreId: Int, setIdx: Int): Array[Int] = {
     Array.range(0, ways)
@@ -269,8 +266,8 @@ class LruCache(lineLength: Int, ways: Int, sets: Int, shortLatency: Int, longLat
   }
 }
 
-class PartitionedCache(lineLength: Int, ways: Int, sets: Int, shortLatency: Int, longLatency: Int) extends
-  TrackingCache[(Int,Unit)](lineLength, ways, sets, shortLatency, longLatency) with LRUReplacement[Unit] with PartitionedReplacement[(Int,Unit)]
+class PartitionedCache(lineLength: Int, ways: Int, sets: Int) extends
+  TrackingCache[(Int,Unit)](lineLength, ways, sets) with LRUReplacement[Unit] with PartitionedReplacement[(Int,Unit)]
 {
   override def defaultPayload(coreId: Int, setIdx: Int, wayIdx: Int): (Int, Unit) = {
     (0, Unit)
@@ -282,9 +279,9 @@ class PartitionedCache(lineLength: Int, ways: Int, sets: Int, shortLatency: Int,
   }
 }
 
-class ContentionCache(lineLength: Int, ways: Int, sets: Int, shortLatency: Int, longLatency: Int)
+class ContentionCache(lineLength: Int, ways: Int, sets: Int, contentionCost: Int)
 // T is the ID of the core that loaded the line
-  extends TrackingCache[(Int,Int)](lineLength, ways, sets, shortLatency, longLatency) with LRUReplacement[Int]
+  extends TrackingCache[(Int,Int)](lineLength, ways, sets) with LRUReplacement[Int]
 {
 
   /**
@@ -297,7 +294,7 @@ class ContentionCache(lineLength: Int, ways: Int, sets: Int, shortLatency: Int, 
   // Reduces the contention count for the given core (assuming it is high-criticality)
   def triggerContention(coreId: Int): Unit = {
     assert(_contention.contains(coreId));
-    _contention(coreId) -= longLatency - shortLatency;
+    _contention(coreId) -= contentionCost;
   }
 
   def setCriticality(coreId: Int, contentionLimit: Int): Unit = {
@@ -339,7 +336,7 @@ class ContentionCache(lineLength: Int, ways: Int, sets: Int, shortLatency: Int, 
       val hitOwnerId = line._2._2;
       if(hitOwnerId != coreId && !_contention.contains(hitOwnerId) ) {
         // The core got a free hit, so increase its contention limit to match
-        _contention(coreId) += longLatency-shortLatency;
+        _contention(coreId) += contentionCost;
         // Assign the line to the core
         _setArr(setIdx)(wayIdx) = Some(line._1, (line._2._1, coreId));
       }
@@ -390,9 +387,9 @@ class ContentionCache(lineLength: Int, ways: Int, sets: Int, shortLatency: Int, 
   }
 }
 
-class TimeoutCache(lineLength: Int, ways: Int, sets: Int, shortLatency: Int, longLatency: Int, timeout: Int)
+class TimeoutCache(lineLength: Int, ways: Int, sets: Int, timeout: Int)
 // T is the ID of the core that loaded the line
-  extends TrackingCache[(Int,Int)](lineLength, ways, sets, shortLatency, longLatency) with LRUReplacement[Int]
+  extends TrackingCache[(Int,Int)](lineLength, ways, sets) with LRUReplacement[Int]
 {
   // For each way, element contains the core with the priority to this line.
   private var _priorities: Array[Option[Int]] = Array.fill(ways){None};
@@ -470,9 +467,9 @@ class TimeoutCache(lineLength: Int, ways: Int, sets: Int, shortLatency: Int, lon
   }
 }
 
-class ContentionPartCache(lineLength: Int, ways: Int, sets: Int, shortLatency: Int, longLatency: Int)
+class ContentionPartCache(lineLength: Int, ways: Int, sets: Int, contentionCost: Int)
 // T is the ID of the core that loaded the line
-  extends TrackingCache[(Int,Int)](lineLength, ways, sets, shortLatency, longLatency) with LRUReplacement[Int] with PartitionedReplacement[(Int,Int)]
+  extends TrackingCache[(Int,Int)](lineLength, ways, sets) with LRUReplacement[Int] with PartitionedReplacement[(Int,Int)]
 {
 
   /**
@@ -485,7 +482,7 @@ class ContentionPartCache(lineLength: Int, ways: Int, sets: Int, shortLatency: I
   // Reduces the contention count for the given core (assuming it is high-criticality)
   def triggerContention(coreId: Int): Unit = {
     assert(_contention.contains(coreId));
-    _contention(coreId) -= longLatency - shortLatency;
+    _contention(coreId) -= contentionCost;
   }
 
   def setCriticality(coreId: Int, contentionLimit: Int): Unit = {
@@ -527,7 +524,7 @@ class ContentionPartCache(lineLength: Int, ways: Int, sets: Int, shortLatency: I
       val hitOwnerId = line._2._2;
       if(hitOwnerId != coreId && !_contention.contains(hitOwnerId) ) {
         // The core got a free hit, so increase its contention limit to match
-        _contention(coreId) += longLatency-shortLatency;
+        _contention(coreId) += contentionCost;
         // Assign the line to the core
         _setArr(setIdx)(wayIdx) = Some(line._1, (line._2._1, coreId));
       }

@@ -2,102 +2,88 @@ package caches
 
 import org.scalatest.funsuite.AnyFunSuite
 
-class CacheArbiterTests extends AnyFunSuite {
+class ArbiterTests extends AnyFunSuite {
+  var rand: scala.util.Random = new scala.util.Random;
   test("No Accesses") {
-    var arbiter = new CacheArbiter(1, new LruCache(1,1,1,1,2),
-      Array.fill(2){new Traffic {
-        def burstSize: Int = 1;
+    var arbiter = new Arbiter(1,8, new LruCache(1, 1, 1), 1,
+      Array.fill(2) {
+        new Traffic {
+          def burstSize: Int = 1;
 
-        def triggerCycle() = {};
+          def triggerCycle() = {};
 
-        def requestMemoryAccess(): Option[(Long)] = {
-          None
-        };
+          def requestMemoryAccess(): Option[(Long)] = {
+            None
+          };
 
-        def serveMemoryAccess() = {};
-      }}
+          def serveMemoryAccess() = {};
+        }
+      }
     )
 
-    assert(arbiter.trigger().isEmpty)
-    assert(arbiter.trigger().isEmpty)
-    assert(arbiter.trigger().isEmpty)
-    assert(arbiter.trigger().isEmpty)
-    assert(arbiter.trigger().isEmpty)
-    assert(arbiter.trigger().isEmpty)
-    assert(arbiter.trigger().isEmpty)
-    assert(arbiter.trigger().isEmpty)
-    assert(arbiter.trigger().isEmpty)
-    assert(arbiter.trigger().isEmpty)
+    for (_ <- 0 until 10) {
+      assert(arbiter.requestMemoryAccess().isEmpty)
+      arbiter.triggerCycle()
+    }
   }
 
-  test("Cache busy") {
-    var arbiter = new CacheArbiter(1, new LruCache(1,1,1,1,2),
-      Array.fill(2){new Traffic {
+  test("Serve after latency") {
+    val latency = rand.nextInt(25)
+    var arbiter = new Arbiter(1,8, new SoftCache(1,1,1) {
+      override def getCacheLine(addr: Long, core: Int): Boolean = {
+        false // Never hit
+      }
+
+      override def isHit(addr: Long): Option[(Int, Int)] = {
+        None
+      }
+
+      override def printAll(): Unit = {}
+
+      override def advanceCycle(): Unit = {}
+    },latency,
+      Array.range(0,3).map(idx => new Traffic {
         def burstSize: Int = 1;
 
         def triggerCycle() = {};
 
         def requestMemoryAccess(): Option[Long] = {
-          Some(0)
+          Some(idx)
         };
 
         def serveMemoryAccess() = {};
-      }}
+      })
     )
 
-    assert(arbiter.trigger().contains((0,false))) // First core access with miss
-    assert(Range.apply(0,2).forall(_ => arbiter.trigger().isEmpty)) // busy servicing miss
-    assert(arbiter.trigger().isDefined) // ready to service next access
-  }
+    assert(arbiter.requestMemoryAccess().contains(0)) // First core access
+    // Insert arbitrary wait for serve
+    for(_ <- 0 until rand.nextInt(30)) arbiter.triggerCycle();
+    arbiter.serveMemoryAccess()
+    // busy servicing access
+    for(_ <- 0 until latency+1) {
+      assert(arbiter.requestMemoryAccess().isEmpty)
+      arbiter.triggerCycle()
+    }
 
-  test("Cache busy 2") {
-    var arbiter = new CacheArbiter(1, new LruCache(1,1,1,1,20),
-      Array.fill(2){new Traffic {
-        def burstSize: Int = 1;
+    assert(arbiter.requestMemoryAccess().contains(1)) // ready to service next access
+    // Insert arbitrary wait for serve
+    for(_ <- 0 until rand.nextInt(30)) arbiter.triggerCycle();
+    arbiter.serveMemoryAccess()
+    // busy servicing
+    for(_ <- 0 until latency+1) {
+      assert(arbiter.requestMemoryAccess().isEmpty)
+      arbiter.triggerCycle()
+    }
 
-        def triggerCycle() = {};
-
-        def requestMemoryAccess(): Option[Long] = {
-          Some(0)
-        };
-
-        def serveMemoryAccess() = {};
-      }}
-    )
-
-    assert(arbiter.trigger().contains((0,false))) // First core access with miss
-    assert(Range.apply(0,20).forall(_ => arbiter.trigger().isEmpty)) // busy servicing miss
-    assert(arbiter.trigger().isDefined) // ready to service next access
-  }
-
-  test("Cache busy 3") {
-    var arbiter = new CacheArbiter(1, new LruCache(1,1,1,4,8),
-      Array.fill(2){new Traffic {
-        def burstSize: Int = 1;
-
-        def triggerCycle() = {};
-
-        def requestMemoryAccess(): Option[Long] = {
-          Some(0)
-        };
-
-        def serveMemoryAccess() = {};
-      }}
-    )
-
-    assert(arbiter.trigger().filter(res => res._2 == false).isDefined) // First core access with miss
-    assert(Range.apply(0,8).forall(_ => arbiter.trigger().isEmpty)) // busy servicing miss
-    assert(arbiter.trigger().filter(res => res._2 == true).isDefined) // ready to service next access, which is a hit
-    assert(Range.apply(0,4).forall(_ => arbiter.trigger().isEmpty)) // busy servicing miss
-    assert(arbiter.trigger().isDefined) // ready to service next access
+    assert(arbiter.requestMemoryAccess().contains(2)) // ready to service next access
   }
 
   test("Triggers device cycles") {
     var counts = Array.fill(4){0}
-    var arbiter = new CacheArbiter(1,
-      new SoftCache(1,1,1,6,12) {
-        override def getCacheLine(addr: Long, core: Int): Int = {
-          if(math.random < 0.5) shortLatency else longLatency
+    var arbiter = new Arbiter(1,8,
+      new SoftCache(1,1,1) {
+        override def getCacheLine(addr: Long, core: Int): Boolean = {
+          if(math.random < 0.5) true else false
         }
 
         override def isHit(addr: Long): Option[(Int, Int)] = {
@@ -108,6 +94,7 @@ class CacheArbiterTests extends AnyFunSuite {
 
         override def advanceCycle(): Unit = {counts(0) += 1}
       },
+      6,
       Array.range(1,4).map(idx => new Traffic {
         def burstSize: Int = 1;
 
@@ -121,19 +108,18 @@ class CacheArbiterTests extends AnyFunSuite {
       })
     )
 
-    val triggerCount = math.random.toInt % 256
-    Range.apply(0, triggerCount).foreach(_=> arbiter.trigger())
+    val triggerCount = rand.nextInt(256)
+    Range.apply(0, triggerCount).foreach(_=> arbiter.triggerCycle())
     assert(counts.forall(c => c == triggerCount))
   }
 
-  test("Serves after latency") {
-    var latency = math.random.toInt%25
-    var countedLatency = 0;
-    var serveLatency = 0;
-    var arbiter = new CacheArbiter(1,
-      new SoftCache(1,1,1,6,latency) {
-        override def getCacheLine(addr: Long, core: Int): Int = {
-          longLatency
+  test("Service even without parent request") {
+    var latency = 2+rand.nextInt(25)
+    var servicedAccesses = 0;
+    var arbiter = new Arbiter(1,8,
+      new SoftCache(1,1,1) {
+        override def getCacheLine(addr: Long, core: Int): Boolean = {
+          true // always hit
         }
 
         override def isHit(addr: Long): Option[(Int, Int)] = {
@@ -144,30 +130,34 @@ class CacheArbiterTests extends AnyFunSuite {
 
         override def advanceCycle(): Unit = {}
       },
+      latency,
       Array.range(0,1).map(idx => new Traffic {
         def burstSize: Int = 1;
 
-        def triggerCycle() = {
-          countedLatency += 1};
+        def triggerCycle() = {};
 
         def requestMemoryAccess(): Option[Long] = {
           Some(0)
         };
 
         def serveMemoryAccess() = {
-          serveLatency = countedLatency
+          servicedAccesses += 1
         };
       })
     )
 
-    assert(arbiter.trigger().isDefined) // start a miss
-    assert(Range.apply(0,latency).forall(_ => arbiter.trigger().isEmpty)) // Advance cycles to after the serve
-    assert(arbiter.trigger().isDefined) // After busy is empty, may service another
-    assert(serveLatency == latency+1) // Should trigger the previous access end before next cycle
+    val expectedServings = 1+rand.nextInt(25)
+    for(_ <- 0 until (latency*expectedServings)+expectedServings) {
+      arbiter.triggerCycle()
+    }
+    assert(servicedAccesses == expectedServings )
   }
 }
 
 class TraceTrafficTests extends AnyFunSuite {
+
+  var rand: scala.util.Random = new scala.util.Random;
+
   test("Empty") {
     var traf = new TraceTraffic(1, Array.empty.toIterator)
 
@@ -216,5 +206,138 @@ class TraceTrafficTests extends AnyFunSuite {
     assert(traf.requestMemoryAccess().isEmpty)
   }
 
+  test("Two accesses") {
+    var traf = new TraceTraffic(4, Array(
+      new MemAccess(0,true, 20, 0),
+      new MemAccess(0,true, 56, 0)
+    ).toIterator)
+
+    assert(traf.requestMemoryAccess().contains(20))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().contains(56))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().isEmpty)
+  }
+
+  test("Double size before access") {
+    var traf = new TraceTraffic(2, Array(
+      new MemAccess(2,true, 20, 0),
+      new MemAccess(0,true, 56, 0)
+    ).toIterator)
+
+    assert(traf.requestMemoryAccess().contains(20))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().contains(22))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().contains(56))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().isEmpty)
+  }
+
+  test("Twice oversize") {
+    var traf = new TraceTraffic(1, Array(
+      new MemAccess(2,true, 16, 0),
+      new MemAccess(1,true, 90, 0)
+    ).toIterator)
+
+    assert(traf.requestMemoryAccess().contains(16))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().contains(17))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().contains(18))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().contains(19))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().contains(90))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().contains(91))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().isEmpty)
+  }
+
+  test("Delayed") {
+    var delay = rand.nextInt(300)
+    var traf = new TraceTraffic(1, Array(
+      new MemAccess(0,true, 16, delay)
+    ).toIterator)
+
+    assert(Range.apply(0, delay).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    assert(traf.requestMemoryAccess().contains(16))
+    traf.serveMemoryAccess()
+    traf.triggerCycle()
+    assert(traf.requestMemoryAccess().isEmpty)
+  }
+
+  test("Delayed 2") {
+    var delay = rand.nextInt(300)
+    var delay2 = delay + rand.nextInt(300)
+    var latency = rand.nextInt(30)
+
+    var traf = new TraceTraffic(1, Array(
+      new MemAccess(0,true, 16, delay),
+      new MemAccess(0,true, 74, delay2)
+    ).toIterator)
+
+    assert(Range.apply(0, delay).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    assert(traf.requestMemoryAccess().contains(16))
+    assert(Range.apply(0, latency).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    traf.serveMemoryAccess()
+    assert(Range.apply(0, delay2-delay).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    assert(traf.requestMemoryAccess().contains(74))
+  }
+
+  test("Delayed with Double size") {
+    var delay = rand.nextInt(300)
+    var delay2 = delay + rand.nextInt(300)
+    var latency = rand.nextInt(30)
+
+    var traf = new TraceTraffic(1, Array(
+      new MemAccess(1,true, 16, delay),
+      new MemAccess(0,true, 74, delay2)
+    ).toIterator)
+
+    assert(Range.apply(0, delay).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    assert(traf.requestMemoryAccess().contains(16))
+    assert(Range.apply(0, latency).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().contains(17))
+    assert(Range.apply(0, latency).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    traf.serveMemoryAccess()
+    assert(Range.apply(0, delay2-delay).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    assert(traf.requestMemoryAccess().contains(74))
+  }
 
 }
+
