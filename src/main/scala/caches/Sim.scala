@@ -47,7 +47,7 @@ trait Traffic {
 
 }
 
-class Arbiter(burstIn: Int, burstOut: Int, cache: SoftCache, latency:Int, cores: Array[Traffic])
+class Arbiter(burstIn: Int, burstOut: Int, cache: SoftCache, latency:Int, cores: Array[Traffic], reportHits: (Int,Boolean) => Unit)
   extends Traffic
 {
   require(cache.lineLength>=burstIn)
@@ -95,13 +95,12 @@ class Arbiter(burstIn: Int, burstOut: Int, cache: SoftCache, latency:Int, cores:
 
         if(!cache.getCacheLine(addr.get, nextAccess)) {
           // Miss
-          println(s"{ $nextAccess, $addr.get, Miss }")
           busy = Some((nextAccess, latency,true, Some(addr.get)))
         } else {
           // Hit
-          println(s"{ $nextAccess, $addr.get, Hit }")
           busy = Some((nextAccess, latency,false, None))
         }
+        reportHits(nextAccess, !busy.get._3)
       } else {
         // No request from core
       }
@@ -141,7 +140,7 @@ class Arbiter(burstIn: Int, burstOut: Int, cache: SoftCache, latency:Int, cores:
   }
 }
 
-class TraceTraffic(s: Int, source: Iterator[MemAccess]) extends Traffic {
+class TraceTraffic(s: Int, source: Iterator[MemAccess], reportLatency: (Int) => Unit) extends Traffic {
 
   override def burstSize: Int = s
 
@@ -157,7 +156,10 @@ class TraceTraffic(s: Int, source: Iterator[MemAccess]) extends Traffic {
    */
   var stalls: Long = 0;
 
-  var waitingForServe = false;
+  /**
+   * Whether we are waiting to bet served and how long we've been waiting
+   */
+  var waitingForServe: Option[Int] = None;
 
   def log2(x: Int): Int = {
     (math.log(x) / math.log(2)).toInt
@@ -173,10 +175,13 @@ class TraceTraffic(s: Int, source: Iterator[MemAccess]) extends Traffic {
   }
 
   override def serveMemoryAccess(): Unit = {
-    waitingForServe = false;
+    assert(waitingForServe.isDefined)
+    reportLatency(waitingForServe.get)
+    waitingForServe = None;
+
   }
   override def requestMemoryAccess(): Option[Long] = {
-    if(waitingForServe) return None;
+    if(waitingForServe.isDefined) return None;
 
     if(nextAccess.length>0) {
       val access = nextAccess(0)
@@ -195,7 +200,7 @@ class TraceTraffic(s: Int, source: Iterator[MemAccess]) extends Traffic {
           // Run again on the split accesses
           requestMemoryAccess()
         } else {
-          waitingForServe = true
+          waitingForServe = Some(0)
           Some(access.address)
         }
       } else {
@@ -215,7 +220,10 @@ class TraceTraffic(s: Int, source: Iterator[MemAccess]) extends Traffic {
 
   override def triggerCycle(): Unit = {
     clock += 1
-    if(waitingForServe) stalls += 1;
+    if(waitingForServe.isDefined) {
+      stalls += 1
+      waitingForServe = Some(waitingForServe.get+1)
+    };
   }
 }
 
@@ -330,26 +338,55 @@ object Sim {
   def main(args: Array[String]): Unit = {
     println("Running Simulator")
 
-    var cache = new LruCache(32, 8, 16)
+
+    val traceFiles = Array(
+//      "2024-05-21-Trace/Trace_dtu/dtrace_test.txt",
+//      "2024-05-21-Trace/Trace_dtu/dtrace_test.txt",
+      "2024-05-21-Trace/Trace_dtu/dtrace_64.txt",
+      "2024-05-21-Trace/Trace_dtu/dtrace_65.txt",
+      "2024-05-21-Trace/Trace_dtu/dtrace_66.txt",
+      "2024-05-21-Trace/Trace_dtu/dtrace_67.txt",
+      "2024-05-21-Trace/Trace_dtu/dtrace_68.txt",
+      "2024-05-21-Trace/Trace_dtu/dtrace_69.txt",
+      "2024-05-21-Trace/Trace_dtu/dtrace_70.txt",
+      "2024-05-21-Trace/Trace_dtu/dtrace_71.txt",
+    )
+
+    var coreAccesses: Array[Int] = Array.fill(traceFiles.length){0}
+    var cumulativeLatencies: Array[Int] = Array.fill(traceFiles.length){0}
+    var hits: Array[Int] = Array.fill(traceFiles.length){0}
+    var l2Hits: Array[Int] = Array.fill(traceFiles.length){0}
+
+    val l1Latency = 1
+    val l2Latency = 8
+    val memLatency = 16
+    val l1BurstSize = 4
     val l2BurstSize = 16
     val memBurstSize = 32
 
-    val traceFiles = Array(
-      "2024-05-21-Trace/Trace_dtu/dtrace_test.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_test.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_64.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_65.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_66.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_67.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_68.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_69.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_70.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_71.txt",
-    )
+    var l1Arbs = traceFiles.zipWithIndex.map(pathIdx => {
+      val l1Cache = new LruCache(16,4,16) // 16B line, 4-way set associative 1KiB cache
+      new Arbiter(
+        l1BurstSize, l2BurstSize,
+        l1Cache, l1Latency,
+        Array(new TraceTraffic(l1BurstSize, loadAccesses(pathIdx._1), latency=> {
+          cumulativeLatencies(pathIdx._2) += latency
+          coreAccesses(pathIdx._2) += 1
+          printf("{ %d, %d }\n", pathIdx._2, latency)
+        })),
+        (_, isHit) => {
+          if(isHit) hits(pathIdx._2)+=1;
+        }
+      )
+    })
 
+    var l2Cache = new LruCache(64, 8, 16) // 64B line, 8-way set associative 8KB cache
     var l2Arb = new Arbiter(l2BurstSize,memBurstSize,
-      cache, 4,
-      traceFiles.map(path => new TraceTraffic(l2BurstSize, loadAccesses(path)))
+      l2Cache, l2Latency,
+      l1Arbs.toArray,
+      (coreId, isHit) => {
+        if(isHit) l2Hits(coreId)+=1;
+      }
     )
     var memArb = new Arbiter(
       memBurstSize,memBurstSize,
@@ -359,19 +396,26 @@ object Sim {
         override def isHit(addr: Long): Option[(Int, Int)] = { None }
         override def printAll(): Unit = {}
       },
-      16,
-      Array(l2Arb)
+      memLatency,
+      Array(l2Arb),
+      (_,_) => Unit
     )
 
     var counts = Array.fill(traceFiles.length){0}
-    var hits = Array.fill(traceFiles.length){0}
-    for(i <- 0 until 100//72056550*2
+    for(i <- 0 until 72056550*2
     ) {
       val trig = memArb.triggerCycle()
     }
 
-    for(i <- 0 until counts.length) {
-      printf("Count: %d, Hits: %d, Misses, %d, Hit perc.: %f\n", counts(i), hits(i), counts(i)-hits(i), (hits(i)).toDouble/((counts(i)).toDouble) )
+    for(i <- 0 until traceFiles.length) {
+      printf("Count: %d, L1 Hits: %d, L1 Hit Pct: %f, L2 Hits: %d, L2 Hit Pct: %f, Avg. Latency: %f\n",
+        coreAccesses(i),
+        hits(i),
+        hits(i).toDouble/coreAccesses(i).toDouble,
+        l2Hits(i),
+        l2Hits(i)/(coreAccesses(i)-hits(i)).toDouble,
+        (cumulativeLatencies(i).toDouble)/
+          (coreAccesses(i).toDouble) )
     }
   }
 
