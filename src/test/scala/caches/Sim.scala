@@ -18,7 +18,7 @@ class ArbiterTests extends AnyFunSuite {
 
           def serveMemoryAccess() = {};
         }
-      },(_,_) => (),
+      },(_,_) => None, (_,_) => (),
     )
 
     for (_ <- 0 until 10) {
@@ -52,7 +52,7 @@ class ArbiterTests extends AnyFunSuite {
         };
 
         def serveMemoryAccess() = {};
-      }),(_,_) => (),
+      }),(_,_) => None,(_,_) => (),
     )
 
     assert(arbiter.requestMemoryAccess().contains(0)) // First core access
@@ -105,7 +105,7 @@ class ArbiterTests extends AnyFunSuite {
         };
 
         def serveMemoryAccess() = {};
-      }),(_,_) => (),
+      }),(_,_) => None,(_,_) => (),
     )
 
     val triggerCount = rand.nextInt(256)
@@ -143,7 +143,7 @@ class ArbiterTests extends AnyFunSuite {
         def serveMemoryAccess() = {
           servicedAccesses += 1
         };
-      }),(_,_) => (),
+      }),(_,_) => None,(_,_) => (),
     )
 
     val expectedServings = 1+rand.nextInt(25)

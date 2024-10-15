@@ -301,6 +301,11 @@ class ContentionCache(lineLength: Int, ways: Int, sets: Int, contentionCost: Int
     _contention(coreId) = contentionLimit;
   }
 
+  def unassign(coreId: Int): Unit = {
+    assert(_contention.contains(coreId))
+    _contention.remove(coreId)
+  }
+
   override def defaultPayload(coreId: Int, setIdx: Int, wayIdx: Int): (Int, Int) = {
     (0, coreId)
   }
@@ -308,7 +313,7 @@ class ContentionCache(lineLength: Int, ways: Int, sets: Int, contentionCost: Int
   override def getValidWays(coreId: Int, setIdx: Int): Array[Int] = {
     val notLimited = Array.range(0, ways).filter(wayIdx => {
       _setArr(setIdx)(wayIdx) match {
-        case Some((_, (_, cId))) => !_contention.contains(cId) || (_contention(cId) != 0);
+        case Some((_, (_, cId))) => !_contention.contains(cId) || (_contention(cId) >=contentionCost);
         case None => true
       }
     });

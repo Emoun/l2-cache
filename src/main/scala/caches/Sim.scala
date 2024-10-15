@@ -45,9 +45,20 @@ trait Traffic {
     (x & (x - 1)) == 0
   }
 
+  def isDone(): Boolean = { false }
+
 }
 
-class Arbiter(burstIn: Int, burstOut: Int, cache: SoftCache, latency:Int, cores: Array[Traffic], reportHits: (Int,Boolean) => Unit)
+class Arbiter(
+  burstIn: Int,
+  burstOut: Int,
+  cache: SoftCache,
+  latency:Int,
+  cores: Array[Traffic],
+  // Takes core and cache, returns whether  the core needs to be changed to the given
+  onDone: (Int, SoftCache) => Option[Traffic],
+  reportHits: (Int,Boolean) => Unit
+)
   extends Traffic
 {
   require(cache.lineLength>=burstIn)
@@ -80,6 +91,10 @@ class Arbiter(burstIn: Int, burstOut: Int, cache: SoftCache, latency:Int, cores:
 
     if(busy.isDefined && busy.get._2 == 0 && !busy.get._3) {
       cores(busy.get._1).serveMemoryAccess()
+      val shouldSubstitute = onDone(busy.get._1, cache)
+      if(shouldSubstitute.isDefined) {
+        cores(busy.get._1) = shouldSubstitute.get
+      }
       busy = None
     }
   }
@@ -137,6 +152,10 @@ class Arbiter(burstIn: Int, burstOut: Int, cache: SoftCache, latency:Int, cores:
 
     cache.advanceCycle()
     cores.foreach(core => core.triggerCycle())
+  }
+
+  override def isDone(): Boolean = {
+    busy.isEmpty && cores.forall(c => c.isDone())
   }
 }
 
@@ -245,6 +264,10 @@ class TraceTraffic(s: Int, source: Iterator[MemAccess], reportLatency: (Int) => 
       stalls += 1
       waitingForServe = Some(waitingForServe.get+1)
     };
+  }
+
+  override def isDone(): Boolean = {
+    nextAccess.isEmpty && waitingForServe.isEmpty && !source.hasNext
   }
 }
 
@@ -367,10 +390,10 @@ object Sim {
       "2024-05-21-Trace/Trace_dtu/dtrace_65.txt",
       "2024-05-21-Trace/Trace_dtu/dtrace_66.txt",
       "2024-05-21-Trace/Trace_dtu/dtrace_67.txt",
-      "2024-05-21-Trace/Trace_dtu/dtrace_68.txt",
-      "2024-05-21-Trace/Trace_dtu/dtrace_69.txt",
-      "2024-05-21-Trace/Trace_dtu/dtrace_70.txt",
-      "2024-05-21-Trace/Trace_dtu/dtrace_71.txt",
+//      "2024-05-21-Trace/Trace_dtu/dtrace_68.txt",
+//      "2024-05-21-Trace/Trace_dtu/dtrace_69.txt",
+//      "2024-05-21-Trace/Trace_dtu/dtrace_70.txt",
+//      "2024-05-21-Trace/Trace_dtu/dtrace_71.txt",
     )
 
     var coreAccesses: Array[Int] = Array.fill(traceFiles.length){0}
@@ -395,21 +418,48 @@ object Sim {
           coreAccesses(pathIdx._2) += 1
           printf("{ %d, %d }\n", pathIdx._2, latency)
         })),
+        (_,_) => None,
         (_, isHit) => {
           if(isHit) hits(pathIdx._2)+=1;
         }
       )
     })
 
-    var l2Cache = new LruCache(64, 8, 16) // 64B line, 8-way set associative 8KB cache
+//    var l2Cache = new LruCache(64, 8, 16) // 64B line, 8-way set associative 8KB cache
+//    val l2OnDone  = (_:Int,_:SoftCache) => None;
+
 //    var l2Cache = new PartitionedCache(64, 8, 16) // 64B line, 8-way set associative 8KB cache
-//    for(i <- 0 until traceFiles.length) {
-//      l2Cache.assignWay(i,i)
-//    }
+//    l2Cache.assignWay(0,0)
+//    l2Cache.assignWay(0,1)
+//    l2Cache.assignWay(1,2)
+//    l2Cache.assignWay(1,3)
+//    val l2OnDone  = (_:Int,_:SoftCache) => None;
+
+    var l2Cache = new ContentionCache(64, 8, 16, memLatency) // 64B line, 8-way set associative 8KB cache
+    l2Cache.setCriticality(0, 100)
+//    l2Cache.setCriticality(1, 3000)
+    val l2OnDone  = (coreId:Int,cache:SoftCache) => {
+      cache match {
+        case s: ContentionCache => {
+          var conCache = cache.asInstanceOf[ContentionCache]
+          println("Core done---------------------")
+          println("Core done---------------------")
+          println("Core done---------------------")
+          conCache.unassign(coreId)
+          None
+        }
+        case _ => {
+          assert(false)
+          None
+        }
+      }
+    };
+
 
     var l2Arb = new Arbiter(l2BurstSize,memBurstSize,
       l2Cache, l2Latency,
       l1Arbs.toArray,
+      l2OnDone,
       (coreId, isHit) => {
         if(isHit) l2Hits(coreId)+=1;
       }
@@ -424,11 +474,11 @@ object Sim {
       },
       memLatency,
       Array(l2Arb),
+      (_,_) => None,
       (_,_) => Unit
     )
 
-    for(i <- 0 until 72056550*2
-    ) {
+    while(!memArb.isDone()) {
       val trig = memArb.triggerCycle()
     }
 
