@@ -18,7 +18,7 @@ class ArbiterTests extends AnyFunSuite {
 
           def serveMemoryAccess() = {};
         }
-      },(_,_) => (),
+      },(_,_) => None, (_,_) => (),
     )
 
     for (_ <- 0 until 10) {
@@ -28,7 +28,7 @@ class ArbiterTests extends AnyFunSuite {
   }
 
   test("Serve after latency") {
-    val latency = rand.nextInt(25)
+    val latency = 1+rand.nextInt(25)
     var arbiter = new Arbiter(1,8, new SoftCache(1,1,1) {
       override def getCacheLine(addr: Long, core: Int): Boolean = {
         false // Never hit
@@ -52,7 +52,7 @@ class ArbiterTests extends AnyFunSuite {
         };
 
         def serveMemoryAccess() = {};
-      }),(_,_) => (),
+      }),(_,_) => None,(_,_) => (),
     )
 
     assert(arbiter.requestMemoryAccess().contains(0)) // First core access
@@ -105,7 +105,7 @@ class ArbiterTests extends AnyFunSuite {
         };
 
         def serveMemoryAccess() = {};
-      }),(_,_) => (),
+      }),(_,_) => None,(_,_) => (),
     )
 
     val triggerCount = rand.nextInt(256)
@@ -143,7 +143,7 @@ class ArbiterTests extends AnyFunSuite {
         def serveMemoryAccess() = {
           servicedAccesses += 1
         };
-      }),(_,_) => (),
+      }),(_,_) => None,(_,_) => (),
     )
 
     val expectedServings = 1+rand.nextInt(25)
@@ -151,6 +151,154 @@ class ArbiterTests extends AnyFunSuite {
       arbiter.triggerCycle()
     }
     assert(servicedAccesses == expectedServings )
+  }
+
+  test("Report done") {
+    var latency = 2+rand.nextInt(25)
+    var done = false;
+    var arbiter = new Arbiter(1,8,
+      new SoftCache(1,1,1) {
+        override def getCacheLine(addr: Long, core: Int): Boolean = {
+          true // always hit
+        }
+
+        override def isHit(addr: Long): Option[(Int, Int)] = {
+          None
+        }
+
+        override def printAll(): Unit = {}
+
+        override def advanceCycle(): Unit = {}
+      },
+      latency,
+      Array(new TraceTraffic(1, Array(
+        new MemAccess(0,true, 20, 0),
+        new MemAccess(0,true, 56, 0)
+      ).toIterator,(_) => ())),
+      (_,_) => {
+        done = !done
+        None
+      },
+      (_,_) => (),
+    )
+
+    for(i <- 0 until 2+(latency*2)) {
+      assert(!arbiter.isDone())
+      assert(!done)
+      arbiter.triggerCycle()
+    }
+    assert(arbiter.isDone())
+    assert(done)
+  }
+
+  test("Report delayed done") {
+    var latency = 1+rand.nextInt(25)
+    var done = false;
+    val doneLatency = 1+rand.nextInt(10)
+    var arbiter = new Arbiter(1,8,
+      new SoftCache(1,1,1) {
+        override def getCacheLine(addr: Long, core: Int): Boolean = {
+          true // always hit
+        }
+
+        override def isHit(addr: Long): Option[(Int, Int)] = {
+          None
+        }
+
+        override def printAll(): Unit = {}
+
+        override def advanceCycle(): Unit = {}
+      },
+      latency,
+      Array(new Traffic {
+        var countdown:Option[Int] = None
+        var requested = false
+        override def burstSize: Int = 1
+
+        override def serveMemoryAccess(): Unit = {
+          assert(countdown.isEmpty)
+          countdown = Some(doneLatency)
+        }
+
+        override def requestMemoryAccess(): Option[Long] = {
+          if(!requested) {
+            requested = true
+            Some(0)
+          } else {
+            None
+          }
+        }
+
+        override def triggerCycle(): Unit = {
+          if(countdown.isDefined && countdown.get >0){
+            countdown = Some(countdown.get - 1)
+          }
+        }
+
+        override def isDone():Boolean = {
+          countdown.isDefined && (countdown.get == 0) && requested
+        }
+      }),
+      (_,_) => {
+        done = !done
+        None
+      },
+      (_,_) => (),
+    )
+
+    for(i <- 0 until 1+latency+doneLatency) {
+      assert(!arbiter.isDone())
+      assert(!done)
+      arbiter.triggerCycle()
+    }
+    assert(arbiter.isDone())
+    assert(done)
+  }
+
+  test("Change On Done") {
+    var latency = 2+rand.nextInt(25)
+    val newTraffic = () => new TraceTraffic(1, Array(
+      new MemAccess(0, true, 20, 0),
+      new MemAccess(0, true, 56, 0)
+    ).toIterator, (_) => ())
+    var accessCount = 0
+
+
+    var arbiter = new Arbiter(1,8,
+      new SoftCache(1,1,1) {
+        override def getCacheLine(addr: Long, core: Int): Boolean = {
+          accessCount +=1
+          true // always hit
+        }
+
+        override def isHit(addr: Long): Option[(Int, Int)] = {
+          None
+        }
+
+        override def printAll(): Unit = {}
+
+        override def advanceCycle(): Unit = {}
+      },
+      latency,
+      Array(newTraffic()),
+      (_,_) => {
+        Some(newTraffic())
+      },
+      (_,_) => (),
+    )
+
+    for(i <- 0 until 2+(latency*2)) {
+      assert(!arbiter.isDone())
+      arbiter.triggerCycle()
+    }
+    assert(!arbiter.isDone())
+    assert(accessCount == 2)
+    for(i <- 0 until 2+(latency*2)) {
+      assert(!arbiter.isDone())
+      arbiter.triggerCycle()
+    }
+    assert(!arbiter.isDone())
+    assert(accessCount == 4)
   }
 }
 
@@ -563,7 +711,53 @@ class TraceTrafficTests extends AnyFunSuite {
     assert(traf.requestMemoryAccess().isEmpty)
   }
 
+  test("Report done") {
+    var delay = rand.nextInt(300)
+    var latency = rand.nextInt(30)
 
+    var traf = new TraceTraffic(1, Array(
+      new MemAccess(0,true,1, delay),
+      new MemAccess(0,true,2, delay),
+      new MemAccess(0,true,3, delay),
+    ).toIterator,(_) => ())
+
+    assert(!traf.isDone())
+
+    assert(Range.apply(0, delay).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      assert(!traf.isDone())
+      result
+    }))
+    assert(traf.requestMemoryAccess().contains(1))
+    assert(!traf.isDone())
+    assert(Range.apply(0, latency).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      assert(!traf.isDone())
+      result
+    }))
+    traf.serveMemoryAccess()
+    assert(!traf.isDone())
+    assert(traf.requestMemoryAccess().contains(2))
+    assert(Range.apply(0, latency).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      assert(!traf.isDone())
+      result
+    }))
+    traf.serveMemoryAccess()
+    assert(!traf.isDone())
+    assert(traf.requestMemoryAccess().contains(3))
+    assert(Range.apply(0, latency).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      assert(!traf.isDone())
+      result
+    }))
+    traf.serveMemoryAccess()
+    assert(traf.isDone())
+  }
 
 }
 

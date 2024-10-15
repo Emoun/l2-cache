@@ -186,6 +186,23 @@ class ContentionCacheTest extends AnyFunSuite with LruTests[ContentionCache] {
     assert(cache.getCacheLine(18,1) == true)
   }
 
+  test("Low criticality cannot evict high criticality with contention lower than cost") {
+    val cache = createInstance(3,3,3,6);
+    cache.setCriticality(0, 3);
+
+    // Fill up set 0
+    cache.getCacheLine(0,0) // way 0
+    cache.getCacheLine(9,0) // way 1
+    cache.getCacheLine(18,0) // way 2
+
+    assert(cache.getCacheLine(27,1) == false) // try to use set 0 again
+    assert(cache.getCacheLine(27,1) == false) // Ensure did not get saved
+
+    assert(cache.getCacheLine(0,1) == true) // Ensure did get saved
+    assert(cache.getCacheLine(9,1) == true)
+    assert(cache.getCacheLine(18,1) == true)
+  }
+
   test("Low criticality evicts other low-criticality if high-criticality at limit") {
     val cache = createInstance(3,3,3,6);
     cache.setCriticality(0, 0);
@@ -546,6 +563,23 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
   test("Low criticality cannot evict high criticality at limit") {
     val cache = createInstance(3,3,3,6);
     cache.setCriticality(0, 0);
+
+    // Fill up set 0
+    cache.getCacheLine(0,0) // way 0
+    cache.getCacheLine(9,0) // way 1
+    cache.getCacheLine(18,0) // way 2
+
+    assert(cache.getCacheLine(27,1) == false) // try to use set 0 again
+    assert(cache.getCacheLine(27,1) == false) // Ensure did not get saved
+
+    assert(cache.getCacheLine(0,1) == true) // Ensure did get saved
+    assert(cache.getCacheLine(9,1) == true)
+    assert(cache.getCacheLine(18,1) == true)
+  }
+
+  test("Low criticality cannot evict high criticality with contention lower than cost") {
+    val cache = createInstance(3,3,3,6);
+    cache.setCriticality(0, 3);
 
     // Fill up set 0
     cache.getCacheLine(0,0) // way 0

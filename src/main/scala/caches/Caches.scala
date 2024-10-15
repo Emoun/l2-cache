@@ -229,6 +229,18 @@ trait PartitionedReplacement[T] extends ReplacementPolicy[T] {self: TrackingCach
     _partitions(wayIdx) = Some(coreId);
   }
 
+  /**
+   * Unassign the given core from any ways
+   * @param coreId
+   */
+  def unassignCore(coreId: Int): Unit = {
+    for(i <- 0 until ways) {
+      if(_partitions(i).isDefined && _partitions(i).get == coreId) {
+        _partitions(i) = None;
+      }
+    }
+  }
+
   override def getValidWays(coreId: Int, setIdx: Int): Array[Int] = {
 
     if(applyPartitioning(coreId)) {
@@ -271,7 +283,6 @@ class PartitionedCache(lineLength: Int, ways: Int, sets: Int) extends
 {
   override def defaultPayload(coreId: Int, setIdx: Int, wayIdx: Int): (Int, Unit) = {
     (0, Unit)
-
   }
 
   override def applyPartitioning(coreId: Int): Boolean = {
@@ -301,6 +312,10 @@ class ContentionCache(lineLength: Int, ways: Int, sets: Int, contentionCost: Int
     _contention(coreId) = contentionLimit;
   }
 
+  def unassign(coreId: Int): Unit = {
+    _contention.remove(coreId)
+  }
+
   override def defaultPayload(coreId: Int, setIdx: Int, wayIdx: Int): (Int, Int) = {
     (0, coreId)
   }
@@ -308,7 +323,7 @@ class ContentionCache(lineLength: Int, ways: Int, sets: Int, contentionCost: Int
   override def getValidWays(coreId: Int, setIdx: Int): Array[Int] = {
     val notLimited = Array.range(0, ways).filter(wayIdx => {
       _setArr(setIdx)(wayIdx) match {
-        case Some((_, (_, cId))) => !_contention.contains(cId) || (_contention(cId) != 0);
+        case Some((_, (_, cId))) => !_contention.contains(cId) || (_contention(cId) >=contentionCost);
         case None => true
       }
     });
@@ -489,6 +504,10 @@ class ContentionPartCache(lineLength: Int, ways: Int, sets: Int, contentionCost:
     _contention(coreId) = contentionLimit;
   }
 
+  def unassign(coreId: Int): Unit = {
+    _contention.remove(coreId)
+  }
+
   override def defaultPayload(coreId: Int, setIdx: Int, wayIdx: Int): (Int, Int) = {
     (0, coreId)
   }
@@ -496,7 +515,7 @@ class ContentionPartCache(lineLength: Int, ways: Int, sets: Int, contentionCost:
   override def getValidWays(coreId: Int, setIdx: Int): Array[Int] = {
     val notLimited = super.getValidWays(coreId, setIdx).filter(wayIdx => {
       _setArr(setIdx)(wayIdx) match {
-        case Some((_, (_, cId))) => !_contention.contains(cId) || (_contention(cId) != 0);
+        case Some((_, (_, cId))) => !_contention.contains(cId) || (_contention(cId) >= contentionCost);
         case None => true
       }
     });
