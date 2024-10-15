@@ -18,7 +18,7 @@ class ArbiterTests extends AnyFunSuite {
 
           def serveMemoryAccess() = {};
         }
-      }
+      },(_,_) => (),
     )
 
     for (_ <- 0 until 10) {
@@ -52,7 +52,7 @@ class ArbiterTests extends AnyFunSuite {
         };
 
         def serveMemoryAccess() = {};
-      })
+      }),(_,_) => (),
     )
 
     assert(arbiter.requestMemoryAccess().contains(0)) // First core access
@@ -105,7 +105,7 @@ class ArbiterTests extends AnyFunSuite {
         };
 
         def serveMemoryAccess() = {};
-      })
+      }),(_,_) => (),
     )
 
     val triggerCount = rand.nextInt(256)
@@ -143,7 +143,7 @@ class ArbiterTests extends AnyFunSuite {
         def serveMemoryAccess() = {
           servicedAccesses += 1
         };
-      })
+      }),(_,_) => (),
     )
 
     val expectedServings = 1+rand.nextInt(25)
@@ -159,13 +159,13 @@ class TraceTrafficTests extends AnyFunSuite {
   var rand: scala.util.Random = new scala.util.Random;
 
   test("Empty") {
-    var traf = new TraceTraffic(1, Array.empty.toIterator)
+    var traf = new TraceTraffic(1, Array.empty.toIterator,(_) => ())
 
     assert(Range.apply(0,100).forall(_ => traf.requestMemoryAccess().isEmpty))
   }
 
   test("Single") {
-    var traf = new TraceTraffic(1, Array(new MemAccess(0,true, 0, 0)).toIterator)
+    var traf = new TraceTraffic(1, Array(new MemAccess(0,true, 0, 0)).toIterator,(_) => ())
 
     assert(traf.requestMemoryAccess().isDefined)
     traf.serveMemoryAccess()
@@ -173,7 +173,7 @@ class TraceTrafficTests extends AnyFunSuite {
   }
 
   test("Single Double Size") {
-    var traf = new TraceTraffic(1, Array(new MemAccess(1,true, 0, 0)).toIterator)
+    var traf = new TraceTraffic(1, Array(new MemAccess(1,true, 0, 0)).toIterator,(_) => ())
 
     assert(traf.requestMemoryAccess().contains(0))
     traf.serveMemoryAccess()
@@ -183,7 +183,7 @@ class TraceTrafficTests extends AnyFunSuite {
   }
 
   test("Single Double Size 2") {
-    var traf = new TraceTraffic(2, Array(new MemAccess(2,true, 10, 0)).toIterator)
+    var traf = new TraceTraffic(2, Array(new MemAccess(2,true, 10, 0)).toIterator,(_) => ())
 
     assert(traf.requestMemoryAccess().contains(10))
     traf.serveMemoryAccess()
@@ -193,7 +193,7 @@ class TraceTrafficTests extends AnyFunSuite {
   }
 
   test("Single Quad Size") {
-    var traf = new TraceTraffic(2, Array(new MemAccess(3,true, 20, 0)).toIterator)
+    var traf = new TraceTraffic(2, Array(new MemAccess(3,true, 20, 0)).toIterator,(_) => ())
 
     assert(traf.requestMemoryAccess().contains(20))
     traf.serveMemoryAccess()
@@ -210,7 +210,7 @@ class TraceTrafficTests extends AnyFunSuite {
     var traf = new TraceTraffic(4, Array(
       new MemAccess(0,true, 20, 0),
       new MemAccess(0,true, 56, 0)
-    ).toIterator)
+    ).toIterator,(_) => ())
 
     assert(traf.requestMemoryAccess().contains(20))
     traf.serveMemoryAccess()
@@ -223,7 +223,7 @@ class TraceTrafficTests extends AnyFunSuite {
     var traf = new TraceTraffic(2, Array(
       new MemAccess(2,true, 20, 0),
       new MemAccess(0,true, 56, 0)
-    ).toIterator)
+    ).toIterator,(_) => ())
 
     assert(traf.requestMemoryAccess().contains(20))
     traf.serveMemoryAccess()
@@ -238,7 +238,7 @@ class TraceTrafficTests extends AnyFunSuite {
     var traf = new TraceTraffic(1, Array(
       new MemAccess(2,true, 16, 0),
       new MemAccess(1,true, 90, 0)
-    ).toIterator)
+    ).toIterator,(_) => ())
 
     assert(traf.requestMemoryAccess().contains(16))
     traf.serveMemoryAccess()
@@ -259,7 +259,7 @@ class TraceTrafficTests extends AnyFunSuite {
     var delay = rand.nextInt(300)
     var traf = new TraceTraffic(1, Array(
       new MemAccess(0,true, 16, delay)
-    ).toIterator)
+    ).toIterator,(_) => ())
 
     assert(Range.apply(0, delay).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
@@ -280,7 +280,7 @@ class TraceTrafficTests extends AnyFunSuite {
     var traf = new TraceTraffic(1, Array(
       new MemAccess(0,true, 16, delay),
       new MemAccess(0,true, 74, delay2)
-    ).toIterator)
+    ).toIterator,(_) => ())
 
     assert(Range.apply(0, delay).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
@@ -310,7 +310,7 @@ class TraceTrafficTests extends AnyFunSuite {
     var traf = new TraceTraffic(1, Array(
       new MemAccess(1,true, 16, delay),
       new MemAccess(0,true, 74, delay2)
-    ).toIterator)
+    ).toIterator,(_) => ())
 
     assert(Range.apply(0, delay).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
@@ -338,6 +338,232 @@ class TraceTrafficTests extends AnyFunSuite {
     }))
     assert(traf.requestMemoryAccess().contains(74))
   }
+
+  test("Unaligned burst-2 data-2") {
+    var delay = rand.nextInt(300)
+    var latency = rand.nextInt(30)
+
+    var traf = new TraceTraffic(2, Array(
+      new MemAccess(1,true, 1, delay),
+    ).toIterator,(_) => ())
+
+    assert(Range.apply(0, delay).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    assert(traf.requestMemoryAccess().contains(0))
+    assert(Range.apply(0, latency).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().contains(2))
+    assert(Range.apply(0, latency).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().isEmpty)
+  }
+
+  test("Unaligned burst-2 data-4") {
+    var delay = rand.nextInt(300)
+    var latency = rand.nextInt(30)
+
+    var traf = new TraceTraffic(2, Array(
+      new MemAccess(2,true, 1, delay),
+    ).toIterator,(_) => ())
+
+    assert(Range.apply(0, delay).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    assert(traf.requestMemoryAccess().contains(0))
+    assert(Range.apply(0, latency).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().contains(2))
+    assert(Range.apply(0, latency).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().contains(4))
+    assert(Range.apply(0, latency).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().isEmpty)
+  }
+
+  test("Aligned burst-2 data-4") {
+    var delay = rand.nextInt(300)
+    var latency = rand.nextInt(30)
+
+    var traf = new TraceTraffic(2, Array(
+      new MemAccess(2,true, 6, delay),
+    ).toIterator,(_) => ())
+
+    assert(Range.apply(0, delay).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    assert(traf.requestMemoryAccess().contains(6))
+    assert(Range.apply(0, latency).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().contains(8))
+    assert(Range.apply(0, latency).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().isEmpty)
+  }
+
+  test("Unaligned burst-2 data-8") {
+    var delay = rand.nextInt(300)
+    var latency = rand.nextInt(30)
+
+    var traf = new TraceTraffic(2, Array(
+      new MemAccess(3,true, 11, delay),
+    ).toIterator,(_) => ())
+
+    assert(Range.apply(0, delay).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    assert(traf.requestMemoryAccess().contains(10))
+    assert(Range.apply(0, latency).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().contains(12))
+    assert(Range.apply(0, latency).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().contains(14))
+    assert(Range.apply(0, latency).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().contains(16))
+    assert(Range.apply(0, latency).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().contains(18))
+    assert(Range.apply(0, latency).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().isEmpty)
+  }
+
+  test("Burst-unaligned burst-8 data-4") {
+    var delay = rand.nextInt(300)
+    var latency = rand.nextInt(30)
+
+    var traf = new TraceTraffic(8, Array(
+      new MemAccess(2,true, 4, delay),
+    ).toIterator,(_) => ())
+
+    assert(Range.apply(0, delay).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    assert(traf.requestMemoryAccess().contains(0))
+    assert(Range.apply(0, latency).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().isEmpty)
+  }
+
+  test("Burst-unaligned data-unaligned burst-8 data-4") {
+    var delay = rand.nextInt(300)
+    var latency = rand.nextInt(30)
+
+    var traf = new TraceTraffic(8, Array(
+      new MemAccess(2,true,3, delay),
+    ).toIterator,(_) => ())
+
+    assert(Range.apply(0, delay).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    assert(traf.requestMemoryAccess().contains(0))
+    assert(Range.apply(0, latency).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().isEmpty)
+  }
+
+  test("Burst-boundary crossing access") {
+    var delay = rand.nextInt(300)
+    var latency = rand.nextInt(30)
+
+    var traf = new TraceTraffic(8, Array(
+      new MemAccess(2,true,5, delay),
+    ).toIterator,(_) => ())
+
+    assert(Range.apply(0, delay).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    assert(traf.requestMemoryAccess().contains(0))
+    assert(Range.apply(0, latency).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().contains(8))
+    assert(Range.apply(0, latency).forall(_=> {
+      val result = traf.requestMemoryAccess().isEmpty
+      traf.triggerCycle()
+      result
+    }))
+    traf.serveMemoryAccess()
+    assert(traf.requestMemoryAccess().isEmpty)
+  }
+
+
 
 }
 

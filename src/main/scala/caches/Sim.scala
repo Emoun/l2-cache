@@ -52,7 +52,7 @@ class Arbiter(burstIn: Int, burstOut: Int, cache: SoftCache, latency:Int, cores:
 {
   require(cache.lineLength>=burstIn)
   require(cache.lineLength%burstIn == 0)
-  require(cores.forall( t => t.burstSize == burstIn))
+  require(cores.forall( c => c.burstSize == burstIn))
 
   override def burstSize: Int = burstOut
 
@@ -180,6 +180,25 @@ class TraceTraffic(s: Int, source: Iterator[MemAccess], reportLatency: (Int) => 
     waitingForServe = None;
 
   }
+
+  def isBurstAligned(address: Long): Boolean = {
+    address % burstSize == 0
+  }
+  def closestBurstAlignedAddress(address: Long): Long = {
+    address - (address % burstSize)
+  }
+  def accessesNeeded(size: Int, address: Long): Int = {
+    val aligned = isBurstAligned(address);
+
+    if(aligned) {
+      Math.ceil(size.toDouble / burstSize).toInt
+    } else {
+      val initialBurstSize = burstSize - (address % burstSize)
+      val remainingDataSize = size - initialBurstSize
+      Math.ceil(remainingDataSize.toDouble / burstSize).toInt + 1
+    }
+  }
+
   override def requestMemoryAccess(): Option[Long] = {
     if(waitingForServe.isDefined) return None;
 
@@ -190,18 +209,20 @@ class TraceTraffic(s: Int, source: Iterator[MemAccess], reportLatency: (Int) => 
 
         nextAccess = nextAccess.drop(1)
 
-        if (access.accessSize > burstSize) {
+        // Check for alignment with burstSize
+        val startAddr = closestBurstAlignedAddress(access.address)
+        val nrAccessesNeeded= accessesNeeded(access.accessSize, access.address)
+        if (nrAccessesNeeded > 1) {
           // We need to split the access into chunks
-          val chunks = access.accessSize / burstSize
-          Range.apply(0, chunks).foreach(idx => {
-            nextAccess = nextAccess :+ new MemAccess(log2(burstSize), access.isRead, access.address + (burstSize * idx), access.time)
+          Range.apply(0, nrAccessesNeeded).foreach(idx => {
+            nextAccess = nextAccess :+ new MemAccess(log2(burstSize), access.isRead, startAddr + (burstSize * idx), access.time)
           })
 
           // Run again on the split accesses
           requestMemoryAccess()
         } else {
           waitingForServe = Some(0)
-          Some(access.address)
+          Some(startAddr)
         }
       } else {
         // The next access is not ready
@@ -381,6 +402,11 @@ object Sim {
     })
 
     var l2Cache = new LruCache(64, 8, 16) // 64B line, 8-way set associative 8KB cache
+//    var l2Cache = new PartitionedCache(64, 8, 16) // 64B line, 8-way set associative 8KB cache
+//    for(i <- 0 until traceFiles.length) {
+//      l2Cache.assignWay(i,i)
+//    }
+
     var l2Arb = new Arbiter(l2BurstSize,memBurstSize,
       l2Cache, l2Latency,
       l1Arbs.toArray,
@@ -401,7 +427,6 @@ object Sim {
       (_,_) => Unit
     )
 
-    var counts = Array.fill(traceFiles.length){0}
     for(i <- 0 until 72056550*2
     ) {
       val trig = memArb.triggerCycle()
