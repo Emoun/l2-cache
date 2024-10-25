@@ -241,6 +241,25 @@ trait PartitionedReplacement[T] extends ReplacementPolicy[T] {self: TrackingCach
     }
   }
 
+  /**
+   * Returns the ways, if any, that are assigned to the given core
+   */
+  def getPartition(coreId: Int): Array[Int] = {
+    _partitions.zipWithIndex.filter(entry => {
+      if(entry._1.isDefined){
+        entry._1.contains(coreId)
+      } else {
+        false
+      }
+    }).map(entry => entry._2)
+  }
+
+  def getUnpartitioned(): Array[Int] = {
+    _partitions.zipWithIndex.filter(entry => {
+      entry._1.isEmpty
+    }).map(entry => entry._2)
+  }
+
   override def getValidWays(coreId: Int, setIdx: Int): Array[Int] = {
 
     if(applyPartitioning(coreId)) {
@@ -430,6 +449,14 @@ class TimeoutCache(lineLength: Int, ways: Int, sets: Int, timeout: Int)
     _priorities(wayIdx) = Some(coreId);
   }
 
+  def removePriority(coreId: Int) = {
+    for(i <- 0 until ways) {
+      if(_priorities(i).isDefined && _priorities(i).get == coreId) {
+        _priorities(i) = None;
+      }
+    }
+  }
+
   override def onHit(coreId: Int, setIdx: Int, wayIdx: Int): Unit = {
     super.onHit(coreId, setIdx, wayIdx)
     // Refresh timer if prioritized
@@ -483,7 +510,7 @@ class TimeoutCache(lineLength: Int, ways: Int, sets: Int, timeout: Int)
 }
 
 class ContentionPartCache(lineLength: Int, ways: Int, sets: Int, contentionCost: Int)
-// T is the ID of the core that loaded the line
+// T is the LRU counter and ID of the core that loaded the line
   extends TrackingCache[(Int,Int)](lineLength, ways, sets) with LRUReplacement[Int] with PartitionedReplacement[(Int,Int)]
 {
 
@@ -497,6 +524,7 @@ class ContentionPartCache(lineLength: Int, ways: Int, sets: Int, contentionCost:
   // Reduces the contention count for the given core (assuming it is high-criticality)
   def triggerContention(coreId: Int): Unit = {
     assert(_contention.contains(coreId));
+    assert(_contention(coreId) >= contentionCost);
     _contention(coreId) -= contentionCost;
   }
 
@@ -506,6 +534,7 @@ class ContentionPartCache(lineLength: Int, ways: Int, sets: Int, contentionCost:
 
   def unassign(coreId: Int): Unit = {
     _contention.remove(coreId)
+    super.unassignCore(coreId)
   }
 
   override def defaultPayload(coreId: Int, setIdx: Int, wayIdx: Int): (Int, Int) = {
@@ -525,7 +554,6 @@ class ContentionPartCache(lineLength: Int, ways: Int, sets: Int, contentionCost:
       notLimited
     } else {
       // All lines are occupied by limited cores
-
       if (_contention.contains(coreId)) {
         // Request is also from critical core, so choose any
         super.getValidWays(coreId, setIdx)
@@ -550,36 +578,60 @@ class ContentionPartCache(lineLength: Int, ways: Int, sets: Int, contentionCost:
     }
   }
 
+  def triggerContentionOrSuggestOther(coreId: Int, setIdx: Int, eviction: (Int, (Int, Int)), blockList: Array[Int]): Option[(Int, (Int, Int))] =
+  {
+    val (evictedWayIdx, (lruCount, ownerCoreId)) = eviction;
+
+    val evictedWay = _setArr(setIdx)(evictedWayIdx);
+    if(evictedWay.isDefined) {
+      val evictedCoreId = evictedWay.get._2._2;
+
+      if(_contention.contains(evictedCoreId)) {
+        // Evicted a critical core, check contention
+
+        // Trigger if critical is evicted by non-critical
+        val evictedByNonCrit = !_contention.contains(coreId);
+
+        // If another way in the partition (or non-partitioned) contains a non-critical line
+
+        val nonCritWaysInPart = sortValidWays(0, setIdx,
+          (getPartition(evictedCoreId).filter(wayIdx => {
+            _setArr(setIdx)(wayIdx) match {
+              case Some((_,(_,c))) => c != evictedCoreId;
+              case None => false;
+            }
+          }) ++ getUnpartitioned())
+          .filter(wayIdx => !blockList.contains(wayIdx))
+          .filter(wayIdx => evictedWayIdx != wayIdx)
+        )
+
+        val limited = !(_contention(evictedCoreId) >= contentionCost)
+
+        if(!limited) {
+          if(evictedByNonCrit || nonCritWaysInPart.length>0) {
+            triggerContention(evictedCoreId);
+          }
+          return Some(eviction)
+        } else {
+          if(nonCritWaysInPart.length>0) {
+            val newBlockList = blockList :+ evictedWayIdx;
+            return triggerContentionOrSuggestOther(coreId, setIdx, (nonCritWaysInPart(0),(lruCount, ownerCoreId)), newBlockList)
+          } else if(evictedByNonCrit) {
+            return None
+          } else {
+            return Some(eviction)
+          }
+        }
+      }
+    }
+    Some(eviction)
+  }
+
   override def onMiss(coreId: Int, setIdx: Int): Option[(Int, (Int, Int))] = {
     val miss = super.onMiss(coreId, setIdx);
 
     if(miss.isDefined) {
-      val (evictedWayIdx, _) = miss.get;
-
-      val evictedWay = _setArr(setIdx)(evictedWayIdx);
-      if(evictedWay.isDefined) {
-        val evictedCoreId = evictedWay.get._2._2;
-
-        if(_contention.contains(evictedCoreId)) {
-          // Evicted a critical core, check contention
-
-          // Trigger if critical is evicted by non-critical
-          val evictedByNonCrit = !_contention.contains(coreId);
-
-          // If another way contains a non-critical line
-          val existOtherNonCritWays = Array.range(0, ways).find( wayIdx =>{
-            _setArr(setIdx)(wayIdx) match {
-              case Some((_,(_,c))) => !_contention.contains(c);
-              case None => false;
-            }
-          });
-
-          if(!_contention.contains(coreId) || existOtherNonCritWays.isDefined) {
-            assert(_contention(evictedCoreId) > 0);
-            triggerContention(evictedCoreId);
-          }
-        }
-      }
+      return triggerContentionOrSuggestOther(coreId, setIdx, miss.get, Array.empty)
     }
     miss
   }
@@ -594,6 +646,20 @@ class ContentionPartCache(lineLength: Int, ways: Int, sets: Int, contentionCost:
   }
 
   override def applyPartitioning(coreId: Int): Boolean = {
-    _contention.contains(coreId)
+    _contention.contains(coreId) || getPartition(coreId).length > 0
+  }
+
+  override def sortValidWays(coreId: Int, setIdx: Int, toSort: Array[Int]): Array[Int] = {
+    val firstSort = super.sortValidWays(coreId, setIdx, toSort)
+
+    val coreIsCritical = _contention.contains(coreId) && _contention(coreId)<contentionCost
+    firstSort.sortBy(wayIdx => {
+      val lineNonCrit = _setArr(setIdx)(wayIdx).isEmpty || !_contention.contains(_setArr(setIdx)(wayIdx).get._2._2);
+      if(coreIsCritical && lineNonCrit) {
+        0 // Prefer non-critical lines to evict
+      } else {
+        1
+      }
+    })
   }
 }

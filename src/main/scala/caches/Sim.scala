@@ -444,8 +444,8 @@ object Sim {
       )
     })
 
-    var l2Cache = new LruCache(64, 8, 16) // 64B line, 8-way set associative 8KB cache
-    val l2OnDone  = (_:Int,_:SoftCache) => None;
+//    var l2Cache = new LruCache(64, 8, 16) // 64B line, 8-way set associative 8KB cache
+//    val l2OnDone  = (_:Int,_:SoftCache) => None;
 
 //    var l2Cache = new PartitionedCache(64, 8, 16) // 64B line, 8-way set associative 8KB cache
 //    l2Cache.assignWay(0,0)
@@ -485,13 +485,43 @@ object Sim {
 //      }
 //    };
 
-//    var l2Cache = new ContentionPartCache(64, 8, 16, memLatency) // 64B line, 8-way set associative 8KB cache
-//    l2Cache.setCriticality(0, 1000)
-//    l2Cache.setCriticality(1, 1000)
+    var l2Cache = new ContentionPartCache(64, 8, 16, memLatency) // 64B line, 8-way set associative 8KB cache
+    l2Cache.setCriticality(0, 1000)
+    l2Cache.setCriticality(1, 1000)
+    l2Cache.assignWay(0,0)
+    l2Cache.assignWay(0,1)
+    l2Cache.assignWay(0,2)
+    l2Cache.assignWay(0,3)
+    l2Cache.assignWay(1,4)
+    l2Cache.assignWay(1,5)
+    l2Cache.assignWay(1,6)
+    l2Cache.assignWay(1,7)
+    val l2OnDone  = (coreId:Int,cache:SoftCache) => {
+      cache match {
+        case conCache: ContentionPartCache => {
+          conCache.unassign(coreId)
+          None
+        }
+        case _ => {
+          assert(false)
+          None
+        }
+      }
+    };
+
+//    var l2Cache = new TimeoutCache(64, 8, 16, 100000) // 64B line, 8-way set associative 8KB cache
+//    l2Cache.setPriority(0,0)
+//    l2Cache.setPriority(0,1)
+//    l2Cache.setPriority(0,2)
+//    l2Cache.setPriority(0,3)
+//    l2Cache.setPriority(1,4)
+//    l2Cache.setPriority(1,5)
+//    l2Cache.setPriority(1,6)
+//    l2Cache.setPriority(1,7)
 //    val l2OnDone  = (coreId:Int,cache:SoftCache) => {
 //      cache match {
-//        case conCache: ContentionPartCache => {
-//          conCache.unassign(coreId)
+//        case timeCache: TimeoutCache => {
+//          timeCache.removePriority(coreId)
 //          None
 //        }
 //        case _ => {

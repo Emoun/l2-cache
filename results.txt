@@ -1,0 +1,124 @@
+
+Lru:
+
+64 alone (64, 8, 16):
+Count: 195697, L1 Hits: 161831, L1 Hit Pct: 0.826947, L2 Hits: 25118, L2 Hit Pct: 0.741688, Avg. Latency: 3.099654
+64 alone (64, 4, 16):
+Count: 195697, L1 Hits: 161831, L1 Hit Pct: 0.826947, L2 Hits: 22266, L2 Hit Pct: 0.657474, Avg. Latency: 3.332831
+
+65 alone (64, 8, 16):
+Count: 187528, L1 Hits: 156497, L1 Hit Pct: 0.834526, L2 Hits: 23391, L2 Hit Pct: 0.753795, Avg. Latency: 2.975641
+65 alone (64, 4, 16):
+Count: 187528, L1 Hits: 156497, L1 Hit Pct: 0.834526, L2 Hits: 20825, L2 Hit Pct: 0.671103, Avg. Latency: 3.194574
+
+
+Count: 195697, L1 Hits: 161831, L1 Hit Pct: 0.826947, L2 Hits: 24427, L2 Hit Pct: 0.721284, Avg. Latency: 3.784187
+Count: 187528, L1 Hits: 156497, L1 Hit Pct: 0.834526, L2 Hits: 22325, L2 Hit Pct: 0.719442, Avg. Latency: 3.646901
+Count: 181885, L1 Hits: 153069, L1 Hit Pct: 0.841570, L2 Hits: 20802, L2 Hit Pct: 0.721891, Avg. Latency: 3.676867
+Count: 185728, L1 Hits: 155943, L1 Hit Pct: 0.839631, L2 Hits: 20831, L2 Hit Pct: 0.699379, Avg. Latency: 3.941732
+
+Count: 195697, L1 Hits: 161831, L1 Hit Pct: 0.826947, L2 Hits: 22840, L2 Hit Pct: 0.674423, Avg. Latency: 6.701431
+Count: 187528, L1 Hits: 156497, L1 Hit Pct: 0.834526, L2 Hits: 20945, L2 Hit Pct: 0.674970, Avg. Latency: 6.411373
+Count: 181885, L1 Hits: 153069, L1 Hit Pct: 0.841570, L2 Hits: 19355, L2 Hit Pct: 0.671675, Avg. Latency: 6.057360
+Count: 185728, L1 Hits: 155943, L1 Hit Pct: 0.839631, L2 Hits: 19970, L2 Hit Pct: 0.670472, Avg. Latency: 6.141853
+Count: 191147, L1 Hits: 158462, L1 Hit Pct: 0.829006, L2 Hits: 22329, L2 Hit Pct: 0.683157, Avg. Latency: 5.995187
+Count: 185835, L1 Hits: 156579, L1 Hit Pct: 0.842570, L2 Hits: 19744, L2 Hit Pct: 0.674870, Avg. Latency: 6.620604
+Count: 179771, L1 Hits: 151775, L1 Hit Pct: 0.844269, L2 Hits: 19237, L2 Hit Pct: 0.687134, Avg. Latency: 6.902927
+Count: 189310, L1 Hits: 158813, L1 Hit Pct: 0.838904, L2 Hits: 20669, L2 Hit Pct: 0.677739, Avg. Latency: 6.910507
+
+-----------------------------------------------------------------------------------------------------------------------------
+
+Partitioned (Assignments: (0,0)(0,1)(0,2)(0,3)(1,4)(1,5)(1,6)(1,7)
+Count: 195697, L1 Hits: 161831, L1 Hit Pct: 0.826947, L2 Hits: 24070, L2 Hit Pct: 0.710742, Avg. Latency: 3.938589
+Count: 187528, L1 Hits: 156497, L1 Hit Pct: 0.834526, L2 Hits: 22566, L2 Hit Pct: 0.727208, Avg. Latency: 3.808349
+Count: 181885, L1 Hits: 153069, L1 Hit Pct: 0.841570, L2 Hits: 17144, L2 Hit Pct: 0.594947, Avg. Latency: 3.946686
+Count: 185728, L1 Hits: 155943, L1 Hit Pct: 0.839631, L2 Hits: 12925, L2 Hit Pct: 0.433943, Avg. Latency: 4.600889
+
+Count: 195697, L1 Hits: 161831, L1 Hit Pct: 0.826947, L2 Hits: 24205, L2 Hit Pct: 0.714729, Avg. Latency: 9.396823
+Count: 187528, L1 Hits: 156497, L1 Hit Pct: 0.834526, L2 Hits: 22169, L2 Hit Pct: 0.714415, Avg. Latency: 8.054776
+Count: 181885, L1 Hits: 153069, L1 Hit Pct: 0.841570, L2 Hits: 12985, L2 Hit Pct: 0.450618, Avg. Latency: 7.958342
+Count: 185728, L1 Hits: 155943, L1 Hit Pct: 0.839631, L2 Hits: 10564, L2 Hit Pct: 0.354675, Avg. Latency: 9.219256
+Count: 191147, L1 Hits: 158462, L1 Hit Pct: 0.829006, L2 Hits: 12667, L2 Hit Pct: 0.387548, Avg. Latency: 8.640355
+Count: 185835, L1 Hits: 156579, L1 Hit Pct: 0.842570, L2 Hits: 14750, L2 Hit Pct: 0.504170, Avg. Latency: 8.639427
+Count: 179771, L1 Hits: 151775, L1 Hit Pct: 0.844269, L2 Hits: 6747, L2 Hit Pct: 0.240999, Avg. Latency: 10.387315
+Count: 189310, L1 Hits: 158813, L1 Hit Pct: 0.838904, L2 Hits: 13176, L2 Hit Pct: 0.432042, Avg. Latency: 9.541577
+
+-----------------------------------------------------------------------------------------------------------------------------
+
+Contention (criticals: 0,1 Amount: 1000)
+Count: 195697, L1 Hits: 161831, L1 Hit Pct: 0.826947, L2 Hits: 24936, L2 Hit Pct: 0.736314, Avg. Latency: 3.924588
+Count: 187528, L1 Hits: 156497, L1 Hit Pct: 0.834526, L2 Hits: 22838, L2 Hit Pct: 0.735974, Avg. Latency: 4.080436
+Count: 181885, L1 Hits: 153069, L1 Hit Pct: 0.841570, L2 Hits: 11507, L2 Hit Pct: 0.399327, Avg. Latency: 4.562658
+Count: 185728, L1 Hits: 155943, L1 Hit Pct: 0.839631, L2 Hits: 10259, L2 Hit Pct: 0.344435, Avg. Latency: 4.964561
+
+Count: 195697, L1 Hits: 161831, L1 Hit Pct: 0.826947, L2 Hits: 24853, L2 Hit Pct: 0.733863, Avg. Latency: 9.313633
+Count: 187528, L1 Hits: 156497, L1 Hit Pct: 0.834526, L2 Hits: 22932, L2 Hit Pct: 0.739003, Avg. Latency: 9.214965
+Count: 181885, L1 Hits: 153069, L1 Hit Pct: 0.841570, L2 Hits: 7888, L2 Hit Pct: 0.273737, Avg. Latency: 8.913583
+Count: 185728, L1 Hits: 155943, L1 Hit Pct: 0.839631, L2 Hits: 7689, L2 Hit Pct: 0.258150, Avg. Latency: 9.798210
+Count: 191147, L1 Hits: 158462, L1 Hit Pct: 0.829006, L2 Hits: 7708, L2 Hit Pct: 0.235827, Avg. Latency: 9.855336
+Count: 185835, L1 Hits: 156579, L1 Hit Pct: 0.842570, L2 Hits: 11139, L2 Hit Pct: 0.380742, Avg. Latency: 9.549052
+Count: 179771, L1 Hits: 151775, L1 Hit Pct: 0.844269, L2 Hits: 6378, L2 Hit Pct: 0.227818, Avg. Latency: 10.318071
+Count: 189310, L1 Hits: 158813, L1 Hit Pct: 0.838904, L2 Hits: 12174, L2 Hit Pct: 0.399187, Avg. Latency: 9.918398
+
+-----------------------------------------------------------------------------------------------------------------------------
+
+ContentionPartitioned (criticals: 0,1 Amount: 1000)
+Count: 195697, L1 Hits: 161831, L1 Hit Pct: 0.826947, L2 Hits: 24101, L2 Hit Pct: 0.711658, Avg. Latency: 3.930965
+Count: 187528, L1 Hits: 156497, L1 Hit Pct: 0.834526, L2 Hits: 20331, L2 Hit Pct: 0.655184, Avg. Latency: 4.307858
+Count: 181885, L1 Hits: 153069, L1 Hit Pct: 0.841570, L2 Hits: 12672, L2 Hit Pct: 0.439756, Avg. Latency: 4.528108
+Count: 185728, L1 Hits: 155943, L1 Hit Pct: 0.839631, L2 Hits: 10271, L2 Hit Pct: 0.344838, Avg. Latency: 5.019157
+
+Count: 195697, L1 Hits: 161831, L1 Hit Pct: 0.826947, L2 Hits: 24007, L2 Hit Pct: 0.708882, Avg. Latency: 9.362811
+Count: 187528, L1 Hits: 156497, L1 Hit Pct: 0.834526, L2 Hits: 20291, L2 Hit Pct: 0.653894, Avg. Latency: 9.685722
+Count: 181885, L1 Hits: 153069, L1 Hit Pct: 0.841570, L2 Hits: 8025, L2 Hit Pct: 0.278491, Avg. Latency: 9.337059
+Count: 185728, L1 Hits: 155943, L1 Hit Pct: 0.839631, L2 Hits: 6771, L2 Hit Pct: 0.227329, Avg. Latency: 10.003284
+Count: 191147, L1 Hits: 158462, L1 Hit Pct: 0.829006, L2 Hits: 6219, L2 Hit Pct: 0.190271, Avg. Latency: 10.388246
+Count: 185835, L1 Hits: 156579, L1 Hit Pct: 0.842570, L2 Hits: 10910, L2 Hit Pct: 0.372915, Avg. Latency: 9.862878
+Count: 179771, L1 Hits: 151775, L1 Hit Pct: 0.844269, L2 Hits: 8015, L2 Hit Pct: 0.286291, Avg. Latency: 9.942794
+Count: 189310, L1 Hits: 158813, L1 Hit Pct: 0.838904, L2 Hits: 11519, L2 Hit Pct: 0.377709, Avg. Latency: 10.100238
+
+-----------------------------------------------------------------------------------------------------------------------------
+
+Timeout (Assignments: (0,0)(0,1)(0,2)(0,3)(1,4)(1,5)(1,6)(1,7), timeout: 100) 
+
+Count: 195697, L1 Hits: 161831, L1 Hit Pct: 0.826947, L2 Hits: 22578, L2 Hit Pct: 0.666686, Avg. Latency: 6.715003
+Count: 187528, L1 Hits: 156497, L1 Hit Pct: 0.834526, L2 Hits: 20668, L2 Hit Pct: 0.666044, Avg. Latency: 6.421740
+Count: 181885, L1 Hits: 153069, L1 Hit Pct: 0.841570, L2 Hits: 19447, L2 Hit Pct: 0.674868, Avg. Latency: 6.064662
+Count: 185728, L1 Hits: 155943, L1 Hit Pct: 0.839631, L2 Hits: 20060, L2 Hit Pct: 0.673493, Avg. Latency: 6.140517
+Count: 191147, L1 Hits: 158462, L1 Hit Pct: 0.829006, L2 Hits: 22272, L2 Hit Pct: 0.681413, Avg. Latency: 6.009961
+Count: 185835, L1 Hits: 156579, L1 Hit Pct: 0.842570, L2 Hits: 19832, L2 Hit Pct: 0.677878, Avg. Latency: 6.623101
+Count: 179771, L1 Hits: 151775, L1 Hit Pct: 0.844269, L2 Hits: 19244, L2 Hit Pct: 0.687384, Avg. Latency: 6.913295
+Count: 189310, L1 Hits: 158813, L1 Hit Pct: 0.838904, L2 Hits: 20712, L2 Hit Pct: 0.679149, Avg. Latency: 6.922508
+
+timeout 1000
+
+Count: 195697, L1 Hits: 161831, L1 Hit Pct: 0.826947, L2 Hits: 22572, L2 Hit Pct: 0.666509, Avg. Latency: 6.713573
+Count: 187528, L1 Hits: 156497, L1 Hit Pct: 0.834526, L2 Hits: 20857, L2 Hit Pct: 0.672134, Avg. Latency: 6.410947
+Count: 181885, L1 Hits: 153069, L1 Hit Pct: 0.841570, L2 Hits: 19392, L2 Hit Pct: 0.672959, Avg. Latency: 6.020678
+Count: 185728, L1 Hits: 155943, L1 Hit Pct: 0.839631, L2 Hits: 20205, L2 Hit Pct: 0.678362, Avg. Latency: 6.124709
+Count: 191147, L1 Hits: 158462, L1 Hit Pct: 0.829006, L2 Hits: 22230, L2 Hit Pct: 0.680128, Avg. Latency: 6.056250
+Count: 185835, L1 Hits: 156579, L1 Hit Pct: 0.842570, L2 Hits: 19706, L2 Hit Pct: 0.673571, Avg. Latency: 6.611607
+Count: 179771, L1 Hits: 151775, L1 Hit Pct: 0.844269, L2 Hits: 19305, L2 Hit Pct: 0.689563, Avg. Latency: 6.886016
+Count: 189310, L1 Hits: 158813, L1 Hit Pct: 0.838904, L2 Hits: 20724, L2 Hit Pct: 0.679542, Avg. Latency: 6.908647
+
+timeout 10000
+
+Count: 195697, L1 Hits: 161831, L1 Hit Pct: 0.826947, L2 Hits: 23251, L2 Hit Pct: 0.686559, Avg. Latency: 6.778898
+Count: 187528, L1 Hits: 156497, L1 Hit Pct: 0.834526, L2 Hits: 21622, L2 Hit Pct: 0.696787, Avg. Latency: 6.477795
+Count: 181885, L1 Hits: 153069, L1 Hit Pct: 0.841570, L2 Hits: 18902, L2 Hit Pct: 0.655955, Avg. Latency: 6.102400
+Count: 185728, L1 Hits: 155943, L1 Hit Pct: 0.839631, L2 Hits: 19455, L2 Hit Pct: 0.653181, Avg. Latency: 6.179757
+Count: 191147, L1 Hits: 158462, L1 Hit Pct: 0.829006, L2 Hits: 21791, L2 Hit Pct: 0.666697, Avg. Latency: 6.024233
+Count: 185835, L1 Hits: 156579, L1 Hit Pct: 0.842570, L2 Hits: 18938, L2 Hit Pct: 0.647320, Avg. Latency: 6.709027
+Count: 179771, L1 Hits: 151775, L1 Hit Pct: 0.844269, L2 Hits: 18332, L2 Hit Pct: 0.654808, Avg. Latency: 7.063931
+Count: 189310, L1 Hits: 158813, L1 Hit Pct: 0.838904, L2 Hits: 20030, L2 Hit Pct: 0.656786, Avg. Latency: 7.028916
+
+timeout 100000
+
+Count: 195697, L1 Hits: 161831, L1 Hit Pct: 0.826947, L2 Hits: 20017, L2 Hit Pct: 0.591065, Avg. Latency: 7.720067
+Count: 187528, L1 Hits: 156497, L1 Hit Pct: 0.834526, L2 Hits: 19813, L2 Hit Pct: 0.638491, Avg. Latency: 7.202210
+Count: 181885, L1 Hits: 153069, L1 Hit Pct: 0.841570, L2 Hits: 17868, L2 Hit Pct: 0.620072, Avg. Latency: 6.465882
+Count: 185728, L1 Hits: 155943, L1 Hit Pct: 0.839631, L2 Hits: 18752, L2 Hit Pct: 0.629579, Avg. Latency: 6.578448
+Count: 191147, L1 Hits: 158462, L1 Hit Pct: 0.829006, L2 Hits: 20519, L2 Hit Pct: 0.627780, Avg. Latency: 6.347460
+Count: 185835, L1 Hits: 156579, L1 Hit Pct: 0.842570, L2 Hits: 17344, L2 Hit Pct: 0.592836, Avg. Latency: 7.554766
+Count: 179771, L1 Hits: 151775, L1 Hit Pct: 0.844269, L2 Hits: 14885, L2 Hit Pct: 0.531683, Avg. Latency: 8.426999
+Count: 189310, L1 Hits: 158813, L1 Hit Pct: 0.838904, L2 Hits: 18503, L2 Hit Pct: 0.606715, Avg. Latency: 7.906164

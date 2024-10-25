@@ -548,7 +548,7 @@ class TimeoutCacheTest extends AnyFunSuite with LruTests[TimeoutCache] {
 
 }
 
-class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCache] {
+class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCache] with PartitionedTests[ContentionPartCache] {
   override def className: String = "ContentionPartCache"
 
   override def createInstance(lineLength: Int, ways: Int, sets: Int): ContentionPartCache = {
@@ -727,38 +727,6 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     assert(cache.getCacheLine(52,0) == true)
   }
 
-  test("Critical may evict critical without contention") {
-    val cache = createInstance(2,2,2,20);
-    cache.setCriticality(0, 10);
-    cache.setCriticality(1, 0);
-
-    // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(4,0) // way 1
-
-    assert(cache.getCacheLine(8,1) == false) // try to use set 0
-    assert(cache.getCacheLine(8,1) == true) // Ensure was saved
-    assert(cache.getCacheLine(12,1) == false) // try again
-    assert(cache.getCacheLine(8,1) == true) // Ensure was saved
-    assert(cache.getCacheLine(12,1) == true)
-  }
-
-  test("Critical may evict critical without contention 2") {
-    val cache = createInstance(2,2,2,20);
-    cache.setCriticality(0, 0);
-    cache.setCriticality(1, 0);
-
-    // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(4,0) // way 1
-
-    assert(cache.getCacheLine(8,1) == false) // try to use set 0
-    assert(cache.getCacheLine(8,1) == true) // Ensure was saved
-    assert(cache.getCacheLine(12,1) == false) // try again
-    assert(cache.getCacheLine(8,1) == true) // Ensure was saved
-    assert(cache.getCacheLine(12,1) == true)
-  }
-
   test("Critical hit on non-critical line increases contention limit") {
     val cache = createInstance(2,2,2,20);
     cache.setCriticality(0, 0);
@@ -816,6 +784,8 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     assert(cache.getCacheLine(4,0) == true) // Ensure was not evicted
   }
 
+  ////////////////////////////////////////////////////////////////////////////////////
+
   test("Critical can only evict own partition") {
     val cache = createInstance(2,2,2,50);
     cache.setCriticality(0, 0);
@@ -863,6 +833,29 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     assert(cache.getCacheLine(8,1) == false) // Ensure did not work
   }
 
+  test("Critical can only evict own partition 4") {
+    val cache = createInstance(2,4,2,50);
+    cache.setCriticality(0, 0);
+    cache.setCriticality(1, 0);
+    cache.assignWay(0,0);
+    cache.assignWay(0,1);
+    cache.assignWay(1,2);
+    cache.assignWay(1,3);
+
+    // Fill up set 0
+    cache.getCacheLine(0,0) // way 0
+    cache.getCacheLine(4,0) // way 1
+    cache.getCacheLine(8,1) // way 2
+    cache.getCacheLine(12,1) // way 3
+
+
+    assert(cache.getCacheLine(16,1) == false) // Try to evict
+    assert(cache.getCacheLine(16,1) == true) // Ensure evicted self
+    assert(cache.getCacheLine(0,0) == true)
+    assert(cache.getCacheLine(4,0) == true)
+    assert(cache.getCacheLine(12,1) == true)
+  }
+
   test("Critical can evict unassigned way") {
     val cache = createInstance(2,2,2,50);
     cache.setCriticality(0, 200);
@@ -880,7 +873,7 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
 
   test("Non-critical can evict unlimited assigned way") {
     val cache = createInstance(2,2,2,50);
-    cache.setCriticality(0, 200);
+    cache.setCriticality(0, 50);
     cache.assignWay(0,0);
     cache.assignWay(0,1);
 
@@ -890,7 +883,217 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
 
     assert(cache.getCacheLine(8,1) == false) // Try to evict
     assert(cache.getCacheLine(8,1) == true) // Ensure did work
+    assert(cache.getCacheLine(4,0) == true)
   }
 
+  test("Non-critical can evict non-critical from limited assigned way") {
+    val cache = createInstance(2,2,2,50);
+    cache.setCriticality(0, 0);
+    cache.assignWay(0,0);
+    cache.assignWay(0,1);
+
+    // Fill up set 0
+    cache.getCacheLine(0,0) // way 0
+    cache.getCacheLine(4,1) // way 1
+
+    assert(cache.getCacheLine(8,1) == false) // Try to evict
+    assert(cache.getCacheLine(8,1) == true) // Ensure can evict non-critical
+    assert(cache.getCacheLine(0,0) == true) // Ensure critical was not evicted
+  }
+
+  test("Non-critical cannot evict limited assigned way") {
+    val cache = createInstance(2,2,2,50);
+    cache.setCriticality(0, 0);
+    cache.assignWay(0,0);
+    cache.assignWay(0,1);
+
+    // Fill up set 0
+    cache.getCacheLine(0,0) // way 0
+    cache.getCacheLine(4,0) // way 1
+
+    assert(cache.getCacheLine(8,1) == false) // Try to evict
+    assert(cache.getCacheLine(8,1) == false) // Ensure did not work
+    assert(cache.getCacheLine(0,0) == true)
+    assert(cache.getCacheLine(4,0) == true)
+  }
+
+  test("Limited critical self-eviction") {
+    val cache = createInstance(2,2,2,50);
+    cache.setCriticality(0, 0);
+    cache.setCriticality(1, 100);
+    cache.assignWay(0,0);
+    cache.assignWay(1,1);
+
+    // Fill up set 0
+    cache.getCacheLine(0,0) // way 0
+    cache.getCacheLine(4,4) // way 1
+
+    assert(cache.getCacheLine(8,0) == false) // Try to evict self
+    assert(cache.getCacheLine(8,0) == true) // Ensure did work
+    assert(cache.getCacheLine(4,4) == true) // Ensure did not use other partition
+  }
+
+  test("Non-critical evict of critical in non-assigned") {
+    val cache = createInstance(2,2,2,50);
+    cache.setCriticality(0, 50);
+    cache.assignWay(0,0);
+
+    // Fill up set 0
+    cache.getCacheLine(0,0) // way 0
+    cache.getCacheLine(4,0) // way 1
+
+    assert(cache.getCacheLine(8,1) == false) // Try to evict with on-critical
+    assert(cache.getCacheLine(8,1) == true) // Ensure did work
+    assert(cache.getCacheLine(4,0) == true)
+
+    assert(cache.getCacheLine(12,1) == false) // Try to evict with on-critical again
+    assert(cache.getCacheLine(12,1) == true) // Ensure did not evict critical
+    assert(cache.getCacheLine(4,0) == true)
+    assert(cache.getCacheLine(8,1) == false)
+  }
+
+  test("Evict only own partition 2") {
+    val cache = createInstance(3,3,3,10);
+    cache.setCriticality(0, 10)
+    cache.setCriticality(1, 10)
+    cache.setCriticality(2, 10)
+    cache.assignWay(0, 0); // Each core gets a way
+    cache.assignWay(1, 1);
+    cache.assignWay(2, 2);
+
+    // Fill up set 0
+    cache.getCacheLine(0,0) // way 0
+    cache.getCacheLine(9,1) // way 1
+    cache.getCacheLine(18,2) // way 2
+
+    assert(cache.getCacheLine(27,2) == false) // try to use set 0 again
+    assert(cache.getCacheLine(27,2) == true) // Ensure did get saved
+
+    assert(cache.getCacheLine(0,0) == true) // Ensure was not evicted
+    assert(cache.getCacheLine(9,1) == true) // Ensure was not evicted
+  }
+
+  test("Limited critical prefer evicting non-critical in own partition") {
+    val cache = createInstance(2,2,2,10);
+    cache.setCriticality(0, 0)
+    cache.assignWay(0, 0);
+    cache.assignWay(0, 1);
+
+    // Fill up set 0
+    cache.getCacheLine(0,0) // way 0
+    cache.getCacheLine(4,1) // way 1
+
+    assert(cache.getCacheLine(8,0) == false) // Get critical
+    assert(cache.getCacheLine(8,0) == true) // Ensure did get saved
+
+    assert(cache.getCacheLine(0,0) == true) // Ensure was not evicted
+  }
+
+  test("Unlimited critical doesn't prefer evicting non-critical in own partition") {
+    val cache = createInstance(2,2,2,10);
+    cache.setCriticality(0, 10)
+    cache.assignWay(0, 0);
+    cache.assignWay(0, 1);
+
+    // Fill up set 0
+    cache.getCacheLine(0,0) // way 0
+    cache.getCacheLine(4,1) // way 1
+
+    assert(cache.getCacheLine(8,0) == false) // Get critical
+    assert(cache.getCacheLine(8,0) == true) // Ensure did get saved
+    assert(cache.getCacheLine(4,1) == true) // Ensure was not evicted
+
+    assert(cache.getCacheLine(12,0) == false) // Try again, now as limited
+    assert(cache.getCacheLine(12,0) == true) // Try again, now as limited
+    assert(cache.getCacheLine(8,0) == true) // Ensure did get saved
+  }
+
+  test("Unlimited critical doesn't prefer evicting non-critical in unassigned") {
+    val cache = createInstance(2,2,2,10);
+    cache.setCriticality(0, 10)
+    cache.assignWay(0, 0);
+
+    // Fill up set 0
+    cache.getCacheLine(0,0) // way 0
+    cache.getCacheLine(4,1) // way 1
+
+    assert(cache.getCacheLine(8,0) == false) // Get critical
+    assert(cache.getCacheLine(8,0) == true) // Ensure did get saved
+    assert(cache.getCacheLine(4,1) == true) // Ensure was not evicted
+
+    assert(cache.getCacheLine(12,0) == false) // Try again, now limited
+    assert(cache.getCacheLine(12,0) == true) // Ensure did get saved
+    assert(cache.getCacheLine(8,0) == true) // Ensure was not evicted
+  }
+
+  test("Limited critical prefers evicting non-critical in unassigned") {
+    val cache = createInstance(2,2,2,10);
+    cache.setCriticality(0, 0)
+    cache.assignWay(0, 0);
+
+    // Fill up set 0
+    cache.getCacheLine(0,0) // way 0
+    cache.getCacheLine(4,1) // way 1
+
+    assert(cache.getCacheLine(8,0) == false) // Get critical
+    assert(cache.getCacheLine(8,0) == true) // Ensure did get saved
+
+    assert(cache.getCacheLine(0,0) == true) // Ensure was not evicted
+  }
+
+  test("Critical may evict unassigned") {
+    val cache = createInstance(2,2,2,10);
+    cache.setCriticality(0, 10)
+    cache.assignWay(0, 1);
+
+    // Fill up set 0
+    cache.getCacheLine(0,1) // way 0
+    cache.getCacheLine(4,0) // way 1
+
+    assert(cache.getCacheLine(8,0) == false) // Get critical
+    assert(cache.getCacheLine(8,0) == true) // Ensure did get saved
+
+    assert(cache.getCacheLine(4,0) == true) // Ensure was not evicted
+  }
+
+  test("Non-critical triggers contention if evicting critical in unassigned") {
+    val cache = createInstance(2,2,2,10);
+    cache.setCriticality(0, 10)
+    cache.assignWay(0, 1);
+
+    // Fill up set 0
+    cache.getCacheLine(0,0) // way 0
+    cache.getCacheLine(4,0) // way 1
+
+    assert(cache.getCacheLine(8,1) == false) // Get non-critical
+    assert(cache.getCacheLine(8,1) == true) // Ensure did get saved
+    assert(cache.getCacheLine(4,0) == true) // Ensure was not evicted
+
+    // Fill up set 0
+    cache.getCacheLine(0,0) // way 0
+    cache.getCacheLine(4,0) // way 1
+
+    assert(cache.getCacheLine(8,1) == false) // Try again
+    assert(cache.getCacheLine(8,1) == false) // Ensure failed because critical is now limited
+    assert(cache.getCacheLine(0,0) == true) // Ensure was not evicted
+    assert(cache.getCacheLine(4,0) == true) // Ensure was not evicted
+
+  }
+
+  test("Non-critical evicts non-critical in uassigned with other limited critical") {
+    val cache = createInstance(2,3,2,10);
+    cache.setCriticality(0, 0)
+    cache.assignWay(0, 0);
+
+    // Fill up set 0
+    cache.getCacheLine(0,0) // way 0
+    cache.getCacheLine(4,0) // way 1
+    cache.getCacheLine(8,1) // way 1
+
+    assert(cache.getCacheLine(12,1) == false) // Get non-critical
+    assert(cache.getCacheLine(12,1) == true) // Ensure did get saved
+    assert(cache.getCacheLine(0,0) == true) // Ensure was not evicted
+    assert(cache.getCacheLine(4,0) == true) // Ensure was not evicted
+  }
 
 }
