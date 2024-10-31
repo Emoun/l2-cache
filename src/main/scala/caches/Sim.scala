@@ -12,6 +12,15 @@ case class DAR(dsz: Int, addr: Long, timeStamp: Long) extends LogEntry
 case class DAWS(dsz: Int, addr: Long, timeStamp: Long) extends LogEntry
 case class DARS(dsz: Int, addr: Long, timeStamp: Long) extends LogEntry
 
+sealed trait RequestState
+// Request is ready but has yet to be issued
+case object Waiting extends RequestState
+// Request has been issued but has yet to be replied to
+case object Issued extends RequestState
+// Request has been issued and replied to and is currently being service with the given latency left
+case class Servicing(latency: Int) extends RequestState
+
+
 class MemAccess (dataType:Int, r:Boolean, addr: Long, t:Long ){
   /**
    * Size of the access in bytes
@@ -49,6 +58,35 @@ trait Traffic {
 
 }
 
+/**
+ * Trait for traffic generating object.
+ *
+ * Objects are prompted for memory requests with 'requestMemoryAccess', which may return the address
+ * being requested and a token identifying the address.
+ * When the request has been serviced, 'serveMemoryAccess' is called with the previously-mentioned token.
+ *
+ * @tparam S Type of request token
+ */
+trait Traffic2[S] {
+
+  def burstSize: Int;
+  require(isPowerOfTwo(burstSize))
+
+  def serveMemoryAccess(token: S): Unit;
+
+  def requestMemoryAccess(): Option[(Long, S)];
+
+  def triggerCycle();
+
+  def isPowerOfTwo(x: Int): Boolean =
+  {
+    (x & (x - 1)) == 0
+  }
+
+  def isDone(): Boolean;
+
+}
+
 class Arbiter(
   burstIn: Int,
   burstOut: Int,
@@ -75,7 +113,7 @@ class Arbiter(
   var coresDone: Array[Boolean] = Array.fill(cores.length){false}
 
   /**
-   * Used for tracking if the cache is busy. First comes the cores being serviced, then how long is left.
+   * Used for tracking if the cache is busy. First comes the core being serviced, then how long is left.
    * When at 0, it means the cache is ready to service
    * When the cache returns a latency, the busy will be set to it and reduced each cycle trigger
    * While busy > 0 the cache should not service any access.
@@ -284,6 +322,240 @@ class TraceTraffic(s: Int, source: Iterator[MemAccess], reportLatency: (Int) => 
 
   override def isDone(): Boolean = {
     nextAccess.isEmpty && waitingForServe.isEmpty && !source.hasNext
+  }
+}
+
+
+/**
+ * Generates traffic from a trace file.
+ *
+ * Only generates one request at a time, waiting for a serve before issuing any other request.
+ * Therefore, no request token is needed to identify the request.
+ *
+ * @param s
+ * @param source
+ * @param reportLatency
+ */
+class TraceTraffic2(s: Int, source: Iterator[MemAccess], reportLatency: (Int) => Unit) extends Traffic2[Unit] {
+
+  override def burstSize: Int = s
+
+  var nextAccess: Array[MemAccess] = Array.empty
+
+  /**
+   * Tracks the current clock cycle
+   */
+  var clock: Long = 0;
+
+  /**
+   * Tracks how many clock cycles were spent stalled, waiting for memory
+   */
+  var stalls: Long = 0;
+
+  /**
+   * Whether we are waiting to bet served and how long we've been waiting
+   */
+  var waitingForServe: Option[Int] = None;
+
+  def log2(x: Int): Int = {
+    (math.log(x) / math.log(2)).toInt
+  }
+
+  /**
+   * Returns whether an access with the given timestamp should be issued
+   * @param time
+   * @return
+   */
+  def shouldIssue(time: Long): Boolean = {
+    time <= clock - stalls
+  }
+
+  override def serveMemoryAccess(token: Unit): Unit = {
+    assert(waitingForServe.isDefined)
+    reportLatency(waitingForServe.get)
+    waitingForServe = None;
+  }
+
+  def isBurstAligned(address: Long): Boolean = {
+    address % burstSize == 0
+  }
+  def closestBurstAlignedAddress(address: Long): Long = {
+    address - (address % burstSize)
+  }
+  def accessesNeeded(size: Int, address: Long): Int = {
+    val aligned = isBurstAligned(address);
+
+    if(aligned) {
+      Math.ceil(size.toDouble / burstSize).toInt
+    } else {
+      val initialBurstSize = burstSize - (address % burstSize)
+      val remainingDataSize = size - initialBurstSize
+      Math.ceil(remainingDataSize.toDouble / burstSize).toInt + 1
+    }
+  }
+
+  override def requestMemoryAccess(): Option[(Long, Unit)] = {
+    if(waitingForServe.isDefined) return None;
+
+    if(nextAccess.length>0) {
+      val access = nextAccess(0)
+
+      if(shouldIssue(access.time)) {
+
+        nextAccess = nextAccess.drop(1)
+
+        // Check for alignment with burstSize
+        val startAddr = closestBurstAlignedAddress(access.address)
+        val nrAccessesNeeded= accessesNeeded(access.accessSize, access.address)
+        if (nrAccessesNeeded > 1) {
+          // We need to split the access into chunks
+          Range.apply(0, nrAccessesNeeded).foreach(idx => {
+            nextAccess = nextAccess :+ new MemAccess(log2(burstSize), access.isRead, startAddr + (burstSize * idx), access.time)
+          })
+
+          // Run again on the split accesses
+          requestMemoryAccess()
+        } else {
+          waitingForServe = Some(0)
+          Some((startAddr, ()))
+        }
+      } else {
+        // The next access is not ready
+        None
+      }
+    } else {
+      if(source.hasNext) {
+        nextAccess = nextAccess :+ source.next()
+        requestMemoryAccess()
+      } else {
+        // We are done
+        None
+      }
+    }
+  }
+
+  override def triggerCycle(): Unit = {
+    clock += 1
+    if(waitingForServe.isDefined) {
+      stalls += 1
+      waitingForServe = Some(waitingForServe.get+1)
+    };
+  }
+
+  override def isDone(): Boolean = {
+    nextAccess.isEmpty && waitingForServe.isEmpty && !source.hasNext
+  }
+}
+
+class RoundRobinArbiter(
+ burstOut: Int,
+ latency:Int,
+ cores: Array[Traffic2[Unit]],
+ // Takes coreId, returns whether  the core needs to be changed to the given traffic
+ onDone: (Int) => Option[Traffic2[Unit]],
+)
+  // request token is coreId
+  extends Traffic2[Int]
+{
+  require(cores.length > 0)
+  require(cores.forall( c => c.burstSize == cores(0).burstSize))
+
+  override def burstSize: Int = burstOut
+  require(burstSize >= cores(0).burstSize)
+
+  /**
+   * Which core that should access memory next.
+   */
+  var nextAccess: Int = 0
+
+  var coresDone: Array[Boolean] = Array.fill(cores.length){false}
+
+  /**
+   * Used for tracking the service of a core.
+   * If none, no core is waiting for the arbiter
+   * The first is the core being serviced
+   * The second is the state
+   * The third is the address
+   */
+  var busy: Option[(Int,RequestState, Long)] = None
+
+  def checkDone(coreId: Int): Unit = {
+    if(cores(coreId).isDone() && !coresDone(coreId)) {
+      val shouldSubstitute = onDone(coreId)
+      if(shouldSubstitute.isDefined) {
+        cores(coreId) = shouldSubstitute.get
+        coresDone(coreId) = false
+      } else {
+        coresDone(coreId) = true
+      }
+    }
+  }
+
+  def checkAndServe(): Unit = {
+    if (busy.isDefined && busy.get._2 == Servicing(0)) {
+      cores(busy.get._1).serveMemoryAccess(())
+      checkDone(busy.get._1)
+
+      busy = None
+    }
+  }
+
+
+  override def serveMemoryAccess(token: Int): Unit = {
+    assert(busy.isDefined)
+    assert(busy.get._1 == token)
+    assert(busy.get._2 == Issued)
+    busy = Some(busy.get._1, Servicing(latency), busy.get._3)
+  }
+
+  def checkCoreReq(): Unit = {
+    if(busy.isDefined) {
+      // Already waiting to issued request
+    } else {
+      // check if the next core has a request
+      val req = cores(nextAccess).requestMemoryAccess()
+
+      if(req.isDefined) {
+        busy = Some((nextAccess, Waiting, req.get._1))
+      } else {
+        // No request from core
+      }
+      nextAccess = (nextAccess + 1) % cores.length
+    }
+  }
+
+  override def requestMemoryAccess(): Option[(Long, Int)] = {
+    checkAndServe()
+    checkCoreReq()
+    if(busy.isDefined && busy.get._2 == Waiting) {
+      busy = Some((busy.get._1, Issued, busy.get._3))
+      Some((busy.get._3, busy.get._1))
+    } else {
+      None
+    }
+  }
+
+  override def triggerCycle(): Unit = {
+    checkAndServe()
+    checkCoreReq()
+
+    busy match {
+      case Some((_,Servicing(l),_)) => {
+        assert(l>0)
+        busy = Some((busy.get._1, Servicing(l-1), busy.get._3))
+      }
+      case _ =>
+    }
+
+    cores.zipWithIndex.foreach(coreIdx => {
+      checkDone(coreIdx._2)
+      coreIdx._1.triggerCycle()
+    })
+
+  }
+
+  override def isDone(): Boolean = {
+    busy.isEmpty && cores.zipWithIndex.forall(coreIdx => coreIdx._1.isDone() && coresDone(coreIdx._2))
   }
 }
 

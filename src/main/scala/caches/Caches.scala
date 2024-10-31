@@ -663,3 +663,30 @@ class ContentionPartCache(lineLength: Int, ways: Int, sets: Int, contentionCost:
     })
   }
 }
+
+//class CacheTraffic(burst: Int, traf: Traffic, cache: SoftCache) extends Traffic {
+//
+//  override def burstSize: Int = burst
+//  require(burstSize >= traf.burstSize)
+//
+//  /**
+//   * Whether we are waiting for being served by external
+//   * None means not waiting
+//   */
+//  var busy: Option[(Long, Boolean)] = None
+//
+//  override def serveMemoryAccess(): Unit = {
+//    assert(busy)
+//    busy = false;
+//  }
+//
+//  override def requestMemoryAccess(): Option[Long] = {
+//
+//
+//  }
+//
+//  override def triggerCycle(): Unit = {
+//
+//
+//  }
+//}
