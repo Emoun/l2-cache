@@ -36,7 +36,7 @@ abstract class SoftCache(l: Int, w: Int, s: Int) {
    *
    * @return Whether it is a cache hit
    */
-  def getCacheLine(addr: Long, core: Int): Boolean
+  def getCacheLine(addr: Long, core: Int, withRefill: Boolean = true): Boolean
 
   def advanceCycle() = {}
 
@@ -118,7 +118,7 @@ abstract class TrackingCache[T](l: Int, w: Int, s: Int) extends
    */
   def onMiss(coreId: Int, setIdx: Int): Option[(Int, T)];
 
-  override def getCacheLine(addr: Long, core: Int): Boolean =
+  override def getCacheLine(addr: Long, core: Int, withRefill: Boolean = true): Boolean =
   {
     val set = setForAddr(addr);
     val headAddr = lineHeadForAddr(addr);
@@ -131,11 +131,13 @@ abstract class TrackingCache[T](l: Int, w: Int, s: Int) extends
       }
       // Miss
       case None => {
-        onMiss(core, setIdxForAddr(addr)) match {
-          case Some((wayIdx, payload)) => {
-            set(wayIdx) = Some((headAddr, payload));
+        if(withRefill) {
+          onMiss(core, setIdxForAddr(addr)) match {
+            case Some((wayIdx, payload)) => {
+              set(wayIdx) = Some((headAddr, payload));
+            }
+            case None => ;
           }
-          case None => ;
         }
         false
       }
@@ -664,29 +666,115 @@ class ContentionPartCache(lineLength: Int, ways: Int, sets: Int, contentionCost:
   }
 }
 
-//class CacheTraffic(burst: Int, traf: Traffic, cache: SoftCache) extends Traffic {
-//
-//  override def burstSize: Int = burst
-//  require(burstSize >= traf.burstSize)
-//
-//  /**
-//   * Whether we are waiting for being served by external
-//   * None means not waiting
-//   */
-//  var busy: Option[(Long, Boolean)] = None
-//
-//  override def serveMemoryAccess(): Unit = {
-//    assert(busy)
-//    busy = false;
-//  }
-//
-//  override def requestMemoryAccess(): Option[Long] = {
-//
-//
-//  }
-//
-//  override def triggerCycle(): Unit = {
-//
-//
-//  }
-//}
+class MainMemory(lineSize:Int) extends SoftCache(lineSize,1,1) {
+  override def getCacheLine(addr: Long, core: Int, withRefill: Boolean = true): Boolean = true;
+  override def isHit(addr: Long): Option[(Int, Int)] = { None }
+  override def printAll(): Unit = {}
+}
+
+class CacheTraffic(
+                    burst: Int,
+                    traf: Traffic[Int],
+                    cache: SoftCache,
+
+                    /**
+   * For each access, takes the core requesting it and whether it was a hit or miss
+   */
+                    reportHits: (Int, Boolean) => Unit,
+) extends Traffic[Unit] {
+
+  override def burstSize: Int = burst
+  require(burstSize >= traf.burstSize)
+
+  /**
+   * Whether we are waiting for being served by external
+   * None means not waiting
+   * First is the address needed from external
+   * The second is request state
+   * Third is the request token
+   */
+  var busy: Option[(Long, RequestState, Int)] = None
+
+  def waitingToIssue(): Boolean = {
+    busy.isDefined && busy.get._2 == Waiting
+  }
+  def waitingForExternal(): Boolean = {
+    busy.isDefined && busy.get._2 == Issued
+  }
+  def waitingForInternal(): Boolean = {
+    busy match {
+      case Some((_, Servicing(0),_)) => true
+      case _ => false
+    }
+  }
+
+  def checkServe(): Unit = {
+    if(waitingForInternal() && traf.serveMemoryAccess(busy.get._3)) {
+      busy = None
+    }
+  }
+
+  def checkTraf():Unit = {
+    if(busy.isEmpty ) {
+      traf.requestMemoryAccess() match {
+        case Some((addr, coreId)) => {
+          val isHit = cache.getCacheLine(addr, coreId, false)
+          if(isHit) {
+            // Cache hit, service next cycle
+            busy = Some((addr, Servicing(1), coreId))
+          } else {
+            // Cache miss
+            busy = Some((addr, Waiting, coreId))
+          }
+          reportHits(coreId, isHit)
+        }
+        case _ =>
+      }
+    }
+  }
+
+  override def serveMemoryAccess(token: Unit): Boolean = {
+    assert(!waitingToIssue())
+    if(waitingForInternal()) {
+      false
+    } else if(waitingForExternal()) {
+      // Now we can update the cache
+      cache.getCacheLine(busy.get._1, busy.get._3, true)
+      busy = Some(busy.get._1, Servicing(0), busy.get._3)
+      true
+    } else {
+      assert(false) // Unreachable
+      false
+    }
+  }
+
+  override def requestMemoryAccess(): Option[(Long,Unit)] = {
+    checkServe()
+    checkTraf()
+
+    if(waitingToIssue()) {
+      busy = Some((busy.get._1, Issued, busy.get._3))
+      return Some((busy.get._1, ()))
+    }
+
+    None
+  }
+
+  override def triggerCycle(): Unit = {
+    checkServe()
+    checkTraf()
+
+    busy match {
+      case Some((addr, Servicing(l),token)) if l>0 => {
+        busy = Some((addr, Servicing(l-1), token))
+      }
+      case _ =>
+    }
+
+    traf.triggerCycle()
+  }
+
+  override def isDone(): Boolean = {
+    traf.isDone()
+  }
+}

@@ -2,7 +2,6 @@ package caches
 
 import org.scalatest.funsuite.AnyFunSuite
 
-
 trait SimpleCacheTests[C<: SoftCache] extends AnyFunSuite {
   def className: String
   def createInstance(lineLength: Int, ways: Int, sets: Int): C
@@ -48,6 +47,15 @@ trait SimpleCacheTests[C<: SoftCache] extends AnyFunSuite {
     assert(cache.getCacheLine(4,0) == false)
     assert(cache.getCacheLine(6,0) == false)
   }
+
+  test("Without Refill") {
+    val cache = createInstance(2,4,4);
+    assert(cache.getCacheLine(0,0, false) == false)
+    assert(cache.getCacheLine(0,0, false) == false)
+    assert(cache.getCacheLine(0,0, false) == false)
+    assert(cache.getCacheLine(0,0, false) == false)
+  }
+
 }
 
 trait LruTests[C<: SoftCache with LRUReplacement[_]] extends SimpleCacheTests[C]
@@ -1094,6 +1102,110 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     assert(cache.getCacheLine(12,1) == true) // Ensure did get saved
     assert(cache.getCacheLine(0,0) == true) // Ensure was not evicted
     assert(cache.getCacheLine(4,0) == true) // Ensure was not evicted
+  }
+
+}
+
+class CacheTrafficTest extends AnyFunSuite {
+  var rand: scala.util.Random = new scala.util.Random;
+
+  test("No Accesses") {
+    var cache = new CacheTraffic(8,
+      new RoundRobinArbiter(1,1,Array(new NoTraffic(1)), (_)=>None),
+      new MainMemory(1),
+      (_,_) => (),
+    )
+
+    for (_ <- 0 until rand.nextInt(10)) {
+      assert(cache.requestMemoryAccess().isEmpty)
+      cache.triggerCycle()
+    }
+  }
+
+  test("Serve hit immediately") {
+    var wasHit: Option[Boolean] = None
+    var done = false
+    var cache = new CacheTraffic(8,
+      new RoundRobinArbiter(1,1,
+        Array(new TraceTraffic(1, Array(
+          new MemAccess(0,true, 20, 0)
+        ).toIterator,(_) => ())),
+        (_) => {
+          done = true
+          None
+        }
+      ),
+      new MainMemory(1),
+      (_, isHit) => {
+        wasHit = Some(isHit)
+      }
+    )
+
+    cache.triggerCycle() // One cycle for request
+    assert(!cache.isDone() && !done)
+    cache.triggerCycle() // One cycle for cache reply
+    assert(!cache.isDone() && !done)
+    assert(wasHit.contains(true))
+    cache.triggerCycle() // One cycle for bus response
+    assert(cache.isDone() && done)
+    assert(wasHit.contains(true))
+  }
+
+  test("Serve miss after external serve") {
+    var wasHit: Option[Boolean] = None
+    var done = false
+    var cache = new CacheTraffic(8,
+      new RoundRobinArbiter(1,1,
+        Array(new TraceTraffic(1, Array(
+          new MemAccess(0,true, 20, 0)
+        ).toIterator,(_) => ())),
+        (_) => {
+          done = true
+          None
+        }
+      ),
+      new LruCache(1,1,1),
+      (_, isHit) => {
+        wasHit = Some(isHit)
+      }
+    )
+
+    assert(cache.requestMemoryAccess().contains((20,())))
+
+    // Wait for external reply
+    val randLatency = 1+rand.nextInt(20)
+    for(i <- 0 until randLatency) {
+      assert(wasHit.contains(false))
+      assert(!cache.isDone() && !done)
+      cache.triggerCycle()
+    }
+    cache.serveMemoryAccess(())
+    cache.triggerCycle() // One cycle for cache response
+    assert(!cache.isDone() && !done)
+    assert(wasHit.contains(false))
+    cache.triggerCycle() // One cycle for bus response
+    assert(cache.isDone() && done)
+    assert(wasHit.contains(false))
+  }
+
+  test("Refill after external") {
+    var lruCache = new LruCache(1, 1, 1)
+    lruCache.getCacheLine(0,0) // Prefill cache line
+    var cache = new CacheTraffic(8,
+      new RoundRobinArbiter(1,1,
+        Array(new SingleTraffic(1,100)),
+        (_) => None
+      ),
+      lruCache,
+      (_, isHit) => {}
+    )
+
+    assert(cache.requestMemoryAccess().contains((100,())))
+    assert(lruCache.getCacheLine(0,0,false)) // Ensure the miss didn't evict the prefilled line already
+    cache.triggerCycle()
+    assert(lruCache.getCacheLine(0,0,false))
+    cache.serveMemoryAccess(())
+    assert(!lruCache.getCacheLine(0,0,false)) // After serve, fill should happen
   }
 
 }

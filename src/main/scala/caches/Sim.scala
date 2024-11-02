@@ -3,8 +3,6 @@ package caches
 import scala.io.{BufferedSource, Source}
 import scala.util.matching.Regex
 
-
-
 // Define case classes for DAW and DAR
 sealed trait LogEntry
 case class DAW(dsz: Int, addr: Long, timeStamp: Long) extends LogEntry
@@ -38,26 +36,6 @@ class MemAccess (dataType:Int, r:Boolean, addr: Long, t:Long ){
 
 }
 
-trait Traffic {
-
-  def burstSize: Int;
-  require(isPowerOfTwo(burstSize))
-
-  def serveMemoryAccess(): Unit;
-
-  def requestMemoryAccess(): Option[Long];
-
-  def triggerCycle();
-
-  def isPowerOfTwo(x: Int): Boolean =
-  {
-    (x & (x - 1)) == 0
-  }
-
-  def isDone(): Boolean = { false }
-
-}
-
 /**
  * Trait for traffic generating object.
  *
@@ -67,13 +45,25 @@ trait Traffic {
  *
  * @tparam S Type of request token
  */
-trait Traffic2[S] {
+trait Traffic[S] {
 
   def burstSize: Int;
   require(isPowerOfTwo(burstSize))
 
-  def serveMemoryAccess(token: S): Unit;
+  /**
+   * Exernal services a previously issued request with the given token.
+   * Returns whether the serve is accepted. If not, external must try again.
+   * @param token
+   * @return
+   */
+  def serveMemoryAccess(token: S): Boolean;
 
+  /**
+   * Request a memory access from external.
+   * If none, no memory access is requested.
+   * If Some, first is the address requested and second is a token identifying the request.
+   * @return
+   */
   def requestMemoryAccess(): Option[(Long, S)];
 
   def triggerCycle();
@@ -87,245 +77,6 @@ trait Traffic2[S] {
 
 }
 
-class Arbiter(
-  burstIn: Int,
-  burstOut: Int,
-  cache: SoftCache,
-  latency:Int,
-  cores: Array[Traffic],
-  // Takes core and cache, returns whether  the core needs to be changed to the given
-  onDone: (Int, SoftCache) => Option[Traffic],
-  reportHits: (Int,Boolean) => Unit
-)
-  extends Traffic
-{
-  require(cache.lineLength>=burstIn)
-  require(cache.lineLength%burstIn == 0)
-  require(cores.forall( c => c.burstSize == burstIn))
-
-  override def burstSize: Int = burstOut
-
-  /**
-   * Which core that should access memory next.
-   */
-  var nextAccess: Int = 0
-
-  var coresDone: Array[Boolean] = Array.fill(cores.length){false}
-
-  /**
-   * Used for tracking if the cache is busy. First comes the core being serviced, then how long is left.
-   * When at 0, it means the cache is ready to service
-   * When the cache returns a latency, the busy will be set to it and reduced each cycle trigger
-   * While busy > 0 the cache should not service any access.
-   * The third element is whether we are waiting for the request with the parent.
-   * The fourth element is wether we have yet to issue the request to parent.
-   * If some, then the address still needs to be requested
-   */
-  var busy: Option[(Int,Int,Boolean,Option[Long])] = None
-
-  def checkDone(coreId: Int): Unit = {
-    if(cores(coreId).isDone() && !coresDone(coreId)) {
-      val shouldSubstitute = onDone(coreId, cache)
-      if(shouldSubstitute.isDefined) {
-        cores(coreId) = shouldSubstitute.get
-        coresDone(coreId) = false
-      } else {
-        coresDone(coreId) = true
-      }
-    }
-  }
-
-  def checkAndServe(): Unit = {
-    if (busy.isDefined && busy.get._2 == 0 && !busy.get._3) {
-      cores(busy.get._1).serveMemoryAccess()
-      checkDone(busy.get._1)
-
-      busy = None
-    }
-  }
-
-  override def serveMemoryAccess(): Unit = {
-    if(busy.isDefined) {
-      assert(!(busy.get._3 && busy.get._4.isDefined)) //
-      busy = Some((busy.get._1,busy.get._2,false,busy.get._4))
-    }
-
-    checkAndServe()
-  }
-
-  def checkCoreReq(): Unit = {
-    if(busy.isDefined) {
-      // Already waiting for issued request
-    } else {
-      // check if the next core has a request
-      val addr = cores(nextAccess).requestMemoryAccess()
-
-      val result = if(addr.isDefined) {
-
-        if(!cache.getCacheLine(addr.get, nextAccess)) {
-          // Miss
-          busy = Some((nextAccess, latency,true, Some(addr.get)))
-        } else {
-          // Hit
-          busy = Some((nextAccess, latency,false, None))
-        }
-        reportHits(nextAccess, !busy.get._3)
-      } else {
-        // No request from core
-      }
-    }
-  }
-
-  override def requestMemoryAccess(): Option[Long] = {
-    checkCoreReq()
-    if(busy.isDefined && busy.get._3 && busy.get._4.isDefined) {
-      // Need to issue a request
-      val addr = busy.get._4.get
-      busy = Some((busy.get._1, busy.get._2, true, None))
-      Some(addr)
-    } else {
-      None
-    }
-  }
-
-  override def triggerCycle(): Unit = {
-    checkCoreReq()
-    if(busy.isDefined && busy.get._3) {
-      // While waiting for parent to respond, stall arbitration
-    } else {
-      if(busy.isDefined && busy.get._2>0 && !busy.get._3) {
-        busy = Some((busy.get._1, busy.get._2-1, busy.get._3, busy.get._4))
-      } else {
-        checkAndServe()
-        nextAccess = (nextAccess + 1) % cores.length
-      }
-    }
-
-    cache.advanceCycle()
-    cores.zipWithIndex.foreach(coreIdx => {
-      checkDone(coreIdx._2)
-      coreIdx._1.triggerCycle()
-    })
-  }
-
-  override def isDone(): Boolean = {
-    busy.isEmpty && cores.zipWithIndex.forall(coreIdx => coreIdx._1.isDone() && coresDone(coreIdx._2))
-  }
-}
-
-class TraceTraffic(s: Int, source: Iterator[MemAccess], reportLatency: (Int) => Unit) extends Traffic {
-
-  override def burstSize: Int = s
-
-  var nextAccess: Array[MemAccess] = Array.empty
-
-  /**
-   * Tracks the current clock cycle
-   */
-  var clock: Long = 0;
-
-  /**
-   * Tracks how many clock cycles were spent stalled, waiting for memory
-   */
-  var stalls: Long = 0;
-
-  /**
-   * Whether we are waiting to bet served and how long we've been waiting
-   */
-  var waitingForServe: Option[Int] = None;
-
-  def log2(x: Int): Int = {
-    (math.log(x) / math.log(2)).toInt
-  }
-
-  /**
-   * Returns whether an access with the given timestamp should be issued
-   * @param time
-   * @return
-   */
-  def shouldIssue(time: Long): Boolean = {
-    time <= clock - stalls
-  }
-
-  override def serveMemoryAccess(): Unit = {
-    assert(waitingForServe.isDefined)
-    reportLatency(waitingForServe.get)
-    waitingForServe = None;
-
-  }
-
-  def isBurstAligned(address: Long): Boolean = {
-    address % burstSize == 0
-  }
-  def closestBurstAlignedAddress(address: Long): Long = {
-    address - (address % burstSize)
-  }
-  def accessesNeeded(size: Int, address: Long): Int = {
-    val aligned = isBurstAligned(address);
-
-    if(aligned) {
-      Math.ceil(size.toDouble / burstSize).toInt
-    } else {
-      val initialBurstSize = burstSize - (address % burstSize)
-      val remainingDataSize = size - initialBurstSize
-      Math.ceil(remainingDataSize.toDouble / burstSize).toInt + 1
-    }
-  }
-
-  override def requestMemoryAccess(): Option[Long] = {
-    if(waitingForServe.isDefined) return None;
-
-    if(nextAccess.length>0) {
-      val access = nextAccess(0)
-
-      if(shouldIssue(access.time)) {
-
-        nextAccess = nextAccess.drop(1)
-
-        // Check for alignment with burstSize
-        val startAddr = closestBurstAlignedAddress(access.address)
-        val nrAccessesNeeded= accessesNeeded(access.accessSize, access.address)
-        if (nrAccessesNeeded > 1) {
-          // We need to split the access into chunks
-          Range.apply(0, nrAccessesNeeded).foreach(idx => {
-            nextAccess = nextAccess :+ new MemAccess(log2(burstSize), access.isRead, startAddr + (burstSize * idx), access.time)
-          })
-
-          // Run again on the split accesses
-          requestMemoryAccess()
-        } else {
-          waitingForServe = Some(0)
-          Some(startAddr)
-        }
-      } else {
-        // The next access is not ready
-        None
-      }
-    } else {
-      if(source.hasNext) {
-        nextAccess = nextAccess :+ source.next()
-        requestMemoryAccess()
-      } else {
-        // We are done
-        None
-      }
-    }
-  }
-
-  override def triggerCycle(): Unit = {
-    clock += 1
-    if(waitingForServe.isDefined) {
-      stalls += 1
-      waitingForServe = Some(waitingForServe.get+1)
-    };
-  }
-
-  override def isDone(): Boolean = {
-    nextAccess.isEmpty && waitingForServe.isEmpty && !source.hasNext
-  }
-}
-
-
 /**
  * Generates traffic from a trace file.
  *
@@ -336,7 +87,7 @@ class TraceTraffic(s: Int, source: Iterator[MemAccess], reportLatency: (Int) => 
  * @param source
  * @param reportLatency
  */
-class TraceTraffic2(s: Int, source: Iterator[MemAccess], reportLatency: (Int) => Unit) extends Traffic2[Unit] {
+class TraceTraffic(s: Int, source: Iterator[MemAccess], reportLatency: (Int) => Unit) extends Traffic[Unit] {
 
   override def burstSize: Int = s
 
@@ -370,10 +121,11 @@ class TraceTraffic2(s: Int, source: Iterator[MemAccess], reportLatency: (Int) =>
     time <= clock - stalls
   }
 
-  override def serveMemoryAccess(token: Unit): Unit = {
+  override def serveMemoryAccess(token: Unit): Boolean = {
     assert(waitingForServe.isDefined)
     reportLatency(waitingForServe.get)
     waitingForServe = None;
+    true
   }
 
   def isBurstAligned(address: Long): Boolean = {
@@ -447,15 +199,15 @@ class TraceTraffic2(s: Int, source: Iterator[MemAccess], reportLatency: (Int) =>
   }
 }
 
-class RoundRobinArbiter(
+class RoundRobinArbiter[C<:Traffic[Unit]](
  burstOut: Int,
  latency:Int,
- cores: Array[Traffic2[Unit]],
+ cores: Array[C],
  // Takes coreId, returns whether  the core needs to be changed to the given traffic
- onDone: (Int) => Option[Traffic2[Unit]],
+ onDone: (Int) => Option[C],
 )
   // request token is coreId
-  extends Traffic2[Int]
+  extends Traffic[Int]
 {
   require(cores.length > 0)
   require(cores.forall( c => c.burstSize == cores(0).burstSize))
@@ -500,12 +252,12 @@ class RoundRobinArbiter(
     }
   }
 
-
-  override def serveMemoryAccess(token: Int): Unit = {
+  override def serveMemoryAccess(token: Int): Boolean = {
     assert(busy.isDefined)
     assert(busy.get._1 == token)
     assert(busy.get._2 == Issued)
-    busy = Some(busy.get._1, Servicing(latency), busy.get._3)
+    busy = Some(busy.get._1, Servicing(latency), busy.get._3);
+    true
   }
 
   def checkCoreReq(): Unit = {
@@ -551,7 +303,6 @@ class RoundRobinArbiter(
       checkDone(coreIdx._2)
       coreIdx._1.triggerCycle()
     })
-
   }
 
   override def isDone(): Boolean = {
@@ -697,27 +448,8 @@ object Sim {
     val l2BurstSize = 16
     val memBurstSize = 32
 
-    var l1Arbs = traceFiles.zipWithIndex.map(pathIdx => {
-      val l1Cache = new LruCache(16,4,16) // 16B line, 4-way set associative 1KiB cache
-      new Arbiter(
-        l1BurstSize, l2BurstSize,
-        l1Cache, l1Latency,
-        Array(new TraceTraffic(l1BurstSize, loadAccesses(pathIdx._1), latency=> {
-          cumulativeLatencies(pathIdx._2) += latency
-          coreAccesses(pathIdx._2) += 1
-          printf("{ %d, %d }\n", pathIdx._2, latency)
-        })),
-        (_,_) => {
-          None
-        },
-        (_, isHit) => {
-          if(isHit) hits(pathIdx._2)+=1;
-        }
-      )
-    })
-
 //    var l2Cache = new LruCache(64, 8, 16) // 64B line, 8-way set associative 8KB cache
-//    val l2OnDone  = (_:Int,_:SoftCache) => None;
+//    val l2OnDone  = (_:Int) => None;
 
 //    var l2Cache = new PartitionedCache(64, 8, 16) // 64B line, 8-way set associative 8KB cache
 //    l2Cache.assignWay(0,0)
@@ -728,25 +460,33 @@ object Sim {
 //    l2Cache.assignWay(1,5)
 //    l2Cache.assignWay(1,6)
 //    l2Cache.assignWay(1,7)
-//    val l2OnDone  = (coreId:Int,cache:SoftCache) => {
-//      cache match {
-//        case parCache: PartitionedCache => {
-//          parCache.unassignCore(coreId)
-//          None
-//        }
-//        case _ => {
-//          assert(false)
-//          None
-//        }
-//      }
+//    val l2OnDone  = (coreId:Int) => {
+//      l2Cache.unassignCore(coreId)
+//      None
 //    };
 
-//    var l2Cache = new ContentionCache(64, 8, 16, memLatency) // 64B line, 8-way set associative 8KB cache
+    var l2Cache = new ContentionCache(64, 8, 16, memLatency) // 64B line, 8-way set associative 8KB cache
+    l2Cache.setCriticality(0, 1000)
+    l2Cache.setCriticality(1, 1000)
+    val l2OnDone  = (coreId:Int) => {
+      l2Cache.unassign(coreId)
+      None
+    };
+
+//    var l2Cache = new ContentionPartCache(64, 8, 16, memLatency) // 64B line, 8-way set associative 8KB cache
 //    l2Cache.setCriticality(0, 1000)
 //    l2Cache.setCriticality(1, 1000)
+//    l2Cache.assignWay(0,0)
+//    l2Cache.assignWay(0,1)
+//    l2Cache.assignWay(0,2)
+//    l2Cache.assignWay(0,3)
+//    l2Cache.assignWay(1,4)
+//    l2Cache.assignWay(1,5)
+//    l2Cache.assignWay(1,6)
+//    l2Cache.assignWay(1,7)
 //    val l2OnDone  = (coreId:Int,cache:SoftCache) => {
 //      cache match {
-//        case conCache: ContentionCache => {
+//        case conCache: ContentionPartCache => {
 //          conCache.unassign(coreId)
 //          None
 //        }
@@ -756,30 +496,6 @@ object Sim {
 //        }
 //      }
 //    };
-
-    var l2Cache = new ContentionPartCache(64, 8, 16, memLatency) // 64B line, 8-way set associative 8KB cache
-    l2Cache.setCriticality(0, 1000)
-    l2Cache.setCriticality(1, 1000)
-    l2Cache.assignWay(0,0)
-    l2Cache.assignWay(0,1)
-    l2Cache.assignWay(0,2)
-    l2Cache.assignWay(0,3)
-    l2Cache.assignWay(1,4)
-    l2Cache.assignWay(1,5)
-    l2Cache.assignWay(1,6)
-    l2Cache.assignWay(1,7)
-    val l2OnDone  = (coreId:Int,cache:SoftCache) => {
-      cache match {
-        case conCache: ContentionPartCache => {
-          conCache.unassign(coreId)
-          None
-        }
-        case _ => {
-          assert(false)
-          None
-        }
-      }
-    };
 
 //    var l2Cache = new TimeoutCache(64, 8, 16, 100000) // 64B line, 8-way set associative 8KB cache
 //    l2Cache.setPriority(0,0)
@@ -803,30 +519,59 @@ object Sim {
 //      }
 //    };
 
-    var l2Arb = new Arbiter(l2BurstSize,memBurstSize,
-      l2Cache, l2Latency,
-      l1Arbs.toArray,
-      l2OnDone,
+
+    var l1Cache = traceFiles.zipWithIndex.map(pathIdx => {
+      new CacheTraffic(
+        l2BurstSize,
+        new RoundRobinArbiter(
+          l1BurstSize,
+          l1Latency,
+          Array(new TraceTraffic(l1BurstSize, loadAccesses(pathIdx._1), latency => {
+            cumulativeLatencies(pathIdx._2) += latency
+            coreAccesses(pathIdx._2) += 1
+            printf("{ %d, %d }\n", pathIdx._2, latency)
+          })),
+          (_) => {
+            None
+          }
+        ),
+        new LruCache(16,4,16), // 16B line, 4-way set associative 1KiB cache
+        (_, isHit) => {
+          if(isHit) hits(pathIdx._2)+=1;
+        }
+      )
+    })
+
+    var l2Cache2 = new CacheTraffic(
+      memBurstSize,
+      new RoundRobinArbiter(
+        l2BurstSize,
+        l2Latency,
+        l1Cache,
+        l2OnDone
+      ),
+      l2Cache, // 64B line, 8-way set associative 8KB cache
       (coreId, isHit) => {
         if(isHit) l2Hits(coreId)+=1;
       }
     )
-    var memArb = new Arbiter(
-      memBurstSize,memBurstSize,
-      // Main memory always hits
-      new SoftCache(memBurstSize*2,1,1) {
-        override def getCacheLine(addr: Long, core: Int): Boolean = true;
-        override def isHit(addr: Long): Option[(Int, Int)] = { None }
-        override def printAll(): Unit = {}
-      },
-      memLatency,
-      Array(l2Arb),
-      (_,_) => None,
-      (_,_) => Unit
+
+    var MainMemTraffic = new CacheTraffic(
+      memBurstSize,
+      new RoundRobinArbiter(
+        memBurstSize,
+        memLatency,
+        Array(l2Cache2),
+        (_) => {
+          None
+        }
+      ),
+      new MainMemory(memBurstSize),
+      (_,_) => {}
     )
 
-    while(!memArb.isDone()) {
-      val trig = memArb.triggerCycle()
+    while(!MainMemTraffic.isDone()) {
+      val trig = MainMemTraffic.triggerCycle()
     }
 
     for(i <- 0 until traceFiles.length) {
