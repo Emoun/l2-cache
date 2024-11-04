@@ -1136,8 +1136,8 @@ class CacheTrafficTest extends AnyFunSuite {
         }
       ),
       new MainMemory(1),
-      (_, isHit) => {
-        wasHit = Some(isHit)
+      (_, hitType) => {
+        wasHit = Some(hitType.isHit())
       }
     )
 
@@ -1165,8 +1165,8 @@ class CacheTrafficTest extends AnyFunSuite {
         }
       ),
       new LruCache(1,1,1),
-      (_, isHit) => {
-        wasHit = Some(isHit)
+      (_, hitType) => {
+        wasHit = Some(hitType.isHit())
       }
     )
 
@@ -1208,4 +1208,372 @@ class CacheTrafficTest extends AnyFunSuite {
     assert(!lruCache.getCacheLine(0,0,false)) // After serve, fill should happen
   }
 
+}
+
+/**
+ * A cache that hits on only the given address
+ * @param lineSize
+ * @param addr
+ */
+class SelectCache(lineSize:Int, hotAddr:Long) extends SoftCache(lineSize,1,1) {
+  override def getCacheLine(addr: Long, core: Int, withRefill: Boolean = true): Boolean = {
+    hotAddr == addr
+  };
+  override def isHit(addr: Long): Option[(Int, Int)] = { None }
+  override def printAll(): Unit = {}
+}
+
+/**
+ * Produces requests to the given addresses in sequence, not waiting for a response
+ *
+ * Becomes done when the same amount of responses are returned as requests
+ *
+ * @param traf
+ */
+class ArrayTraffic(traf: Array[Long], onDone: () => Unit) extends Traffic[Int] {
+  override def burstSize: Int = 1
+  var done = 0;
+  var status = 0;
+  override def serveMemoryAccess(token: Int): Boolean = {
+    assert(token < traf.length)
+    onDone()
+    done += 1
+    true
+  }
+
+  override def requestMemoryAccess(): Option[(Long, Int)] = {
+
+    val result = if(status < traf.length) {
+      Some((traf(status), status))
+    } else {
+      None
+    }
+    status +=1
+    result
+  }
+  override def triggerCycle(): Unit = {}
+  override def isDone(): Boolean = {
+    done == traf.length
+  }
+}
+
+class BufferefCacheTrafficTest extends AnyFunSuite {
+  var rand: scala.util.Random = new scala.util.Random;
+
+  test("No Accesses") {
+    var cache = new BufferedCacheTraffic(8,
+      new RoundRobinArbiter(1,1,Array(new NoTraffic(1)), (_)=>None),
+      new MainMemory(1),
+      (_,_) => (),
+    )
+
+    for (_ <- 0 until rand.nextInt(10)) {
+      assert(cache.requestMemoryAccess().isEmpty)
+      cache.triggerCycle()
+    }
+  }
+
+  test("Serve hit immediately") {
+    var wasHit: Option[Boolean] = None
+    var done = false
+    var cache = new BufferedCacheTraffic(8,
+      new RoundRobinArbiter(1,1,
+        Array(new TraceTraffic(1, Array(
+          new MemAccess(0,true, 20, 0)
+        ).toIterator,(_) => ())),
+        (_) => {
+          done = true
+          None
+        }
+      ),
+      new MainMemory(1),
+      (_, isHit) => {
+        wasHit = Some(isHit.isHit())
+      }
+    )
+
+    cache.triggerCycle() // One cycle for request
+    assert(!cache.isDone() && !done)
+    cache.triggerCycle() // One cycle for cache reply
+    assert(!cache.isDone() && !done)
+    assert(wasHit.contains(true))
+    cache.triggerCycle() // One cycle for bus response
+    assert(cache.isDone() && done)
+    assert(wasHit.contains(true))
+  }
+
+  test("Serve two consecutive hits") {
+    var wasHit: Int = 0
+    var done = 0
+    var cache = new BufferedCacheTraffic(8,
+      new RoundRobinArbiter(1,1,
+        Array(
+          new TraceTraffic(1, Array(
+            new MemAccess(0,true, 20, 0)
+          ).toIterator,(_) => ()),
+          new TraceTraffic(1, Array(
+            new MemAccess(0,true, 40, 0)
+          ).toIterator,(_) => ())),
+        (_) => {
+          done += 1
+          None
+        }
+      ),
+      new MainMemory(1),
+      (_, isHit) => {
+        if(isHit.isHit()) wasHit += 1;
+      }
+    )
+
+    cache.triggerCycle() // One cycle for request
+    assert(!cache.isDone() && done == 0)
+    cache.triggerCycle() // One cycle for cache reply
+    assert(!cache.isDone() && done == 0)
+    assert(wasHit == 1)
+    cache.triggerCycle() // One cycle for bus response and new request
+    assert(!cache.isDone() && done == 1)
+    assert(wasHit == 2)
+    cache.triggerCycle() // One cycle for cache reply
+    assert(!cache.isDone() && done == 1)
+    assert(wasHit == 2)
+    cache.triggerCycle() // One cycle for bus response and new request
+    assert(cache.isDone() && done == 2)
+    assert(wasHit == 2)
+  }
+
+  test("Serve miss after external serve") {
+    var wasHit: Option[Boolean] = None
+    var done = false
+    var cache = new BufferedCacheTraffic(8,
+      new RoundRobinArbiter(1,1,
+        Array(new TraceTraffic(1, Array(
+          new MemAccess(0,true, 20, 0)
+        ).toIterator,(_) => ())),
+        (_) => {
+          done = true
+          None
+        }
+      ),
+      new LruCache(1,1,1),
+      (_, isHit) => {
+        wasHit = Some(isHit.isHit())
+      }
+    )
+
+    assert(cache.requestMemoryAccess().contains((20,())))
+
+    // Wait for external reply
+    val randLatency = 1+rand.nextInt(20)
+    for(i <- 0 until randLatency) {
+      assert(wasHit.contains(false))
+      assert(!cache.isDone() && !done)
+      cache.triggerCycle()
+    }
+    cache.serveMemoryAccess(())
+    cache.triggerCycle() // One cycle for cache response
+    assert(!cache.isDone() && !done)
+    assert(wasHit.contains(false))
+    cache.triggerCycle() // One cycle for bus response
+    assert(cache.isDone() && done)
+    assert(wasHit.contains(false))
+  }
+
+  test("Serve two consecutive misses") {
+    var wasMiss: Int = 0
+    var done = 0
+    var cache = new BufferedCacheTraffic(8,
+      new RoundRobinArbiter(1,1,
+        Array(
+          new TraceTraffic(1, Array(
+            new MemAccess(0,true, 20, 0)
+          ).toIterator,(_) => ()),
+          new TraceTraffic(1, Array(
+            new MemAccess(0,true, 40, 0)
+          ).toIterator,(_) => ())),
+        (_) => {
+          done += 1
+          None
+        }
+      ),
+      new LruCache(1,1,1),
+      (_, isHit) => {
+        if(isHit.isMiss()) wasMiss += 1;
+      }
+    )
+
+    assert(cache.requestMemoryAccess().contains((20,())))
+
+    // Wait for external reply
+    val randLatency = 1+rand.nextInt(20)
+    for(i <- 0 until randLatency) {
+      assert(wasMiss == 1)
+      assert(!cache.isDone() && done==0)
+      cache.triggerCycle()
+    }
+    cache.serveMemoryAccess(())
+    cache.triggerCycle() // One cycle for cache response
+    assert(!cache.isDone() && done==0)
+    assert(wasMiss == 1)
+    cache.triggerCycle() // One cycle for bus response and new request
+    assert(!cache.isDone() && done==1)
+    assert(wasMiss == 2)
+
+    assert(cache.requestMemoryAccess().contains((40,())))
+    // Wait for external reply
+    for(i <- 0 until randLatency) {
+      assert(wasMiss == 2)
+      assert(!cache.isDone() && done==1)
+      cache.triggerCycle()
+    }
+    cache.serveMemoryAccess(())
+    cache.triggerCycle() // One cycle for cache response
+    assert(!cache.isDone() && done==1)
+    assert(wasMiss == 2)
+    cache.triggerCycle() // One cycle for bus response
+    assert(cache.isDone() && done==2)
+    assert(wasMiss == 2)
+  }
+
+  test("Serve hit during miss") {
+    var wasHit: Int = 0
+    var wasMiss: Int = 0
+    var done = 0
+    var cache = new BufferedCacheTraffic(8,
+      new ArrayTraffic(Array(20,40), () => done +=1),
+      new SelectCache(1,40),
+      (_, isHit) => {
+        if(isHit.isHit()) wasHit += 1 else wasMiss += 1;
+      }
+    )
+
+    assert(cache.requestMemoryAccess().contains((20,())))
+    assert(wasMiss == 1)
+    assert(wasHit == 0)
+    assert(!cache.isDone() && done==0)
+    cache.triggerCycle() // Start miss
+    cache.triggerCycle() // One cycle for other access request (serve hit during miss)
+    assert(wasMiss == 1)
+    assert(wasHit == 1)
+    cache.triggerCycle() // One cycle for cache hit
+    assert(!cache.isDone() && done==1)
+
+    // Wait for external reply
+    val randLatency1 = 1+rand.nextInt(20)
+    for(i <- 0 until randLatency1) {
+      assert(!cache.isDone() && done==1)
+      cache.triggerCycle()
+    }
+    cache.serveMemoryAccess(())
+    cache.triggerCycle() // One cycle for cache response
+    assert(cache.isDone() && done==2)
+    assert(wasHit == 1)
+    assert(wasMiss == 1)
+  }
+
+  test("Hit after refill") {
+    var wasMiss: Int = 0
+    var done = 0
+    var cache = new BufferedCacheTraffic(8,
+      new RoundRobinArbiter(1,1,
+        Array(
+          new TraceTraffic(1, Array(
+            new MemAccess(0,true, 20, 0)
+          ).toIterator,(_) => ()),
+          new TraceTraffic(1, Array(
+            new MemAccess(0,true, 20, 0)
+          ).toIterator,(_) => ())),
+        (_) => {
+          done += 1
+          None
+        }
+      ),
+      new LruCache(1,1,1),
+      (_, isHit) => {
+        if(isHit.isMiss()) wasMiss += 1;
+      }
+    )
+
+    assert(cache.requestMemoryAccess().contains((20,())))
+
+    // Wait for external reply
+    val randLatency = 1+rand.nextInt(20)
+    for(i <- 0 until randLatency) {
+      assert(wasMiss == 1)
+      assert(!cache.isDone() && done==0)
+      cache.triggerCycle()
+    }
+    cache.serveMemoryAccess(())
+    cache.triggerCycle() // One cycle for cache response
+    assert(!cache.isDone() && done==0)
+    assert(wasMiss == 1)
+    cache.triggerCycle() // One cycle for bus response and new request
+    assert(!cache.isDone() && done==1)
+    assert(wasMiss == 1)
+    cache.triggerCycle() // One cycle for cache response
+    assert(!cache.isDone() && done==1)
+    cache.triggerCycle() // One cycle for bus response
+    assert(cache.isDone() && done==2)
+  }
+
+  test("Hit after refill 2") {
+    var wasMiss: Int = 0
+    var wasHitAfterMiss: Int = 0
+    var done = 0
+    var cache = new BufferedCacheTraffic(8,
+      new ArrayTraffic(Array(20,40,20), () => done += 1),
+      new LruCache(1,2,1),
+      (_, isHit) => {
+        isHit match {
+          case Hit =>()
+          case Miss => wasMiss += 1
+          case HitAfterMiss => wasHitAfterMiss += 1
+        }
+      }
+    )
+
+    assert(cache.requestMemoryAccess().contains((20,())))
+    assert(wasMiss == 1)
+    assert(!cache.isDone() && done==0)
+    cache.triggerCycle() // Miss starts
+    assert(cache.requestMemoryAccess().isEmpty) // second request also misses, must wait
+    assert(wasMiss == 2)
+    assert(!cache.isDone() && done==0)
+    cache.triggerCycle() // Second request in miss queue, third requests misses
+    assert(cache.requestMemoryAccess().isEmpty) // third request also misses, must wait
+    assert(wasMiss == 3)
+    assert(!cache.isDone() && done==0)
+
+    // Wait for external reply on first miss
+    val randLatency = 1+rand.nextInt(20)
+    for(i <- 0 until randLatency) {
+      assert(wasMiss == 3)
+      assert(!cache.isDone() && done==0)
+      cache.triggerCycle()
+    }
+    cache.serveMemoryAccess(())
+    assert(!cache.isDone() && done==0)
+    assert(cache.requestMemoryAccess().contains((40,()))) // Start second miss service
+    cache.triggerCycle() // One cycle for cache response, second miss starts serving
+    assert(!cache.isDone() && done==1)
+    assert(wasMiss == 3)
+
+    // Wait for external reply on second miss
+    for(i <- 0 until randLatency) {
+      assert(wasMiss == 3)
+      assert(!cache.isDone() && done==1)
+      cache.triggerCycle()
+    }
+    cache.serveMemoryAccess(())
+    assert(wasMiss == 3)
+    assert(wasHitAfterMiss == 0)
+    assert(cache.requestMemoryAccess().isEmpty) // Third miss should not go through (hits now)
+    cache.triggerCycle() // One cycle for cache response (request 2), Third miss should now hit
+    assert(!cache.isDone() && done==2)
+    assert(wasMiss == 3)
+    cache.triggerCycle() // One cycle for cache response (request 3)
+    assert(cache.isDone() && done==3)
+    assert(wasMiss == 3)
+    assert(wasHitAfterMiss == 1)
+
+  }
 }

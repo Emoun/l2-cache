@@ -200,11 +200,12 @@ class TraceTraffic(s: Int, source: Iterator[MemAccess], reportLatency: (Int) => 
 }
 
 class RoundRobinArbiter[C<:Traffic[Unit]](
- burstOut: Int,
- latency:Int,
- cores: Array[C],
- // Takes coreId, returns whether  the core needs to be changed to the given traffic
- onDone: (Int) => Option[C],
+  burstOut: Int,
+  latency:Int,
+  cores: Array[C],
+  // Takes coreId, returns whether  the core needs to be changed to the given traffic
+  onDone: (Int) => Option[C],
+  allowMultiple: Boolean = false,
 )
   // request token is coreId
   extends Traffic[Int]
@@ -229,7 +230,7 @@ class RoundRobinArbiter[C<:Traffic[Unit]](
    * The second is the state
    * The third is the address
    */
-  var busy: Option[(Int,RequestState, Long)] = None
+  var requestQueue: Array[(Int,RequestState, Long)] = Array.empty
 
   def checkDone(coreId: Int): Unit = {
     if(cores(coreId).isDone() && !coresDone(coreId)) {
@@ -243,45 +244,100 @@ class RoundRobinArbiter[C<:Traffic[Unit]](
     }
   }
 
-  def checkAndServe(): Unit = {
-    if (busy.isDefined && busy.get._2 == Servicing(0)) {
-      cores(busy.get._1).serveMemoryAccess(())
-      checkDone(busy.get._1)
+  def isBusy(): Boolean = {
+    getServicingIdx().isDefined
+  }
 
-      busy = None
+  def getServicingIdx(): Option[Int] = {
+    if(!requestQueue.isEmpty) {
+      var beingServicedIdx = requestQueue.zipWithIndex.filter (elem => {
+        val (_, state, _) = elem._1
+        state match {
+          case Servicing (_) => true
+          case _ => false
+        }
+      }).map(elem => elem._2)
+
+      assert(beingServicedIdx.length <=1)
+
+      if(beingServicedIdx.isEmpty) {
+        None
+      } else {
+        Some(beingServicedIdx(0))
+      }
+    } else {
+      None
+    }
+  }
+
+  var internServed = false
+  def checkAndServe(): Unit = {
+    getServicingIdx() match {
+      case Some(idx) if requestQueue(idx)._2 == Servicing(0)=> {
+        assert(!internServed)
+        cores(requestQueue(idx)._1).serveMemoryAccess(())
+        checkDone(requestQueue(idx)._1)
+
+        // Remove the served element in the queue
+        requestQueue = requestQueue.zipWithIndex.filter(elem => elem._2 != idx).map(elem => elem._1)
+
+        internServed = true
+      }
+      case _ => ()
     }
   }
 
   override def serveMemoryAccess(token: Int): Boolean = {
-    assert(busy.isDefined)
-    assert(busy.get._1 == token)
-    assert(busy.get._2 == Issued)
-    busy = Some(busy.get._1, Servicing(latency), busy.get._3);
-    true
+    assert(!requestQueue.isEmpty)
+
+    if(getServicingIdx().isEmpty){
+      val reqIdx = requestQueue.zipWithIndex.filter(elem => {
+        val coreId = elem._1._1
+        coreId == token
+      }).map(elem => elem._2)
+
+      assert(reqIdx.length == 1)
+      assert(requestQueue(reqIdx(0))._2 == Issued)
+
+      requestQueue.update(reqIdx(0), (requestQueue(reqIdx(0))._1, Servicing(latency), requestQueue(reqIdx(0))._3))
+      true
+    } else {
+      false
+    }
   }
 
+  var internRequested = false
+
   def checkCoreReq(): Unit = {
-    if(busy.isDefined) {
+    if(!requestQueue.isEmpty && !allowMultiple) {
       // Already waiting to issued request
-    } else {
+    } else if(!internRequested && requestQueue.find(elem => elem._1 ==nextAccess).isEmpty){
       // check if the next core has a request
       val req = cores(nextAccess).requestMemoryAccess()
 
       if(req.isDefined) {
-        busy = Some((nextAccess, Waiting, req.get._1))
+        requestQueue = requestQueue :+ (nextAccess, Waiting, req.get._1)
       } else {
         // No request from core
       }
       nextAccess = (nextAccess + 1) % cores.length
+      internRequested = true
     }
   }
 
   override def requestMemoryAccess(): Option[(Long, Int)] = {
     checkAndServe()
     checkCoreReq()
-    if(busy.isDefined && busy.get._2 == Waiting) {
-      busy = Some((busy.get._1, Issued, busy.get._3))
-      Some((busy.get._3, busy.get._1))
+
+    val waitingInQueue = requestQueue.zipWithIndex.filter(elem => {
+      val (_, state, _) = elem._1
+      state==Waiting
+    }).map(elem => elem._2)
+
+    if(!waitingInQueue.isEmpty) {
+      val waitIdx = waitingInQueue(0)
+      requestQueue(waitIdx) = (requestQueue(waitIdx)._1, Issued, requestQueue(waitIdx)._3)
+      Some((requestQueue(waitIdx)._3, requestQueue(waitIdx)._1))
     } else {
       None
     }
@@ -291,22 +347,27 @@ class RoundRobinArbiter[C<:Traffic[Unit]](
     checkAndServe()
     checkCoreReq()
 
-    busy match {
-      case Some((_,Servicing(l),_)) => {
-        assert(l>0)
-        busy = Some((busy.get._1, Servicing(l-1), busy.get._3))
+    val servIdx = getServicingIdx()
+    if(servIdx.isDefined) {
+      requestQueue(servIdx.get) match {
+        case (_,Servicing(l),_) => {
+          assert(l>0)
+          requestQueue(servIdx.get) = (requestQueue(servIdx.get)._1, Servicing(l-1), requestQueue(servIdx.get)._3)
+        }
+        case _ => assert(false) // unreachable
       }
-      case _ =>
     }
 
     cores.zipWithIndex.foreach(coreIdx => {
       checkDone(coreIdx._2)
       coreIdx._1.triggerCycle()
     })
+    internRequested = false
+    internServed = false
   }
 
   override def isDone(): Boolean = {
-    busy.isEmpty && cores.zipWithIndex.forall(coreIdx => coreIdx._1.isDone() && coresDone(coreIdx._2))
+    requestQueue.isEmpty && cores.zipWithIndex.forall(coreIdx => coreIdx._1.isDone() && coresDone(coreIdx._2))
   }
 }
 
@@ -440,13 +501,14 @@ object Sim {
     var cumulativeLatencies: Array[Int] = Array.fill(traceFiles.length){0}
     var hits: Array[Int] = Array.fill(traceFiles.length){0}
     var l2Hits: Array[Int] = Array.fill(traceFiles.length){0}
+    var l2HitsAfterMiss: Array[Int] = Array.fill(traceFiles.length){0}
 
     val l1Latency = 1
     val l2Latency = 8
     val memLatency = 16
     val l1BurstSize = 4
     val l2BurstSize = 16
-    val memBurstSize = 32
+    val memBurstSize = 64
 
 //    var l2Cache = new LruCache(64, 8, 16) // 64B line, 8-way set associative 8KB cache
 //    val l2OnDone  = (_:Int) => None;
@@ -465,7 +527,7 @@ object Sim {
 //      None
 //    };
 
-    var l2Cache = new ContentionCache(64, 8, 16, memLatency) // 64B line, 8-way set associative 8KB cache
+    var l2Cache = new ContentionCache(memBurstSize, 8, 16, memLatency) // 64B line, 8-way set associative 8KB cache
     l2Cache.setCriticality(0, 1000)
     l2Cache.setCriticality(1, 1000)
     val l2OnDone  = (coreId:Int) => {
@@ -484,17 +546,9 @@ object Sim {
 //    l2Cache.assignWay(1,5)
 //    l2Cache.assignWay(1,6)
 //    l2Cache.assignWay(1,7)
-//    val l2OnDone  = (coreId:Int,cache:SoftCache) => {
-//      cache match {
-//        case conCache: ContentionPartCache => {
-//          conCache.unassign(coreId)
-//          None
-//        }
-//        case _ => {
-//          assert(false)
-//          None
-//        }
-//      }
+//    val l2OnDone  = (coreId:Int) => {
+//      l2Cache.unassign(coreId)
+//      None
 //    };
 
 //    var l2Cache = new TimeoutCache(64, 8, 16, 100000) // 64B line, 8-way set associative 8KB cache
@@ -506,17 +560,9 @@ object Sim {
 //    l2Cache.setPriority(1,5)
 //    l2Cache.setPriority(1,6)
 //    l2Cache.setPriority(1,7)
-//    val l2OnDone  = (coreId:Int,cache:SoftCache) => {
-//      cache match {
-//        case timeCache: TimeoutCache => {
-//          timeCache.removePriority(coreId)
-//          None
-//        }
-//        case _ => {
-//          assert(false)
-//          None
-//        }
-//      }
+//    val l2OnDone  = (coreId:Int) => {
+//      l2Cache.removePriority(coreId)
+//      None
 //    };
 
 
@@ -535,24 +581,29 @@ object Sim {
             None
           }
         ),
-        new LruCache(16,4,16), // 16B line, 4-way set associative 1KiB cache
-        (_, isHit) => {
-          if(isHit) hits(pathIdx._2)+=1;
+        new LruCache(l2BurstSize,4,16), // 16B line, 4-way set associative 1KiB cache
+        (_, hitType) => {
+          if(hitType.isHit()) hits(pathIdx._2)+=1;
         }
       )
     })
 
-    var l2Cache2 = new CacheTraffic(
+    var l2Cache2 = new BufferedCacheTraffic(
       memBurstSize,
       new RoundRobinArbiter(
         l2BurstSize,
         l2Latency,
         l1Cache,
-        l2OnDone
+        l2OnDone,
+        true
       ),
       l2Cache, // 64B line, 8-way set associative 8KB cache
-      (coreId, isHit) => {
-        if(isHit) l2Hits(coreId)+=1;
+      (coreId, hitType) => {
+        hitType match {
+          case Hit => l2Hits(coreId)+=1
+          case HitAfterMiss =>l2HitsAfterMiss(coreId)+=1
+          case _ => ()
+        }
       }
     )
 
@@ -575,12 +626,14 @@ object Sim {
     }
 
     for(i <- 0 until traceFiles.length) {
-      printf("Count: %d, L1 Hits: %d, L1 Hit Pct: %f, L2 Hits: %d, L2 Hit Pct: %f, Avg. Latency: %f\n",
+      printf("Count: %d, L1 Hits: %d, L1 Hit Pct: %f, L2 Hits: %d(%d), L2 Hit Pct: %f(%f), Avg. Latency: %f\n",
         coreAccesses(i),
         hits(i),
         hits(i).toDouble/coreAccesses(i).toDouble,
         l2Hits(i),
+        l2HitsAfterMiss(i),
         l2Hits(i)/(coreAccesses(i)-hits(i)).toDouble,
+        (l2Hits(i)+l2HitsAfterMiss(i))/(coreAccesses(i)-hits(i)).toDouble,
         (cumulativeLatencies(i).toDouble)/
           (coreAccesses(i).toDouble) )
     }

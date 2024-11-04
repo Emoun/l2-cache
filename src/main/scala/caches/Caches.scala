@@ -672,15 +672,41 @@ class MainMemory(lineSize:Int) extends SoftCache(lineSize,1,1) {
   override def printAll(): Unit = {}
 }
 
-class CacheTraffic(
-                    burst: Int,
-                    traf: Traffic[Int],
-                    cache: SoftCache,
+/**
+ * Defines various types of cache accesses. E.g. normal hits and misses, but also others.
+ */
+sealed trait HitType{
+  def isHit(): Boolean = {
+    this == Hit
+  }
+  def isMiss(): Boolean = {
+    this == Miss
+  }
+  def isHitAfterMiss(): Boolean = {
+    this == HitAfterMiss
+  }
+}
+object HitType {
+  def fromBool(isHit: Boolean): HitType = {
+    if(isHit) Hit else Miss
+  }
+}
+// A cache miss
+case object Miss extends HitType
+// A cache hit
+case object Hit extends HitType
+// Initially it missed, but before the external was prompted for the address, it was loaded by another request
+case object HitAfterMiss extends HitType
 
-                    /**
-   * For each access, takes the core requesting it and whether it was a hit or miss
-   */
-                    reportHits: (Int, Boolean) => Unit,
+class CacheTraffic(
+  burst: Int,
+  traf: Traffic[Int],
+  cache: SoftCache,
+
+  /**
+* For each access, takes the core requesting it and whether it was a hit or miss
+*/
+  reportHits: (Int, HitType) => Unit,
 ) extends Traffic[Unit] {
 
   override def burstSize: Int = burst
@@ -726,7 +752,7 @@ class CacheTraffic(
             // Cache miss
             busy = Some((addr, Waiting, coreId))
           }
-          reportHits(coreId, isHit)
+          reportHits(coreId, HitType.fromBool(isHit))
         }
         case _ =>
       }
@@ -774,6 +800,130 @@ class CacheTraffic(
     traf.triggerCycle()
   }
 
+  override def isDone(): Boolean = {
+    traf.isDone()
+  }
+}
+
+class BufferedCacheTraffic(
+  burst: Int,
+  traf: Traffic[Int],
+  cache: SoftCache,
+
+  /**
+   * For each access, takes the core requesting it and whether it was a hit or miss
+   */
+  reportHits: (Int, HitType) => Unit,
+) extends Traffic[Unit] {
+
+  override def burstSize: Int = burst
+
+  /**
+   * Must be the next to be sent to internal. Contains the request token
+   */
+  var interPrio: Option[Int] = None
+
+  /**
+   * Whether we have served itern this cycle
+   */
+  var internServed = false;
+  /**
+   * Whether we have accepted a requenst from internal this cycles
+   */
+  var internRequested = false;
+
+  /**
+   * Ordered queue of cache misses that are waiting for external.
+   * First is the address requested, second is the request token.
+   */
+  var externQueue: Array[(Long, Int)] = Array.empty
+  /**
+   * The status of the head of the extern queue.
+   * If false, has yet to issue the request to extern
+   * If true, waiting for extern to service the requenst
+   */
+  var externStatus: RequestState = Waiting
+
+  def checkServe(): Unit = {
+    if(!internServed && interPrio.isDefined) {
+      if(traf.serveMemoryAccess(interPrio.get)) {
+        interPrio = None
+        internServed = true
+      }
+    }
+
+    if(interPrio.isEmpty && externStatus == Servicing(0)) {
+      assert(externQueue.length>0)
+      interPrio = Some(externQueue(0)._2)
+      externQueue = externQueue.drop(1)
+      externStatus = Waiting
+      checkServe() // Potentially serve immediately
+    } else if(interPrio.isEmpty && externStatus == Waiting && externQueue.length>0) {
+      if(externQueueHeadHits()) {
+        // This miss is now a hit
+        interPrio = Some(externQueue(0)._2)
+        reportHits(externQueue(0)._2, HitAfterMiss)
+        externQueue = externQueue.drop(1)
+        checkServe() // Potentially serve immediately
+      }
+    }
+  }
+
+  def checkReq(): Unit = {
+    if(!internRequested && interPrio.isEmpty) {
+      traf.requestMemoryAccess() match {
+        case Some((addr, coreId)) => {
+          internRequested = true
+
+          val wasHit = cache.getCacheLine(addr, coreId, false)
+          if(wasHit) {
+            interPrio = Some(coreId)
+          } else {
+            externQueue = externQueue :+ (addr, coreId)
+          }
+          reportHits(coreId, if(wasHit) Hit else Miss)
+        }
+        case None =>
+      }
+    }
+  }
+
+  def externQueueHeadHits(): Boolean = {
+    externQueue.length>0 &&
+      cache.getCacheLine(externQueue(0)._1, externQueue(0)._2, false)
+  }
+
+  override def serveMemoryAccess(token: Unit): Boolean = {
+    assert(externStatus == Issued)
+    assert(externQueue.length > 0)
+
+    // Update cache
+    cache.getCacheLine(externQueue(0)._1, externQueue(0)._2, true)
+    externStatus = Servicing(0)
+
+    true
+  }
+
+  override def requestMemoryAccess(): Option[(Long, Unit)] = {
+    checkServe()
+    checkReq()
+
+    if(externStatus == Waiting && externQueue.length>0 && !externQueueHeadHits()) {
+      externStatus = Issued
+      Some((externQueue(0)._1, ()))
+    } else {
+      None
+    }
+  }
+  override def triggerCycle(): Unit = {
+    checkServe()
+    checkReq()
+
+    traf.triggerCycle()
+
+    internServed = false
+    internRequested = false
+  }
   override def isDone(): Boolean = {
     traf.isDone()
   }

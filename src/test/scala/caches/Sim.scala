@@ -675,4 +675,153 @@ class RoundRobinArbiterTests extends AnyFunSuite {
     assert(!arbiter.isDone())
   }
 
+  test("Allow multiple outstanding requests") {
+    var latency = 2+rand.nextInt(25)
+    var done = 0
+    val newTraffic = (addr: Int) => new TraceTraffic(1, Array(
+      new MemAccess(0, true, addr, 0)
+    ).toIterator, (_) => done += 1)
+
+    var arbiter = new RoundRobinArbiter(8,
+      latency,
+      Array(newTraffic(20), newTraffic(40)),
+      (_) => None,
+      true // Allow multiple requests
+    )
+
+    assert(arbiter.requestMemoryAccess().contains((20,0)))
+    arbiter.triggerCycle()
+    assert(arbiter.requestMemoryAccess().contains((40,1))) // Second request issued while waiting for the first
+
+    // wait some random amount of time before external response
+    for(i <- 0 until 1+rand.nextInt(25)) {
+      assert(!arbiter.isDone() && done == 0)
+      arbiter.triggerCycle()
+    }
+    assert(arbiter.serveMemoryAccess(0)) // Respond to first
+
+    for(i <- 0 until 1+latency) {
+      assert(!arbiter.isDone() && done == 0)
+      arbiter.triggerCycle()
+    }
+    assert(!arbiter.isDone() && done == 1) // First request done
+
+    // wait some random amount of time before second external response
+    for(i <- 0 until 1+rand.nextInt(25)) {
+      assert(!arbiter.isDone() && done == 1)
+      arbiter.triggerCycle()
+    }
+    assert(arbiter.serveMemoryAccess(1)) // Respond to second
+
+    for(i <- 0 until 1+latency) {
+      assert(!arbiter.isDone() && done == 1)
+      arbiter.triggerCycle()
+    }
+    assert(arbiter.isDone() && done == 2) // Second request done
+  }
+  test("Multi-request external serve while internal serve") {
+    var latency = 2+rand.nextInt(25)
+    var done = 0
+    val newTraffic = (addr: Int) => new TraceTraffic(1, Array(
+      new MemAccess(0, true, addr, 0)
+    ).toIterator, (_) => done += 1)
+
+    var arbiter = new RoundRobinArbiter(8,
+      latency,
+      Array(newTraffic(20), newTraffic(40)),
+      (_) => None,
+      true // Allow multiple requests
+    )
+
+    assert(arbiter.requestMemoryAccess().contains((20,0)))
+    arbiter.triggerCycle()
+    assert(arbiter.requestMemoryAccess().contains((40,1))) // Second request issued while waiting for the first
+
+    // wait some random amount of time before external response
+    for(i <- 0 until 1+rand.nextInt(25)) {
+      assert(!arbiter.isDone() && done == 0)
+      arbiter.triggerCycle()
+    }
+    assert(arbiter.serveMemoryAccess(0)) // Respond to first
+    for(i <- 0 until 1+latency) {
+      assert(!arbiter.serveMemoryAccess(1)) // Disallow serve of second while servicing first
+      assert(!arbiter.isDone() && done == 0)
+      arbiter.triggerCycle()
+    }
+    assert(!arbiter.isDone() && done == 1) // First request done
+    assert(arbiter.serveMemoryAccess(1)) // Respond to second
+
+    for(i <- 0 until 1+latency) {
+      assert(!arbiter.isDone() && done == 1)
+      arbiter.triggerCycle()
+    }
+    assert(arbiter.isDone() && done == 2) // Second request done
+  }
+
+  test("Multi-request Reply out of order") {
+    var latency = 2+rand.nextInt(25)
+    var done = Array.fill(3){false}
+    val newTraffic = (coreId: Int, addr: Int) => new TraceTraffic(1, Array(
+      new MemAccess(0, true, addr, 0)
+    ).toIterator, (_) => done(coreId) = true)
+    val doneArray = (d1:Boolean, d2:Boolean, d3:Boolean) => {
+      done(0) == d1 && done(1) == d2 && done(2) == d3
+    }
+
+
+    var arbiter = new RoundRobinArbiter(8,
+      latency,
+      Array(newTraffic(0,20), newTraffic(1,40), newTraffic(2,60)),
+      (_) => None,
+      true // Allow multiple requests
+    )
+
+    assert(arbiter.requestMemoryAccess().contains((20,0)))
+    arbiter.triggerCycle()
+    assert(arbiter.requestMemoryAccess().contains((40,1)))
+    arbiter.triggerCycle()
+    assert(arbiter.requestMemoryAccess().contains((60,2)))
+
+    // wait some random amount of time before external response
+    for(i <- 0 until 1+rand.nextInt(25)) {
+      assert(!arbiter.isDone() && doneArray(false,false,false))
+      arbiter.triggerCycle()
+    }
+    assert(arbiter.serveMemoryAccess(2)) // Respond to last first
+
+    for(i <- 0 until 1+latency) {
+      assert(!arbiter.isDone() && doneArray(false,false,false))
+      arbiter.triggerCycle()
+    }
+    assert(!arbiter.isDone() && doneArray(false,false,true)) // last request done
+
+    // wait some random amount of time before second external response
+    for(i <- 0 until 1+rand.nextInt(25)) {
+      assert(!arbiter.isDone() && doneArray(false,false,true))
+      arbiter.triggerCycle()
+    }
+    assert(arbiter.serveMemoryAccess(1)) // Respond to second
+
+    for(i <- 0 until 1+latency) {
+      assert(!arbiter.isDone() && doneArray(false,false,true))
+      arbiter.triggerCycle()
+    }
+    assert(!arbiter.isDone() && doneArray(false,true,true)) // Second request done
+
+    // wait some random amount of time before third external response
+    for(i <- 0 until 1+rand.nextInt(25)) {
+      assert(!arbiter.isDone() && doneArray(false,true,true))
+      arbiter.triggerCycle()
+    }
+    assert(arbiter.serveMemoryAccess(0)) // Respond to first
+
+    for(i <- 0 until 1+latency) {
+      assert(!arbiter.isDone() && doneArray(false,true,true))
+      arbiter.triggerCycle()
+    }
+    assert(arbiter.isDone() && doneArray(true,true,true)) // First request done
+  }
+
+
+
 }
