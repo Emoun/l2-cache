@@ -430,6 +430,12 @@ class TimeoutCache(lineLength: Int, ways: Int, sets: Int, timeout: Int)
   // For each way, element contains the core with the priority to this line.
   private var _priorities: Array[Option[Int]] = Array.fill(ways){None};
 
+  /**
+   * Returns whether the given way in the given set has non-zero timer.
+   * @param setIdx
+   * @param wayIdx
+   * @return
+   */
   private def hasPriority(setIdx: Int, wayIdx: Int): Boolean = {
     val line = _setArr(setIdx)(wayIdx)
     line.isDefined && line.get._2._2 != 0
@@ -469,33 +475,13 @@ class TimeoutCache(lineLength: Int, ways: Int, sets: Int, timeout: Int)
   }
 
   override def getValidWays(coreId: Int, setIdx: Int): Array[Int] = {
-    val coreHasPrio = _priorities.zipWithIndex.filter((prio)=> {
-      val (prioId, _) = prio;
-      prioId.contains(coreId)
-    });
-
-    if(coreHasPrio.length>0) {
-      // First, look for any priority ways that have expired
-      val expired = coreHasPrio.filter((prio) => {
-        val wayIdx = prio._2;
-        val line = _setArr(setIdx)(wayIdx);
-        line.isEmpty || line.get._2._2 == 0
-      });
-
-      if(expired.length>0) {
-        // Evict from prioritized ways that have expired
-        return expired.map(prio => prio._2 );
-      } else {
-        // No prioritized way has expired. Just use default behavior then
-      }
-    } else {
-      // Core does not have any prioritized ways, use default behavior
-    }
-
-    // Choose from any ways that do not have a non-expired timeout
     Array.range(0, ways).filter((wayIdx) => {
       val line = _setArr(setIdx)(wayIdx);
-      line.isEmpty || !hasPriority(setIdx, wayIdx)
+      line.isEmpty ||
+        // Choose from any ways that have an expired timer
+        !hasPriority(setIdx, wayIdx) ||
+        // Choose from any ways that have the given core as priority
+        _priorities(wayIdx).contains(coreId)
     })
   }
 
@@ -798,6 +784,7 @@ class CacheTraffic(
     }
 
     traf.triggerCycle()
+    cache.advanceCycle()
   }
 
   override def isDone(): Boolean = {
@@ -920,6 +907,7 @@ class BufferedCacheTraffic(
     checkReq()
 
     traf.triggerCycle()
+    cache.advanceCycle()
 
     internServed = false
     internRequested = false

@@ -719,6 +719,7 @@ class RoundRobinArbiterTests extends AnyFunSuite {
     }
     assert(arbiter.isDone() && done == 2) // Second request done
   }
+
   test("Multi-request external serve while internal serve") {
     var latency = 2+rand.nextInt(25)
     var done = 0
@@ -821,7 +822,5 @@ class RoundRobinArbiterTests extends AnyFunSuite {
     }
     assert(arbiter.isDone() && doneArray(true,true,true)) // First request done
   }
-
-
-
+  
 }

@@ -460,6 +460,23 @@ class TimeoutCacheTest extends AnyFunSuite with LruTests[TimeoutCache] {
     assert(cache.getCacheLine(4,0) == true)
   }
 
+  test("Low criticality can evict high criticality after timeout") {
+    val cache = createInstance(2,2,2,2);
+    cache.setPriority(0, 0); // Assign all to core 0
+    cache.setPriority(0, 1);
+
+    // Fill up set 0
+    cache.getCacheLine(0,0) // way 0
+    cache.getCacheLine(4,0) // way 1
+
+    cache.advanceCycle()
+    cache.advanceCycle()
+
+    assert(cache.getCacheLine(8,1) == false) // try to use set 0 again
+    assert(cache.getCacheLine(8,1) == true) // Ensure did get saved
+    assert(cache.getCacheLine(4,0) == true)
+  }
+
   test("Low criticality can evict high-criticality in in unprioritized way") {
     val cache = createInstance(2,2,2,2);
     cache.setPriority(0, 0);
@@ -474,7 +491,7 @@ class TimeoutCacheTest extends AnyFunSuite with LruTests[TimeoutCache] {
     assert(cache.getCacheLine(0,0) == true) // Ensure did get saved
   }
 
-  test("High-criticality prefers timedout ways") {
+  test("High-criticality doesn't prefer unprioritised") {
     val cache = createInstance(2,3,2,2);
     cache.setPriority(0, 0);
     cache.setPriority(1, 1);
@@ -487,25 +504,8 @@ class TimeoutCacheTest extends AnyFunSuite with LruTests[TimeoutCache] {
     assert(cache.getCacheLine(16,0) == false) // try to use set 0 again
     assert(cache.getCacheLine(16,1) == true) // Ensure did get saved
 
-    assert(cache.getCacheLine(0,0) == true) // Ensure did get saved
     assert(cache.getCacheLine(4,1) == true) // Ensure did get saved
-  }
-
-  test("High-criticality prefers own ways") {
-    val cache = createInstance(2,3,2,2);
-    cache.setPriority(0, 0);
-
-    // Fill up set 0
-    cache.getCacheLine(0,1) // way 0, without prio
-    cache.getCacheLine(4,1) // way 1, with prio
-    cache.getCacheLine(8,1) // way 2, without prio
-    cache.getCacheLine(0,1) // make sure way 0 isn't LRU
-
-    assert(cache.getCacheLine(16,0) == false) // try to use set 0 again
-    assert(cache.getCacheLine(16,0) == true) // Ensure did get saved
-
-    assert(cache.getCacheLine(4,0) == true) // Ensure did get saved
-    assert(cache.getCacheLine(8,0) == true) // Ensure did get saved
+    assert(cache.getCacheLine(8,2) == true) // Ensure did get saved
   }
 
   test("Cycles reduce timeout") {
@@ -1208,6 +1208,45 @@ class CacheTrafficTest extends AnyFunSuite {
     assert(!lruCache.getCacheLine(0,0,false)) // After serve, fill should happen
   }
 
+  test("Triggers cycles") {
+    var cacheTickCount = 0;
+    var trafTicks = 0;
+    var cache = new CacheTraffic(8,
+      new Traffic[Int] {
+        override def burstSize: Int = 1
+
+        override def serveMemoryAccess(token: Int): Boolean = false
+
+        override def requestMemoryAccess(): Option[(Long, Int)] = None
+
+        override def triggerCycle(): Unit = {trafTicks += 1}
+
+        override def isDone(): Boolean = false
+      },
+      new SoftCache(1,1,1) {
+        override def getCacheLine(addr: Long, core: Int, withRefill: Boolean): Boolean = false
+
+        override def isHit(addr: Long): Option[(Int, Int)] = None
+
+        override def printAll(): Unit = {
+        }
+
+
+        override def advanceCycle(): Unit = {
+          cacheTickCount += 1
+        }
+      },
+      (_,_) => (),
+    )
+
+    val triggerCount = rand.nextInt(10)
+    for (_ <- 0 until triggerCount) {
+      assert(cache.requestMemoryAccess().isEmpty)
+      cache.triggerCycle()
+    }
+    assert(triggerCount == cacheTickCount)
+  }
+
 }
 
 /**
@@ -1257,7 +1296,7 @@ class ArrayTraffic(traf: Array[Long], onDone: () => Unit) extends Traffic[Int] {
   }
 }
 
-class BufferefCacheTrafficTest extends AnyFunSuite {
+class BufferedCacheTrafficTest extends AnyFunSuite {
   var rand: scala.util.Random = new scala.util.Random;
 
   test("No Accesses") {
@@ -1575,5 +1614,44 @@ class BufferefCacheTrafficTest extends AnyFunSuite {
     assert(wasMiss == 3)
     assert(wasHitAfterMiss == 1)
 
+  }
+
+  test("Triggers cycles") {
+    var cacheTickCount = 0;
+    var trafTicks = 0;
+    var cache = new BufferedCacheTraffic(8,
+      new Traffic[Int] {
+        override def burstSize: Int = 1
+
+        override def serveMemoryAccess(token: Int): Boolean = false
+
+        override def requestMemoryAccess(): Option[(Long, Int)] = None
+
+        override def triggerCycle(): Unit = {trafTicks += 1}
+
+        override def isDone(): Boolean = false
+      },
+      new SoftCache(1,1,1) {
+        override def getCacheLine(addr: Long, core: Int, withRefill: Boolean): Boolean = false
+
+        override def isHit(addr: Long): Option[(Int, Int)] = None
+
+        override def printAll(): Unit = {
+        }
+
+
+        override def advanceCycle(): Unit = {
+          cacheTickCount += 1
+        }
+      },
+      (_,_) => (),
+    )
+
+    val triggerCount = rand.nextInt(10)
+    for (_ <- 0 until triggerCount) {
+      assert(cache.requestMemoryAccess().isEmpty)
+      cache.triggerCycle()
+    }
+    assert(triggerCount == cacheTickCount)
   }
 }
