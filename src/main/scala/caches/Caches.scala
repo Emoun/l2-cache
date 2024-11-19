@@ -743,8 +743,9 @@ class CacheTraffic(
    * First is the address needed from external
    * The second is request state
    * Third is the request token
+   * Fourth is whether the request is a read
    */
-  var busy: Option[(Long, RequestState, Int)] = None
+  var busy: Option[(Long, RequestState, Int, Boolean)] = None
 
   def waitingToIssue(): Boolean = {
     busy.isDefined && busy.get._2 == Waiting
@@ -754,28 +755,43 @@ class CacheTraffic(
   }
   def waitingForInternal(): Boolean = {
     busy match {
-      case Some((_, Servicing(0),_)) => true
+      case Some((_, Servicing(0),_,_)) => true
       case _ => false
     }
   }
 
   def checkServe(): Unit = {
     if(waitingForInternal() && traf.serveMemoryAccess(busy.get._3)) {
-      busy = None
+      if(busy.get._4){
+        busy = None
+      } else {
+        // On a write, we must also reload the cache line
+        // Cache.evict(busy.get._1)
+        busy = Some((busy.get._1,  Waiting, busy.get._3,true))
+      }
     }
   }
 
   def checkTraf():Unit = {
     if(busy.isEmpty ) {
       traf.requestMemoryAccess() match {
-        case Some((addr, coreId)) => {
-          val isHit = cache.performAccess(addr, coreId,true,false).isReadHit()
-          if(isHit) {
-            // Cache hit, service next cycle
-            busy = Some((addr, Servicing(1), coreId))
-          } else {
-            // Cache miss
-            busy = Some((addr, Waiting, coreId))
+        case Some((addr, isRead, coreId)) => {
+          val isHit = cache.performAccess(addr, coreId,isRead,false) match {
+            case ReadHit => {
+              // Cache hit, service next cycle
+              busy = Some((addr, Servicing(1), coreId, true))
+              true
+            }
+            case ReadMiss => {
+              // Cache read miss
+              busy = Some((addr, Waiting, coreId, true))
+              false
+            }
+            case WriteBack(writeAddr) => {
+              // Cache write back
+              busy = Some((addr, Waiting, coreId, false))
+              false
+            }
           }
           reportHits(coreId, HitType.fromBool(isHit))
         }
@@ -790,8 +806,10 @@ class CacheTraffic(
       false
     } else if(waitingForExternal()) {
       // Now we can update the cache
-      cache.performAccess(busy.get._1, busy.get._3,true,true).isReadHit()
-      busy = Some(busy.get._1, Servicing(0), busy.get._3)
+      val response = cache.performAccess(busy.get._1, busy.get._3, busy.get._4,true)
+      assert(response.isReadMiss()) // cannot be write back, as we should have already evicted it
+
+      busy = Some(busy.get._1, Servicing(0), busy.get._3, busy.get._4)
       true
     } else {
       assert(false) // Unreachable
@@ -799,13 +817,13 @@ class CacheTraffic(
     }
   }
 
-  override def requestMemoryAccess(): Option[(Long,Unit)] = {
+  override def requestMemoryAccess(): Option[(Long,Boolean,Unit)] = {
     checkServe()
     checkTraf()
 
     if(waitingToIssue()) {
-      busy = Some((busy.get._1, Issued, busy.get._3))
-      return Some((busy.get._1, ()))
+      busy = Some((busy.get._1, Issued, busy.get._3, busy.get._4))
+      return Some((busy.get._1, busy.get._4, ()))
     }
 
     None
@@ -816,8 +834,8 @@ class CacheTraffic(
     checkTraf()
 
     busy match {
-      case Some((addr, Servicing(l),token)) if l>0 => {
-        busy = Some((addr, Servicing(l-1), token))
+      case Some((addr, Servicing(l),token, isRead)) if l>0 => {
+        busy = Some((addr, Servicing(l-1), token, isRead))
       }
       case _ =>
     }
@@ -861,8 +879,9 @@ class BufferedCacheTraffic(
   /**
    * Ordered queue of cache misses that are waiting for external.
    * First is the address requested, second is the request token.
+   * Third is whether it's a read. In case of write.
    */
-  var externQueue: Array[(Long, Int)] = Array.empty
+  var externQueue: Array[(Long,Int,Boolean)] = Array.empty
   /**
    * The status of the head of the extern queue.
    * If false, has yet to issue the request to extern
@@ -898,14 +917,23 @@ class BufferedCacheTraffic(
   def checkReq(): Unit = {
     if(!internRequested && interPrio.isEmpty) {
       traf.requestMemoryAccess() match {
-        case Some((addr, coreId)) => {
+        case Some((addr, isRead, coreId)) => {
           internRequested = true
 
-          val wasHit = cache.performAccess(addr, coreId,true,false).isReadHit()
-          if(wasHit) {
-            interPrio = Some(coreId)
-          } else {
-            externQueue = externQueue :+ (addr, coreId)
+          val wasHit = cache.performAccess(addr, coreId,isRead,false) match {
+            case ReadHit => {
+              interPrio = Some(coreId)
+              true
+            }
+            case ReadMiss => {
+              externQueue = externQueue :+ (addr, coreId, true)
+              false
+            }
+            case WriteBack(writeAddr) => {
+              // First write back the cache line, then issue a read to fill it
+              externQueue = externQueue :+ (writeAddr, coreId, false) :+ (addr, coreId, true)
+              false
+            }
           }
           reportHits(coreId, if(wasHit) Hit else Miss)
         }
@@ -930,13 +958,13 @@ class BufferedCacheTraffic(
     true
   }
 
-  override def requestMemoryAccess(): Option[(Long, Unit)] = {
+  override def requestMemoryAccess(): Option[(Long, Boolean, Unit)] = {
     checkServe()
     checkReq()
 
     if(externStatus == Waiting && externQueue.length>0 && !externQueueHeadHits()) {
       externStatus = Issued
-      Some((externQueue(0)._1, ()))
+      Some((externQueue(0)._1, externQueue(0)._3, ()))
     } else {
       None
     }

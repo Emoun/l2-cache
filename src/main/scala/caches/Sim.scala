@@ -61,10 +61,11 @@ trait Traffic[S] {
   /**
    * Request a memory access from external.
    * If none, no memory access is requested.
-   * If Some, first is the address requested and second is a token identifying the request.
+   * If Some, first is the address requested, the second is whether the access is a read,
+   * and the third isa token identifying the request.
    * @return
    */
-  def requestMemoryAccess(): Option[(Long, S)];
+  def requestMemoryAccess(): Option[(Long, Boolean, S)];
 
   def triggerCycle();
 
@@ -146,7 +147,7 @@ class TraceTraffic(s: Int, source: Iterator[MemAccess], reportLatency: (Int) => 
     }
   }
 
-  override def requestMemoryAccess(): Option[(Long, Unit)] = {
+  override def requestMemoryAccess(): Option[(Long, Boolean, Unit)] = {
     if(waitingForServe.isDefined) return None;
 
     if(nextAccess.length>0) {
@@ -169,7 +170,7 @@ class TraceTraffic(s: Int, source: Iterator[MemAccess], reportLatency: (Int) => 
           requestMemoryAccess()
         } else {
           waitingForServe = Some(0)
-          Some((startAddr, ()))
+          Some((startAddr, access.isRead, ()))
         }
       } else {
         // The next access is not ready
@@ -229,8 +230,9 @@ class RoundRobinArbiter[C<:Traffic[Unit]](
    * The first is the core being serviced
    * The second is the state
    * The third is the address
+   * The fourth is whether request is a read
    */
-  var requestQueue: Array[(Int,RequestState, Long)] = Array.empty
+  var requestQueue: Array[(Int,RequestState, Long, Boolean)] = Array.empty
 
   def checkDone(coreId: Int): Unit = {
     if(cores(coreId).isDone() && !coresDone(coreId)) {
@@ -251,7 +253,7 @@ class RoundRobinArbiter[C<:Traffic[Unit]](
   def getServicingIdx(): Option[Int] = {
     if(!requestQueue.isEmpty) {
       var beingServicedIdx = requestQueue.zipWithIndex.filter (elem => {
-        val (_, state, _) = elem._1
+        val (_, state, _, _) = elem._1
         state match {
           case Servicing (_) => true
           case _ => false
@@ -299,7 +301,7 @@ class RoundRobinArbiter[C<:Traffic[Unit]](
       assert(reqIdx.length == 1)
       assert(requestQueue(reqIdx(0))._2 == Issued)
 
-      requestQueue.update(reqIdx(0), (requestQueue(reqIdx(0))._1, Servicing(latency), requestQueue(reqIdx(0))._3))
+      requestQueue.update(reqIdx(0), (requestQueue(reqIdx(0))._1, Servicing(latency), requestQueue(reqIdx(0))._3, requestQueue(reqIdx(0))._4))
       true
     } else {
       false
@@ -316,7 +318,7 @@ class RoundRobinArbiter[C<:Traffic[Unit]](
       val req = cores(nextAccess).requestMemoryAccess()
 
       if(req.isDefined) {
-        requestQueue = requestQueue :+ (nextAccess, Waiting, req.get._1)
+        requestQueue = requestQueue :+ (nextAccess, Waiting, req.get._1, req.get._2)
       } else {
         // No request from core
       }
@@ -325,19 +327,19 @@ class RoundRobinArbiter[C<:Traffic[Unit]](
     }
   }
 
-  override def requestMemoryAccess(): Option[(Long, Int)] = {
+  override def requestMemoryAccess(): Option[(Long, Boolean, Int)] = {
     checkAndServe()
     checkCoreReq()
 
     val waitingInQueue = requestQueue.zipWithIndex.filter(elem => {
-      val (_, state, _) = elem._1
+      val (_, state, _, _) = elem._1
       state==Waiting
     }).map(elem => elem._2)
 
     if(!waitingInQueue.isEmpty) {
       val waitIdx = waitingInQueue(0)
-      requestQueue(waitIdx) = (requestQueue(waitIdx)._1, Issued, requestQueue(waitIdx)._3)
-      Some((requestQueue(waitIdx)._3, requestQueue(waitIdx)._1))
+      requestQueue(waitIdx) = (requestQueue(waitIdx)._1, Issued, requestQueue(waitIdx)._3, requestQueue(waitIdx)._4)
+      Some((requestQueue(waitIdx)._3, requestQueue(waitIdx)._4, requestQueue(waitIdx)._1))
     } else {
       None
     }
@@ -350,9 +352,9 @@ class RoundRobinArbiter[C<:Traffic[Unit]](
     val servIdx = getServicingIdx()
     if(servIdx.isDefined) {
       requestQueue(servIdx.get) match {
-        case (_,Servicing(l),_) => {
+        case (_,Servicing(l),_,_) => {
           assert(l>0)
-          requestQueue(servIdx.get) = (requestQueue(servIdx.get)._1, Servicing(l-1), requestQueue(servIdx.get)._3)
+          requestQueue(servIdx.get) = (requestQueue(servIdx.get)._1, Servicing(l-1), requestQueue(servIdx.get)._3, requestQueue(servIdx.get)._4)
         }
         case _ => assert(false) // unreachable
       }

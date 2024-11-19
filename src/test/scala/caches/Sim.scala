@@ -23,9 +23,9 @@ class TraceTrafficTests2 extends AnyFunSuite {
   test("Single Double Size") {
     var traf = new TraceTraffic(1, Array(new MemAccess(1,true, 0, 0)).toIterator, (_) => ())
 
-    assert(traf.requestMemoryAccess().contains((0, ())))
+    assert(traf.requestMemoryAccess().contains((0,true,())))
     traf.serveMemoryAccess(())
-    assert(traf.requestMemoryAccess().contains((1, ())))
+    assert(traf.requestMemoryAccess().contains((1,true,())))
     traf.serveMemoryAccess(())
     assert(traf.requestMemoryAccess().isEmpty)
   }
@@ -33,9 +33,9 @@ class TraceTrafficTests2 extends AnyFunSuite {
   test("Single Double Size 2") {
     var traf = new TraceTraffic(2, Array(new MemAccess(2,true, 10, 0)).toIterator, (_) => ())
 
-    assert(traf.requestMemoryAccess().contains((10, ())))
+    assert(traf.requestMemoryAccess().contains((10,true,())))
     traf.serveMemoryAccess(())
-    assert(traf.requestMemoryAccess().contains((12, ())))
+    assert(traf.requestMemoryAccess().contains((12,true,())))
     traf.serveMemoryAccess(())
     assert(traf.requestMemoryAccess().isEmpty)
   }
@@ -43,13 +43,13 @@ class TraceTrafficTests2 extends AnyFunSuite {
   test("Single Quad Size") {
     var traf = new TraceTraffic(2, Array(new MemAccess(3,true, 20, 0)).toIterator, (_) => ())
 
-    assert(traf.requestMemoryAccess().contains((20, ())))
+    assert(traf.requestMemoryAccess().contains((20,true,())))
     traf.serveMemoryAccess(())
-    assert(traf.requestMemoryAccess().contains((22, ())))
+    assert(traf.requestMemoryAccess().contains((22,true,())))
     traf.serveMemoryAccess(())
-    assert(traf.requestMemoryAccess().contains((24, ())))
+    assert(traf.requestMemoryAccess().contains((24,true,())))
     traf.serveMemoryAccess(())
-    assert(traf.requestMemoryAccess().contains((26, ())))
+    assert(traf.requestMemoryAccess().contains((26,true,())))
     traf.serveMemoryAccess(())
     assert(traf.requestMemoryAccess().isEmpty)
   }
@@ -60,9 +60,9 @@ class TraceTrafficTests2 extends AnyFunSuite {
       new MemAccess(0,true, 56, 0)
     ).toIterator,(_) => ())
 
-    assert(traf.requestMemoryAccess().contains((20, ())))
+    assert(traf.requestMemoryAccess().contains((20,true,())))
     traf.serveMemoryAccess(())
-    assert(traf.requestMemoryAccess().contains((56, ())))
+    assert(traf.requestMemoryAccess().contains((56,true,())))
     traf.serveMemoryAccess(())
     assert(traf.requestMemoryAccess().isEmpty)
   }
@@ -73,11 +73,11 @@ class TraceTrafficTests2 extends AnyFunSuite {
       new MemAccess(0,true, 56, 0)
     ).toIterator,(_) => ())
 
-    assert(traf.requestMemoryAccess().contains((20, ())))
+    assert(traf.requestMemoryAccess().contains((20,true,())))
     traf.serveMemoryAccess(())
-    assert(traf.requestMemoryAccess().contains((22, ())))
+    assert(traf.requestMemoryAccess().contains((22,true,())))
     traf.serveMemoryAccess(())
-    assert(traf.requestMemoryAccess().contains((56, ())))
+    assert(traf.requestMemoryAccess().contains((56,true,())))
     traf.serveMemoryAccess(())
     assert(traf.requestMemoryAccess().isEmpty)
   }
@@ -88,17 +88,17 @@ class TraceTrafficTests2 extends AnyFunSuite {
       new MemAccess(1,true, 90, 0)
     ).toIterator,(_) => ())
 
-    assert(traf.requestMemoryAccess().contains((16, ())))
+    assert(traf.requestMemoryAccess().contains((16,true,())))
     traf.serveMemoryAccess(())
-    assert(traf.requestMemoryAccess().contains((17, ())))
+    assert(traf.requestMemoryAccess().contains((17,true,())))
     traf.serveMemoryAccess(())
-    assert(traf.requestMemoryAccess().contains((18, ())))
+    assert(traf.requestMemoryAccess().contains((18,true,())))
     traf.serveMemoryAccess(())
-    assert(traf.requestMemoryAccess().contains((19, ())))
+    assert(traf.requestMemoryAccess().contains((19,true,())))
     traf.serveMemoryAccess(())
-    assert(traf.requestMemoryAccess().contains((90, ())))
+    assert(traf.requestMemoryAccess().contains((90,true,())))
     traf.serveMemoryAccess(())
-    assert(traf.requestMemoryAccess().contains((91, ())))
+    assert(traf.requestMemoryAccess().contains((91,true,())))
     traf.serveMemoryAccess(())
     assert(traf.requestMemoryAccess().isEmpty)
   }
@@ -114,7 +114,7 @@ class TraceTrafficTests2 extends AnyFunSuite {
       traf.triggerCycle()
       result
     }))
-    assert(traf.requestMemoryAccess().contains((16, ())))
+    assert(traf.requestMemoryAccess().contains((16,true,())))
     traf.serveMemoryAccess(())
     traf.triggerCycle()
     assert(traf.requestMemoryAccess().isEmpty)
@@ -135,7 +135,7 @@ class TraceTrafficTests2 extends AnyFunSuite {
       traf.triggerCycle()
       result
     }))
-    assert(traf.requestMemoryAccess().contains((16, ())))
+    assert(traf.requestMemoryAccess().contains((16,true,())))
     assert(Range.apply(0, latency).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
       traf.triggerCycle()
@@ -147,7 +147,7 @@ class TraceTrafficTests2 extends AnyFunSuite {
       traf.triggerCycle()
       result
     }))
-    assert(traf.requestMemoryAccess().contains((74, ())))
+    assert(traf.requestMemoryAccess().contains((74,true,())))
   }
 
   test("Delayed with Double size") {
@@ -165,14 +165,14 @@ class TraceTrafficTests2 extends AnyFunSuite {
       traf.triggerCycle()
       result
     }))
-    assert(traf.requestMemoryAccess().contains((16, ())))
+    assert(traf.requestMemoryAccess().contains((16,true,())))
     assert(Range.apply(0, latency).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
       traf.triggerCycle()
       result
     }))
     traf.serveMemoryAccess(())
-    assert(traf.requestMemoryAccess().contains((17, ())))
+    assert(traf.requestMemoryAccess().contains((17,true,())))
     assert(Range.apply(0, latency).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
       traf.triggerCycle()
@@ -184,7 +184,7 @@ class TraceTrafficTests2 extends AnyFunSuite {
       traf.triggerCycle()
       result
     }))
-    assert(traf.requestMemoryAccess().contains((74, ())))
+    assert(traf.requestMemoryAccess().contains((74,true,())))
   }
 
   test("Unaligned burst-2 data-2") {
@@ -200,14 +200,14 @@ class TraceTrafficTests2 extends AnyFunSuite {
       traf.triggerCycle()
       result
     }))
-    assert(traf.requestMemoryAccess().contains((0, ())))
+    assert(traf.requestMemoryAccess().contains((0,true,())))
     assert(Range.apply(0, latency).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
       traf.triggerCycle()
       result
     }))
     traf.serveMemoryAccess(())
-    assert(traf.requestMemoryAccess().contains((2, ())))
+    assert(traf.requestMemoryAccess().contains((2,true,())))
     assert(Range.apply(0, latency).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
       traf.triggerCycle()
@@ -230,21 +230,21 @@ class TraceTrafficTests2 extends AnyFunSuite {
       traf.triggerCycle()
       result
     }))
-    assert(traf.requestMemoryAccess().contains((0, ())))
+    assert(traf.requestMemoryAccess().contains((0,true,())))
     assert(Range.apply(0, latency).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
       traf.triggerCycle()
       result
     }))
     traf.serveMemoryAccess(())
-    assert(traf.requestMemoryAccess().contains((2, ())))
+    assert(traf.requestMemoryAccess().contains((2,true,())))
     assert(Range.apply(0, latency).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
       traf.triggerCycle()
       result
     }))
     traf.serveMemoryAccess(())
-    assert(traf.requestMemoryAccess().contains((4, ())))
+    assert(traf.requestMemoryAccess().contains((4,true,())))
     assert(Range.apply(0, latency).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
       traf.triggerCycle()
@@ -267,14 +267,14 @@ class TraceTrafficTests2 extends AnyFunSuite {
       traf.triggerCycle()
       result
     }))
-    assert(traf.requestMemoryAccess().contains((6, ())))
+    assert(traf.requestMemoryAccess().contains((6,true,())))
     assert(Range.apply(0, latency).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
       traf.triggerCycle()
       result
     }))
     traf.serveMemoryAccess(())
-    assert(traf.requestMemoryAccess().contains((8, ())))
+    assert(traf.requestMemoryAccess().contains((8,true,())))
     assert(Range.apply(0, latency).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
       traf.triggerCycle()
@@ -297,35 +297,35 @@ class TraceTrafficTests2 extends AnyFunSuite {
       traf.triggerCycle()
       result
     }))
-    assert(traf.requestMemoryAccess().contains((10, ())))
+    assert(traf.requestMemoryAccess().contains((10,true,())))
     assert(Range.apply(0, latency).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
       traf.triggerCycle()
       result
     }))
     traf.serveMemoryAccess(())
-    assert(traf.requestMemoryAccess().contains((12, ())))
+    assert(traf.requestMemoryAccess().contains((12,true,())))
     assert(Range.apply(0, latency).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
       traf.triggerCycle()
       result
     }))
     traf.serveMemoryAccess(())
-    assert(traf.requestMemoryAccess().contains((14, ())))
+    assert(traf.requestMemoryAccess().contains((14,true,())))
     assert(Range.apply(0, latency).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
       traf.triggerCycle()
       result
     }))
     traf.serveMemoryAccess(())
-    assert(traf.requestMemoryAccess().contains((16, ())))
+    assert(traf.requestMemoryAccess().contains((16,true,())))
     assert(Range.apply(0, latency).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
       traf.triggerCycle()
       result
     }))
     traf.serveMemoryAccess(())
-    assert(traf.requestMemoryAccess().contains((18, ())))
+    assert(traf.requestMemoryAccess().contains((18,true,())))
     assert(Range.apply(0, latency).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
       traf.triggerCycle()
@@ -348,7 +348,7 @@ class TraceTrafficTests2 extends AnyFunSuite {
       traf.triggerCycle()
       result
     }))
-    assert(traf.requestMemoryAccess().contains((0, ())))
+    assert(traf.requestMemoryAccess().contains((0,true,())))
     assert(Range.apply(0, latency).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
       traf.triggerCycle()
@@ -371,7 +371,7 @@ class TraceTrafficTests2 extends AnyFunSuite {
       traf.triggerCycle()
       result
     }))
-    assert(traf.requestMemoryAccess().contains((0, ())))
+    assert(traf.requestMemoryAccess().contains((0,true,())))
     assert(Range.apply(0, latency).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
       traf.triggerCycle()
@@ -394,14 +394,14 @@ class TraceTrafficTests2 extends AnyFunSuite {
       traf.triggerCycle()
       result
     }))
-    assert(traf.requestMemoryAccess().contains((0, ())))
+    assert(traf.requestMemoryAccess().contains((0,true,())))
     assert(Range.apply(0, latency).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
       traf.triggerCycle()
       result
     }))
     traf.serveMemoryAccess(())
-    assert(traf.requestMemoryAccess().contains((8, ())))
+    assert(traf.requestMemoryAccess().contains((8,true,())))
     assert(Range.apply(0, latency).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
       traf.triggerCycle()
@@ -429,7 +429,7 @@ class TraceTrafficTests2 extends AnyFunSuite {
       assert(!traf.isDone())
       result
     }))
-    assert(traf.requestMemoryAccess().contains((1, ())))
+    assert(traf.requestMemoryAccess().contains((1,true,())))
     assert(!traf.isDone())
     assert(Range.apply(0, latency).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
@@ -439,7 +439,7 @@ class TraceTrafficTests2 extends AnyFunSuite {
     }))
     traf.serveMemoryAccess(())
     assert(!traf.isDone())
-    assert(traf.requestMemoryAccess().contains((2, ())))
+    assert(traf.requestMemoryAccess().contains((2,true,())))
     assert(Range.apply(0, latency).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
       traf.triggerCycle()
@@ -448,7 +448,7 @@ class TraceTrafficTests2 extends AnyFunSuite {
     }))
     traf.serveMemoryAccess(())
     assert(!traf.isDone())
-    assert(traf.requestMemoryAccess().contains((3, ())))
+    assert(traf.requestMemoryAccess().contains((3,true,())))
     assert(Range.apply(0, latency).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
       traf.triggerCycle()
@@ -467,19 +467,19 @@ class NoTraffic(burst: Int) extends Traffic[Unit] {
 
   override def serveMemoryAccess(token: Unit): Boolean = true
 
-  override def requestMemoryAccess(): Option[(Long, Unit)] = None;
+  override def requestMemoryAccess(): Option[(Long, Boolean, Unit)] = None;
 
   override def triggerCycle(): Unit = {}
 
   override def isDone(): Boolean = false;
 }
 
-class SingleTraffic(burst: Int, addr: Long) extends Traffic[Unit] {
+class SingleTraffic(burst: Int, addr: Long, isRead:Boolean) extends Traffic[Unit] {
   override def burstSize: Int = burst
 
   override def serveMemoryAccess(token: Unit): Boolean = true
 
-  override def requestMemoryAccess(): Option[(Long, Unit)] = Some((addr, ()));
+  override def requestMemoryAccess(): Option[(Long, Boolean, Unit)] = Some((addr, isRead, ()));
 
   override def triggerCycle(): Unit = {}
 
@@ -502,10 +502,10 @@ class RoundRobinArbiterTests extends AnyFunSuite {
   test("Serve after latency") {
     val latency = 1+rand.nextInt(25)
     var arbiter = new RoundRobinArbiter(8,latency,
-      Array.range(0,3).map(idx => new SingleTraffic(1, idx)),(_) => None,
+      Array.range(0,3).map(idx => new SingleTraffic(1, idx,true)),(_) => None,
     )
 
-    assert(arbiter.requestMemoryAccess().contains((0,0))) // First core access
+    assert(arbiter.requestMemoryAccess().contains((0,true,0))) // First core access
     // Insert arbitrary wait for serve
     for(_ <- 0 until rand.nextInt(30)) arbiter.triggerCycle();
     arbiter.serveMemoryAccess(0)
@@ -515,7 +515,7 @@ class RoundRobinArbiterTests extends AnyFunSuite {
       arbiter.triggerCycle()
     }
 
-    assert(arbiter.requestMemoryAccess().contains((1,1))) // ready to service next access
+    assert(arbiter.requestMemoryAccess().contains((1,true,1))) // ready to service next access
     // Insert arbitrary wait for serve
     for(_ <- 0 until rand.nextInt(30)) arbiter.triggerCycle();
     arbiter.serveMemoryAccess(1)
@@ -525,7 +525,7 @@ class RoundRobinArbiterTests extends AnyFunSuite {
       arbiter.triggerCycle()
     }
 
-    assert(arbiter.requestMemoryAccess().contains((2,2))) // ready to service next access
+    assert(arbiter.requestMemoryAccess().contains((2,true,2))) // ready to service next access
   }
 
   test("Triggers device cycles") {
@@ -537,8 +537,8 @@ class RoundRobinArbiterTests extends AnyFunSuite {
 
         def triggerCycle() = {counts(idx) += 1};
 
-        def requestMemoryAccess(): Option[(Long, Unit)] = {
-          if(math.random < 0.5) Some((0, ())) else None
+        def requestMemoryAccess(): Option[(Long, Boolean, Unit)] = {
+          if(math.random < 0.5) Some((0, true, ())) else None
         };
 
         def serveMemoryAccess(token: Unit):Boolean = true;
@@ -568,7 +568,7 @@ class RoundRobinArbiterTests extends AnyFunSuite {
 
     assert(!arbiter.isDone())
     assert(!done)
-    assert(arbiter.requestMemoryAccess().contains((20,0)))
+    assert(arbiter.requestMemoryAccess().contains((20,true,0)))
     assert(!arbiter.isDone())
     assert(!done)
     arbiter.triggerCycle()
@@ -600,10 +600,10 @@ class RoundRobinArbiterTests extends AnyFunSuite {
           true
         }
 
-        override def requestMemoryAccess(): Option[(Long, Unit)] = {
+        override def  requestMemoryAccess(): Option[(Long, Boolean, Unit)] = {
           if(!requested) {
             requested = true
-            Some((0, ()))
+            Some((0, true, ()))
           } else {
             None
           }
@@ -625,7 +625,7 @@ class RoundRobinArbiterTests extends AnyFunSuite {
       },
     )
 
-    assert(arbiter.requestMemoryAccess().contains((0,0)))
+    assert(arbiter.requestMemoryAccess().contains((0,true,0)))
     assert(!arbiter.isDone())
     assert(!done)
     arbiter.triggerCycle()
@@ -656,7 +656,7 @@ class RoundRobinArbiterTests extends AnyFunSuite {
       },
     )
 
-    assert(arbiter.requestMemoryAccess().contains((20,0)))
+    assert(arbiter.requestMemoryAccess().contains((20,true,0)))
     arbiter.triggerCycle()
     arbiter.serveMemoryAccess(0)
     for(i <- 0 until 1+latency) {
@@ -665,7 +665,7 @@ class RoundRobinArbiterTests extends AnyFunSuite {
     }
     assert(!arbiter.isDone())
 
-    assert(arbiter.requestMemoryAccess().contains((20,0)))
+    assert(arbiter.requestMemoryAccess().contains((20,true,0)))
     arbiter.triggerCycle()
     arbiter.serveMemoryAccess(0)
     for(i <- 0 until 1+latency) {
@@ -689,9 +689,9 @@ class RoundRobinArbiterTests extends AnyFunSuite {
       true // Allow multiple requests
     )
 
-    assert(arbiter.requestMemoryAccess().contains((20,0)))
+    assert(arbiter.requestMemoryAccess().contains((20,true,0)))
     arbiter.triggerCycle()
-    assert(arbiter.requestMemoryAccess().contains((40,1))) // Second request issued while waiting for the first
+    assert(arbiter.requestMemoryAccess().contains((40,true,1))) // Second request issued while waiting for the first
 
     // wait some random amount of time before external response
     for(i <- 0 until 1+rand.nextInt(25)) {
@@ -734,9 +734,9 @@ class RoundRobinArbiterTests extends AnyFunSuite {
       true // Allow multiple requests
     )
 
-    assert(arbiter.requestMemoryAccess().contains((20,0)))
+    assert(arbiter.requestMemoryAccess().contains((20,true,0)))
     arbiter.triggerCycle()
-    assert(arbiter.requestMemoryAccess().contains((40,1))) // Second request issued while waiting for the first
+    assert(arbiter.requestMemoryAccess().contains((40,true,1))) // Second request issued while waiting for the first
 
     // wait some random amount of time before external response
     for(i <- 0 until 1+rand.nextInt(25)) {
@@ -777,11 +777,11 @@ class RoundRobinArbiterTests extends AnyFunSuite {
       true // Allow multiple requests
     )
 
-    assert(arbiter.requestMemoryAccess().contains((20,0)))
+    assert(arbiter.requestMemoryAccess().contains((20,true,0)))
     arbiter.triggerCycle()
-    assert(arbiter.requestMemoryAccess().contains((40,1)))
+    assert(arbiter.requestMemoryAccess().contains((40,true,1)))
     arbiter.triggerCycle()
-    assert(arbiter.requestMemoryAccess().contains((60,2)))
+    assert(arbiter.requestMemoryAccess().contains((60,true,2)))
 
     // wait some random amount of time before external response
     for(i <- 0 until 1+rand.nextInt(25)) {

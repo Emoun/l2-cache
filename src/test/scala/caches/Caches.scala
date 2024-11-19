@@ -1228,7 +1228,7 @@ class CacheTrafficTest extends AnyFunSuite {
       }
     )
 
-    assert(cache.requestMemoryAccess().contains((20,())))
+    assert(cache.requestMemoryAccess().contains((20,true,())))
 
     // Wait for external reply
     val randLatency = 1+rand.nextInt(20)
@@ -1251,14 +1251,14 @@ class CacheTrafficTest extends AnyFunSuite {
     lruCache.performAccess(0,0,true,true) // Prefill cache line
     var cache = new CacheTraffic(8,
       new RoundRobinArbiter(1,1,
-        Array(new SingleTraffic(1,100)),
+        Array(new SingleTraffic(1,100,true)),
         (_) => None
       ),
       lruCache,
       (_, isHit) => {}
     )
 
-    assert(cache.requestMemoryAccess().contains((100,())))
+    assert(cache.requestMemoryAccess().contains((100,true,())))
     assert(lruCache.performAccess(0,0,true,false).isReadHit()) // Ensure the miss didn't evict the prefilled line already
     cache.triggerCycle()
     assert(lruCache.performAccess(0,0,true,false).isReadHit())
@@ -1275,7 +1275,7 @@ class CacheTrafficTest extends AnyFunSuite {
 
         override def serveMemoryAccess(token: Int): Boolean = false
 
-        override def requestMemoryAccess(): Option[(Long, Int)] = None
+        override def requestMemoryAccess(): Option[(Long, Boolean, Int)] = None
 
         override def triggerCycle(): Unit = {trafTicks += 1}
 
@@ -1326,7 +1326,7 @@ class SelectCache(lineSize:Int, hotAddr:Long) extends SoftCache(lineSize,1,1) {
  *
  * @param traf
  */
-class ArrayTraffic(traf: Array[Long], onDone: () => Unit) extends Traffic[Int] {
+class ArrayTraffic(traf: Array[(Long, Boolean)], onDone: () => Unit) extends Traffic[Int] {
   override def burstSize: Int = 1
   var done = 0;
   var status = 0;
@@ -1337,10 +1337,10 @@ class ArrayTraffic(traf: Array[Long], onDone: () => Unit) extends Traffic[Int] {
     true
   }
 
-  override def requestMemoryAccess(): Option[(Long, Int)] = {
+  override def requestMemoryAccess(): Option[(Long, Boolean, Int)] = {
 
     val result = if(status < traf.length) {
-      Some((traf(status), status))
+      Some((traf(status)._1, traf(status)._2, status))
     } else {
       None
     }
@@ -1456,7 +1456,7 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
       }
     )
 
-    assert(cache.requestMemoryAccess().contains((20,())))
+    assert(cache.requestMemoryAccess().contains((20,true,())))
 
     // Wait for external reply
     val randLatency = 1+rand.nextInt(20)
@@ -1497,7 +1497,7 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
       }
     )
 
-    assert(cache.requestMemoryAccess().contains((20,())))
+    assert(cache.requestMemoryAccess().contains((20,true,())))
 
     // Wait for external reply
     val randLatency = 1+rand.nextInt(20)
@@ -1514,7 +1514,7 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
     assert(!cache.isDone() && done==1)
     assert(wasMiss == 2)
 
-    assert(cache.requestMemoryAccess().contains((40,())))
+    assert(cache.requestMemoryAccess().contains((40,true,())))
     // Wait for external reply
     for(i <- 0 until randLatency) {
       assert(wasMiss == 2)
@@ -1535,14 +1535,14 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
     var wasMiss: Int = 0
     var done = 0
     var cache = new BufferedCacheTraffic(8,
-      new ArrayTraffic(Array(20,40), () => done +=1),
+      new ArrayTraffic(Array((20,true),(40,true)), () => done +=1),
       new SelectCache(1,40),
       (_, isHit) => {
         if(isHit.isHit()) wasHit += 1 else wasMiss += 1;
       }
     )
 
-    assert(cache.requestMemoryAccess().contains((20,())))
+    assert(cache.requestMemoryAccess().contains((20,true,())))
     assert(wasMiss == 1)
     assert(wasHit == 0)
     assert(!cache.isDone() && done==0)
@@ -1589,7 +1589,7 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
       }
     )
 
-    assert(cache.requestMemoryAccess().contains((20,())))
+    assert(cache.requestMemoryAccess().contains((20,true,())))
 
     // Wait for external reply
     val randLatency = 1+rand.nextInt(20)
@@ -1616,7 +1616,7 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
     var wasHitAfterMiss: Int = 0
     var done = 0
     var cache = new BufferedCacheTraffic(8,
-      new ArrayTraffic(Array(20,40,20), () => done += 1),
+      new ArrayTraffic(Array((20,true),(40,true),(20,true)), () => done += 1),
       new LruCache(1,2,1),
       (_, isHit) => {
         isHit match {
@@ -1627,7 +1627,7 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
       }
     )
 
-    assert(cache.requestMemoryAccess().contains((20,())))
+    assert(cache.requestMemoryAccess().contains((20,true,())))
     assert(wasMiss == 1)
     assert(!cache.isDone() && done==0)
     cache.triggerCycle() // Miss starts
@@ -1648,7 +1648,7 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
     }
     cache.serveMemoryAccess(())
     assert(!cache.isDone() && done==0)
-    assert(cache.requestMemoryAccess().contains((40,()))) // Start second miss service
+    assert(cache.requestMemoryAccess().contains((40,true,()))) // Start second miss service
     cache.triggerCycle() // One cycle for cache response, second miss starts serving
     assert(!cache.isDone() && done==1)
     assert(wasMiss == 3)
@@ -1682,7 +1682,7 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
 
         override def serveMemoryAccess(token: Int): Boolean = false
 
-        override def requestMemoryAccess(): Option[(Long, Int)] = None
+        override def requestMemoryAccess(): Option[(Long, Boolean, Int)] = None
 
         override def triggerCycle(): Unit = {trafTicks += 1}
 
