@@ -56,6 +56,64 @@ trait SimpleCacheTests[C<: SoftCache] extends AnyFunSuite {
     assert(cache.performAccess(0,0,true,false) == ReadMiss)
   }
 
+  test("Write back 1") {
+    val cache = createInstance(2,4,2);
+    assert(cache.performAccess(0,0,false,true) == ReadMiss)
+    assert(cache.performAccess(4,0,true,true) == ReadMiss)
+    assert(cache.performAccess(8,0,true,true) == ReadMiss)
+    assert(cache.performAccess(12,0,true,true) == ReadMiss)
+
+    assert(cache.performAccess(16,0,true,true) == WriteBack(0))
+  }
+
+  test("Write back 2") {
+    val cache = createInstance(2,4,2);
+    assert(cache.performAccess(0,0,true,true) == ReadMiss)
+    assert(cache.performAccess(4,0,true,true) == ReadMiss)
+    assert(cache.performAccess(8,0,true,true) == ReadMiss)
+    assert(cache.performAccess(12,0,true,true) == ReadMiss)
+
+    assert(cache.performAccess(16,0,false,true) == ReadMiss)
+
+    assert(cache.performAccess(4,0,false,true) == ReadHit)
+    assert(cache.performAccess(8,0,true,true) == ReadHit)
+    assert(cache.performAccess(12,0,true,true) == ReadHit)
+    assert(cache.performAccess(16,0,true,true) == ReadHit)
+
+    assert(cache.performAccess(20,0,true,true) == WriteBack(4))
+  }
+
+  test("Write back 3") {
+    val cache = createInstance(2,4,2);
+    assert(cache.performAccess(0,0,true,true) == ReadMiss)
+    assert(cache.performAccess(4,0,true,true) == ReadMiss)
+    assert(cache.performAccess(8,0,true,true) == ReadMiss)
+    assert(cache.performAccess(12,0,true,true) == ReadMiss)
+
+    assert(cache.performAccess(16,0,false,true) == ReadMiss)
+
+    assert(cache.performAccess(4,0,false,true) == ReadHit)
+    assert(cache.performAccess(8,0,true,true) == ReadHit)
+    assert(cache.performAccess(12,0,true,true) == ReadHit)
+
+    assert(cache.performAccess(20,0,true,true) == WriteBack(16))
+  }
+
+  test("Write back without refill") {
+    val cache = createInstance(2,4,2);
+    assert(cache.performAccess(0,0,false,true) == ReadMiss)
+    assert(cache.performAccess(4,0,true,true) == ReadMiss)
+    assert(cache.performAccess(8,0,true,true) == ReadMiss)
+    assert(cache.performAccess(12,0,true,true) == ReadMiss)
+
+    assert(cache.performAccess(16,0,false,false) == WriteBack(0))
+
+    assert(cache.performAccess(0,0,true,true) == ReadHit)
+    assert(cache.performAccess(4,0,false,true) == ReadHit)
+    assert(cache.performAccess(8,0,true,true) == ReadHit)
+    assert(cache.performAccess(12,0,true,true) == ReadHit)
+  }
+
 }
 
 trait LruTests[C<: SoftCache with LRUReplacement[_]] extends SimpleCacheTests[C]

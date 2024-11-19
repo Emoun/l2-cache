@@ -11,7 +11,7 @@ sealed trait CacheResponse{
   }
   def isWriteBack(): Boolean = {
     this match{
-      case WriteBack(_,_) => true;
+      case WriteBack(_) => true;
       case _ => false;
     }
   }
@@ -21,8 +21,8 @@ case object ReadHit extends CacheResponse
 // The cache access must load a cache line before it can be serviced.
 case object ReadMiss extends CacheResponse
 // The cache access must evict a cache line, then a cache line must be loaded, before the access is serviced.
-// The given address and core ID are for the evicted cache line.
-case class WriteBack(addr:Long, core:Int) extends CacheResponse
+// The given address is for the evicted cache line.
+case class WriteBack(addr:Long) extends CacheResponse
 
 abstract class SoftCache(l: Int, w: Int, s: Int)  {
 
@@ -82,14 +82,13 @@ abstract class TrackingCache[T](l: Int, w: Int, s: Int) extends
 {
   /**
    * Each set contains some ways.
-   * Each way tracks the address its caching and how many times is has not been used.
-   * The highest "use" is the least recently used
+   * Each way tracks the address its caching, some payload, and whether the cache line is dirty (has been written to)
    */
-  var _setArr: Array[Array[Option[(Long, T)]]] = {
+  var _setArr: Array[Array[Option[(Long, T, Boolean)]]] = {
     Array.fill(sets){Array.fill(ways){None}}
   };
 
-  def setForAddr(addr: Long): Array[Option[(Long, T)]] =
+  def setForAddr(addr: Long): Array[Option[(Long, T, Boolean)]] =
   {
     _setArr(setIdxForAddr(addr))
   }
@@ -103,6 +102,8 @@ abstract class TrackingCache[T](l: Int, w: Int, s: Int) extends
         if(way.isDefined) {
           printf("%d, ", way.get._1);
           print(way.get._2);
+          print(", ")
+          print(way.get._3);
         } else {
           printf("None")
         };
@@ -153,15 +154,29 @@ abstract class TrackingCache[T](l: Int, w: Int, s: Int) extends
       // Hit
       case Some((setIdx, wayIdx)) => {
         onHit(core, setIdx, wayIdx, withRefill);
+        if(withRefill && !isRead) {
+          set(wayIdx) = Some((set(wayIdx).get._1, set(wayIdx).get._2, true))
+        };
         ReadHit
       }
       // Miss
       case None => {
         onMiss(core, setIdxForAddr(addr), withRefill) match {
           case Some((wayIdx, payload)) => {
-            if(withRefill) set(wayIdx) = Some((headAddr, payload));
-            ReadMiss
-            // We need to handle writeback
+            val result = if(set(wayIdx).isDefined && set(wayIdx).get._3) {
+              val evictAddr = set(wayIdx).get._1
+              WriteBack(evictAddr)
+            } else {
+              ReadMiss
+            };
+            if(withRefill) {
+              var isDirty = !isRead
+              if(set(wayIdx).isDefined) {
+                isDirty = isDirty || set(wayIdx).get._3;
+              }
+              set(wayIdx) = Some((headAddr, payload, isDirty))
+            };
+            result
           }
           case None => ReadMiss;
         }
@@ -203,8 +218,8 @@ trait LRUReplacement[T] extends ReplacementPolicy[(Int, T)] {self: TrackingCache
     for(i <- 0 until ways) {
       val way = set(i);
       if(way.isDefined) {
-        val (address, (useCount, payload)) = way.get;
-        _setArr(setIdx)(i) = Some((address, (useCount+1, payload)))
+        val (address, (useCount, payload), isDirty) = way.get;
+        _setArr(setIdx)(i) = Some((address, (useCount+1, payload), isDirty))
       }
     }
   }
@@ -212,8 +227,8 @@ trait LRUReplacement[T] extends ReplacementPolicy[(Int, T)] {self: TrackingCache
   def resetUse(setIdx: Int, wayIdx: Int) = {
     val line = _setArr(setIdx)(wayIdx);
     if(line.isDefined) {
-      val (address, (_, payload)) = line.get;
-      _setArr(setIdx)(wayIdx) = Some((address, (0, payload)));
+      val (address, (_, payload), isDirty) = line.get;
+      _setArr(setIdx)(wayIdx) = Some((address, (0, payload), isDirty));
     }
   }
 
@@ -228,7 +243,7 @@ trait LRUReplacement[T] extends ReplacementPolicy[(Int, T)] {self: TrackingCache
 
   def getUseCount(setIdx: Int, wayIdx: Int): Option[Int] = {
     _setArr(setIdx)(wayIdx).map{
-      case (_, (count, _)) => count
+      case (_, (count, _),_) => count
     }
   }
 
@@ -369,7 +384,7 @@ class ContentionCache(lineLength: Int, ways: Int, sets: Int, contentionCost: Int
   override def getValidWays(coreId: Int, setIdx: Int): Array[Int] = {
     val notLimited = Array.range(0, ways).filter(wayIdx => {
       _setArr(setIdx)(wayIdx) match {
-        case Some((_, (_, cId))) => !_contention.contains(cId) || (_contention(cId) >=contentionCost);
+        case Some((_, (_, cId),_)) => !_contention.contains(cId) || (_contention(cId) >=contentionCost);
         case None => true
       }
     });
@@ -399,7 +414,7 @@ class ContentionCache(lineLength: Int, ways: Int, sets: Int, contentionCost: Int
         // The core got a free hit, so increase its contention limit to match
         _contention(coreId) += contentionCost;
         // Assign the line to the core
-        _setArr(setIdx)(wayIdx) = Some(line._1, (line._2._1, coreId));
+        _setArr(setIdx)(wayIdx) = Some(line._1, (line._2._1, coreId), line._3);
       }
     }
   }
@@ -420,7 +435,7 @@ class ContentionCache(lineLength: Int, ways: Int, sets: Int, contentionCost: Int
           // If another way contains a non-critical line
           val existOtherNonCritWays = Array.range(0, ways).find( wayIdx =>{
             _setArr(setIdx)(wayIdx) match {
-              case Some((_,(_,c))) => !_contention.contains(c);
+              case Some((_,(_,c),_)) => !_contention.contains(c);
               case None => false;
             }
           });
@@ -468,7 +483,7 @@ class TimeoutCache(lineLength: Int, ways: Int, sets: Int, timeout: Int)
       for(wayIdx <- 0 until ways) {
         val line = _setArr(setIdx)(wayIdx);
         if(line.isDefined && line.get._2._2 > 0) {
-          _setArr(setIdx)(wayIdx) = Some((line.get._1, (line.get._2._1, line.get._2._2-1)))
+          _setArr(setIdx)(wayIdx) = Some((line.get._1, (line.get._2._1, line.get._2._2-1), line.get._3))
         }
       }
     }
@@ -492,7 +507,7 @@ class TimeoutCache(lineLength: Int, ways: Int, sets: Int, timeout: Int)
     // Refresh timer if prioritized
     if(withRefill && _priorities(wayIdx).contains(coreId)){
       val line = _setArr(setIdx)(wayIdx).get;
-      _setArr(setIdx)(wayIdx) = Some((line._1, (line._2._1, timeout)));
+      _setArr(setIdx)(wayIdx) = Some((line._1, (line._2._1, timeout), line._3));
     }
   }
 
@@ -554,7 +569,7 @@ class ContentionPartCache(lineLength: Int, ways: Int, sets: Int, contentionCost:
   override def getValidWays(coreId: Int, setIdx: Int): Array[Int] = {
     val notLimited = super.getValidWays(coreId, setIdx).filter(wayIdx => {
       _setArr(setIdx)(wayIdx) match {
-        case Some((_, (_, cId))) => !_contention.contains(cId) || (_contention(cId) >= contentionCost);
+        case Some((_, (_, cId),_)) => !_contention.contains(cId) || (_contention(cId) >= contentionCost);
         case None => true
       }
     });
@@ -583,7 +598,7 @@ class ContentionPartCache(lineLength: Int, ways: Int, sets: Int, contentionCost:
         // The core got a free hit, so increase its contention limit to match
         _contention(coreId) += contentionCost;
         // Assign the line to the core
-        _setArr(setIdx)(wayIdx) = Some(line._1, (line._2._1, coreId));
+        _setArr(setIdx)(wayIdx) = Some(line._1, (line._2._1, coreId),line._3);
       }
     }
   }
@@ -609,7 +624,7 @@ class ContentionPartCache(lineLength: Int, ways: Int, sets: Int, contentionCost:
         val nonCritWaysInPart = sortValidWays(0, setIdx,
           (getPartition(evictedCoreId).filter(wayIdx => {
             _setArr(setIdx)(wayIdx) match {
-              case Some((_,(_,c))) => c != evictedCoreId;
+              case Some((_,(_,c),_)) => c != evictedCoreId;
               case None => false;
             }
           }) ++ getUnpartitioned())
