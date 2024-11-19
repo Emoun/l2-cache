@@ -371,39 +371,6 @@ class RoundRobinArbiter[C<:Traffic[Unit]](
   }
 }
 
-/**
- *
- * @param s Burst size to caller
- * @param sCache Internal burst size between the given cache and the source
- * @param cache
- * @param source
- */
-//class CachedTraceTraffic(s: Int, sCache:Int, cache: SoftCache, source: Iterator[MemAccess]) extends Traffic {
-//
-//  var internArbiter = new CacheArbiter(sCache, cache, Array(new TraceTraffic(sCache, source)))
-//
-//  override def burstSize: Int = s
-//
-//  override def triggerCycle(): Unit = {
-//
-//
-//  }
-//
-//  override def requestMemoryAccess(): Option[Long] = {
-//    var req = traffic.requestMemoryAccess()
-//    if(req.isDefined) {
-//      var latency = cache.getCacheLine(req.get, 0)
-//    } else {
-//      None
-//    }
-//  }
-//
-//  override def serveMemoryAccess(): Unit = {
-//
-//
-//  }
-//}
-
 // Can be run using the command: sbt "runMain Sim"
 object Sim {
   private val DAWPattern: Regex = """DAW \[ dsz=(\d+), uaddr=(0x[0-9a-f]+), faddr=(0x[0-9a-f]+), faddr_valid=(\d+), icnt=(0x[0-9a-f]+), tstamp=(\d+), iaddr=(0x[0-9a-f]+), iaddr_valid=(\d+), absolute_tstamp=(\d+), abtst_valid=(\d+)  \]""".r

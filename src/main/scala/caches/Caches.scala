@@ -2,7 +2,29 @@ package caches
 
 import scala.collection.mutable
 
-abstract class SoftCache(l: Int, w: Int, s: Int) {
+sealed trait CacheResponse{
+  def isReadHit(): Boolean = {
+    this == ReadHit
+  }
+  def isReadMiss(): Boolean = {
+    this == ReadMiss
+  }
+  def isWriteBack(): Boolean = {
+    this match{
+      case WriteBack(_,_) => true;
+      case _ => false;
+    }
+  }
+}
+// The cache access is already in the cache and can be services immediately.
+case object ReadHit extends CacheResponse
+// The cache access must load a cache line before it can be serviced.
+case object ReadMiss extends CacheResponse
+// The cache access must evict a cache line, then a cache line must be loaded, before the access is serviced.
+// The given address and core ID are for the evicted cache line.
+case class WriteBack(addr:Long, core:Int) extends CacheResponse
+
+abstract class SoftCache(l: Int, w: Int, s: Int)  {
 
   val lineLength: Int = l;
   val ways: Int = w;
@@ -32,11 +54,16 @@ abstract class SoftCache(l: Int, w: Int, s: Int) {
   }
 
   /**
-   * Takes a cache line requests and returns if it is a hit or a miss
-   *
-   * @return Whether it is a cache hit
+   * Performs an access
+   * @param addr Address of the access
+   * @param core The core that performs the access
+   * @param isRead Whether the access is a read (if not, it's a write)
+   * @param withRefill Whether any changes should be done to the cache from the access.
+   *                   If false, no cache lines are evicted or LRU counts updated.
+   *                   I.e., becomes just a check for what the response would be, had this been true.
+   * @return The response of the cache.
    */
-  def getCacheLine(addr: Long, core: Int, withRefill: Boolean = true): Boolean
+  def performAccess(addr: Long, core: Int, isRead:Boolean,withRefill:Boolean): CacheResponse;
 
   def advanceCycle() = {}
 
@@ -109,37 +136,35 @@ abstract class TrackingCache[T](l: Int, w: Int, s: Int) extends
    * @param setIdx index of set that hit
    * @param wayIdx index of way that hit
    */
-  def onHit(coreId: Int, setIdx: Int, wayIdx: Int);
+  def onHit(coreId: Int, setIdx: Int, wayIdx: Int,withRefill:Boolean);
 
   /**
    * An action that should be performed upon a miss, returning the way index that should
    * be replaced and the payload that should be tracked (if any).
    * @return
    */
-  def onMiss(coreId: Int, setIdx: Int): Option[(Int, T)];
+  def onMiss(coreId: Int, setIdx: Int,withRefill:Boolean): Option[(Int, T)];
 
-  override def getCacheLine(addr: Long, core: Int, withRefill: Boolean = true): Boolean =
-  {
+  override def performAccess(addr: Long, core: Int, isRead:Boolean,withRefill:Boolean): CacheResponse = {
     val set = setForAddr(addr);
     val headAddr = lineHeadForAddr(addr);
 
     isHit(addr) match {
       // Hit
       case Some((setIdx, wayIdx)) => {
-        onHit(core, setIdx, wayIdx);
-        true
+        onHit(core, setIdx, wayIdx, withRefill);
+        ReadHit
       }
       // Miss
       case None => {
-        if(withRefill) {
-          onMiss(core, setIdxForAddr(addr)) match {
-            case Some((wayIdx, payload)) => {
-              set(wayIdx) = Some((headAddr, payload));
-            }
-            case None => ;
+        onMiss(core, setIdxForAddr(addr), withRefill) match {
+          case Some((wayIdx, payload)) => {
+            if(withRefill) set(wayIdx) = Some((headAddr, payload));
+            ReadMiss
+            // We need to handle writeback
           }
+          case None => ReadMiss;
         }
-        false
       }
     }
   }
@@ -159,7 +184,7 @@ trait ReplacementPolicy[T]  {self: TrackingCache[T] =>
 
   def defaultPayload(coreId: Int, setIdx: Int, wayIdx: Int):T;
 
-  override def onMiss(coreId: Int, setIdx: Int): Option[(Int, T)] = {
+  override def onMiss(coreId: Int, setIdx: Int, withRefill: Boolean): Option[(Int, T)] = {
     val valids = getValidWays(coreId, setIdx);
 
     if( valids.length > 0 ) {
@@ -207,14 +232,14 @@ trait LRUReplacement[T] extends ReplacementPolicy[(Int, T)] {self: TrackingCache
     }
   }
 
-  override def onHit(coreId: Int, setIdx: Int, wayIdx: Int) = {
+  override def onHit(coreId: Int, setIdx: Int, wayIdx: Int, withRefill: Boolean) = {
     increaseUse(setIdx);
-    resetUse(setIdx, wayIdx);
+    if(withRefill) resetUse(setIdx, wayIdx);
   }
 
-  override def onMiss(coreId: Int, setIdx: Int): Option[(Int, (Int, T))] = {
+  override def onMiss(coreId: Int, setIdx: Int, withRefill: Boolean): Option[(Int, (Int, T))] = {
     increaseUse(setIdx);
-    super.onMiss(coreId, setIdx)
+    super.onMiss(coreId, setIdx,withRefill)
   }
 }
 
@@ -365,9 +390,9 @@ class ContentionCache(lineLength: Int, ways: Int, sets: Int, contentionCost: Int
     }
   }
 
-  override def onHit(coreId: Int, setIdx: Int, wayIdx: Int): Unit = {
-    super.onHit(coreId, setIdx, wayIdx);
-    if(_contention.contains(coreId)) {
+  override def onHit(coreId: Int, setIdx: Int, wayIdx: Int, withRefill:Boolean): Unit = {
+    super.onHit(coreId, setIdx, wayIdx, withRefill);
+    if(withRefill && _contention.contains(coreId)) {
       val line = _setArr(setIdx)(wayIdx).get;
       val hitOwnerId = line._2._2;
       if(hitOwnerId != coreId && !_contention.contains(hitOwnerId) ) {
@@ -379,10 +404,10 @@ class ContentionCache(lineLength: Int, ways: Int, sets: Int, contentionCost: Int
     }
   }
 
-  override def onMiss(coreId: Int, setIdx: Int): Option[(Int, (Int, Int))] = {
-    val miss = super.onMiss(coreId, setIdx);
+  override def onMiss(coreId: Int, setIdx: Int, withRefill:Boolean): Option[(Int, (Int, Int))] = {
+    val miss = super.onMiss(coreId, setIdx, withRefill);
 
-    if(miss.isDefined) {
+    if(withRefill && miss.isDefined) {
       val (evictedWayIdx, _) = miss.get;
 
       val evictedWay = _setArr(setIdx)(evictedWayIdx);
@@ -391,9 +416,6 @@ class ContentionCache(lineLength: Int, ways: Int, sets: Int, contentionCost: Int
 
         if(_contention.contains(evictedCoreId)) {
           // Evicted a critical core, check contention
-
-          // Trigger if critical is evicted by non-critical
-          val evictedByNonCrit = !_contention.contains(coreId);
 
           // If another way contains a non-critical line
           val existOtherNonCritWays = Array.range(0, ways).find( wayIdx =>{
@@ -465,10 +487,10 @@ class TimeoutCache(lineLength: Int, ways: Int, sets: Int, timeout: Int)
     }
   }
 
-  override def onHit(coreId: Int, setIdx: Int, wayIdx: Int): Unit = {
-    super.onHit(coreId, setIdx, wayIdx)
+  override def onHit(coreId: Int, setIdx: Int, wayIdx: Int, withRefill:Boolean): Unit = {
+    super.onHit(coreId, setIdx, wayIdx, withRefill)
     // Refresh timer if prioritized
-    if(_priorities(wayIdx).contains(coreId)){
+    if(withRefill && _priorities(wayIdx).contains(coreId)){
       val line = _setArr(setIdx)(wayIdx).get;
       _setArr(setIdx)(wayIdx) = Some((line._1, (line._2._1, timeout)));
     }
@@ -552,9 +574,9 @@ class ContentionPartCache(lineLength: Int, ways: Int, sets: Int, contentionCost:
     }
   }
 
-  override def onHit(coreId: Int, setIdx: Int, wayIdx: Int): Unit = {
-    super.onHit(coreId, setIdx, wayIdx);
-    if(_contention.contains(coreId)) {
+  override def onHit(coreId: Int, setIdx: Int, wayIdx: Int, withRefill:Boolean): Unit = {
+    super.onHit(coreId, setIdx, wayIdx, withRefill);
+    if(withRefill && _contention.contains(coreId)) {
       val line = _setArr(setIdx)(wayIdx).get;
       val hitOwnerId = line._2._2;
       if(hitOwnerId != coreId && !_contention.contains(hitOwnerId) ) {
@@ -566,7 +588,9 @@ class ContentionPartCache(lineLength: Int, ways: Int, sets: Int, contentionCost:
     }
   }
 
-  def triggerContentionOrSuggestOther(coreId: Int, setIdx: Int, eviction: (Int, (Int, Int)), blockList: Array[Int]): Option[(Int, (Int, Int))] =
+  def triggerContentionOrSuggestOther(
+     coreId: Int, setIdx: Int, eviction: (Int, (Int, Int)), blockList: Array[Int], withRefill:Boolean
+  ): Option[(Int, (Int, Int))] =
   {
     val (evictedWayIdx, (lruCount, ownerCoreId)) = eviction;
 
@@ -597,13 +621,13 @@ class ContentionPartCache(lineLength: Int, ways: Int, sets: Int, contentionCost:
 
         if(!limited) {
           if(evictedByNonCrit || nonCritWaysInPart.length>0) {
-            triggerContention(evictedCoreId);
+            if(withRefill) triggerContention(evictedCoreId);
           }
           return Some(eviction)
         } else {
           if(nonCritWaysInPart.length>0) {
             val newBlockList = blockList :+ evictedWayIdx;
-            return triggerContentionOrSuggestOther(coreId, setIdx, (nonCritWaysInPart(0),(lruCount, ownerCoreId)), newBlockList)
+            return triggerContentionOrSuggestOther(coreId, setIdx, (nonCritWaysInPart(0),(lruCount, ownerCoreId)), newBlockList, withRefill)
           } else if(evictedByNonCrit) {
             return None
           } else {
@@ -615,11 +639,11 @@ class ContentionPartCache(lineLength: Int, ways: Int, sets: Int, contentionCost:
     Some(eviction)
   }
 
-  override def onMiss(coreId: Int, setIdx: Int): Option[(Int, (Int, Int))] = {
-    val miss = super.onMiss(coreId, setIdx);
+  override def onMiss(coreId: Int, setIdx: Int, withRefill:Boolean): Option[(Int, (Int, Int))] = {
+    val miss = super.onMiss(coreId, setIdx, withRefill);
 
     if(miss.isDefined) {
-      return triggerContentionOrSuggestOther(coreId, setIdx, miss.get, Array.empty)
+      return triggerContentionOrSuggestOther(coreId, setIdx, miss.get, Array.empty, withRefill)
     }
     miss
   }
@@ -653,9 +677,9 @@ class ContentionPartCache(lineLength: Int, ways: Int, sets: Int, contentionCost:
 }
 
 class MainMemory(lineSize:Int) extends SoftCache(lineSize,1,1) {
-  override def getCacheLine(addr: Long, core: Int, withRefill: Boolean = true): Boolean = true;
   override def isHit(addr: Long): Option[(Int, Int)] = { None }
   override def printAll(): Unit = {}
+  override def performAccess(addr: Long, core: Int, isRead: Boolean, withRefill: Boolean): CacheResponse = ReadHit;
 }
 
 /**
@@ -730,7 +754,7 @@ class CacheTraffic(
     if(busy.isEmpty ) {
       traf.requestMemoryAccess() match {
         case Some((addr, coreId)) => {
-          val isHit = cache.getCacheLine(addr, coreId, false)
+          val isHit = cache.performAccess(addr, coreId,true,false).isReadHit()
           if(isHit) {
             // Cache hit, service next cycle
             busy = Some((addr, Servicing(1), coreId))
@@ -751,7 +775,7 @@ class CacheTraffic(
       false
     } else if(waitingForExternal()) {
       // Now we can update the cache
-      cache.getCacheLine(busy.get._1, busy.get._3, true)
+      cache.performAccess(busy.get._1, busy.get._3,true,true).isReadHit()
       busy = Some(busy.get._1, Servicing(0), busy.get._3)
       true
     } else {
@@ -862,7 +886,7 @@ class BufferedCacheTraffic(
         case Some((addr, coreId)) => {
           internRequested = true
 
-          val wasHit = cache.getCacheLine(addr, coreId, false)
+          val wasHit = cache.performAccess(addr, coreId,true,false).isReadHit()
           if(wasHit) {
             interPrio = Some(coreId)
           } else {
@@ -877,7 +901,7 @@ class BufferedCacheTraffic(
 
   def externQueueHeadHits(): Boolean = {
     externQueue.length>0 &&
-      cache.getCacheLine(externQueue(0)._1, externQueue(0)._2, false)
+      cache.performAccess(externQueue(0)._1, externQueue(0)._2,true,false).isReadHit()
   }
 
   override def serveMemoryAccess(token: Unit): Boolean = {
@@ -885,7 +909,7 @@ class BufferedCacheTraffic(
     assert(externQueue.length > 0)
 
     // Update cache
-    cache.getCacheLine(externQueue(0)._1, externQueue(0)._2, true)
+    cache.performAccess(externQueue(0)._1, externQueue(0)._2,true,true).isReadHit()
     externStatus = Servicing(0)
 
     true

@@ -15,45 +15,45 @@ trait SimpleCacheTests[C<: SoftCache] extends AnyFunSuite {
 
   test("Get second in line") {
     val cache = createInstance(2,2,2);
-    assert(cache.getCacheLine(0,0) == false)
-    assert(cache.getCacheLine(1,0) == true)
-    assert(cache.getCacheLine(2,0) == false)
-    assert(cache.getCacheLine(3,0) == true)
+    assert(cache.performAccess(0,0,true,true) == ReadMiss)
+    assert(cache.performAccess(1,0,true,true) == ReadHit)
+    assert(cache.performAccess(2,0,true,true) == ReadMiss)
+    assert(cache.performAccess(3,0,true,true) == ReadHit)
   }
 
   test("Get third in line") {
     val cache = createInstance(4,4,2);
-    assert(cache.getCacheLine(0,0) == false)
-    assert(cache.getCacheLine(1,0) == true)
-    assert(cache.getCacheLine(2,0) == true)
-    assert(cache.getCacheLine(3,0) == true)
-    assert(cache.getCacheLine(4,0) == false)
-    assert(cache.getCacheLine(5,0) == true)
-    assert(cache.getCacheLine(6,0) == true)
-    assert(cache.getCacheLine(7,0) == true)
+    assert(cache.performAccess(0,0,true,true) == ReadMiss)
+    assert(cache.performAccess(1,0,true,true) == ReadHit)
+    assert(cache.performAccess(2,0,true,true) == ReadHit)
+    assert(cache.performAccess(3,0,true,true) == ReadHit)
+    assert(cache.performAccess(4,0,true,true) == ReadMiss)
+    assert(cache.performAccess(5,0,true,true) == ReadHit)
+    assert(cache.performAccess(6,0,true,true) == ReadHit)
+    assert(cache.performAccess(7,0,true,true) == ReadHit)
   }
 
   test("More sets than ways") {
     val cache = createInstance(3,2,3);
-    assert(cache.getCacheLine(0,0) == false)
-    assert(cache.getCacheLine(9,0) == false)
-    assert(cache.getCacheLine(18,0) == false)
+    assert(cache.performAccess(0,0,true,true) == ReadMiss)
+    assert(cache.performAccess(9,0,true,true) == ReadMiss)
+    assert(cache.performAccess(18,0,true,true) == ReadMiss)
   }
 
   test("Get Cold Addresses") {
     val cache = createInstance(2,4,4);
-    assert(cache.getCacheLine(0,0) == false)
-    assert(cache.getCacheLine(2,0) == false)
-    assert(cache.getCacheLine(4,0) == false)
-    assert(cache.getCacheLine(6,0) == false)
+    assert(cache.performAccess(0,0,true,true) == ReadMiss)
+    assert(cache.performAccess(2,0,true,true) == ReadMiss)
+    assert(cache.performAccess(4,0,true,true) == ReadMiss)
+    assert(cache.performAccess(6,0,true,true) == ReadMiss)
   }
 
   test("Without Refill") {
     val cache = createInstance(2,4,4);
-    assert(cache.getCacheLine(0,0, false) == false)
-    assert(cache.getCacheLine(0,0, false) == false)
-    assert(cache.getCacheLine(0,0, false) == false)
-    assert(cache.getCacheLine(0,0, false) == false)
+    assert(cache.performAccess(0,0,true,false) == ReadMiss)
+    assert(cache.performAccess(0,0,true,false) == ReadMiss)
+    assert(cache.performAccess(0,0,true,false) == ReadMiss)
+    assert(cache.performAccess(0,0,true,false) == ReadMiss)
   }
 
 }
@@ -62,33 +62,33 @@ trait LruTests[C<: SoftCache with LRUReplacement[_]] extends SimpleCacheTests[C]
 {
   test("Replace LRU 1") {
     val cache = createInstance(2,2,2);
-    cache.getCacheLine(0,0) // set 0, way 0
-    cache.getCacheLine(2,0) // set 1, way 0
-    cache.getCacheLine(4,0) // set 0, way 1
-    cache.getCacheLine(6,0) // set 1, way 1
+    cache.performAccess(0,0,true,true) // set 0, way 0
+    cache.performAccess(2,0,true,true) // set 1, way 0
+    cache.performAccess(4,0,true,true) // set 0, way 1
+    cache.performAccess(6,0,true,true) // set 1, way 1
 
     // Set 0 is full, with '0' being least recently used
-    assert(cache.getCacheLine(8,0) == false)
-    assert(cache.getCacheLine(5,0) == true)
-    assert(cache.getCacheLine(1,0) == false)
-    assert(cache.getCacheLine(9,0) == false)
+    assert(cache.performAccess(8,0,true,true) == ReadMiss)
+    assert(cache.performAccess(5,0,true,true) == ReadHit)
+    assert(cache.performAccess(1,0,true,true) == ReadMiss)
+    assert(cache.performAccess(9,0,true,true) == ReadMiss)
   }
 
   test("Replace LRU 2") {
     val cache = createInstance(4,3,3);
-    cache.getCacheLine(12,0) // set 0, way 0
-    cache.getCacheLine(0,0) // set 0, way 1
-    cache.getCacheLine(24,0) // set 0, way 2
+    cache.performAccess(12,0,true,true) // set 0, way 0
+    cache.performAccess(0,0,true,true) // set 0, way 1
+    cache.performAccess(24,0,true,true) // set 0, way 2
 
-    cache.getCacheLine(12,0) // set 0, way 0
-    cache.getCacheLine(0,0) // set 0, way 1
-    cache.getCacheLine(24,0) // set 0, way 2
+    cache.performAccess(12,0,true,true) // set 0, way 0
+    cache.performAccess(0,0,true,true) // set 0, way 1
+    cache.performAccess(24,0,true,true) // set 0, way 2
 
     // Set 0 is full, with '12' being least recently used
-    assert(cache.getCacheLine(36,0) == false)
-    assert(cache.getCacheLine(3,0) == true)
-    assert(cache.getCacheLine(25,0) == true)
-    assert(cache.getCacheLine(14,0) == false)
+    assert(cache.performAccess(36,0,true,true) == ReadMiss)
+    assert(cache.performAccess(3,0,true,true) == ReadHit)
+    assert(cache.performAccess(25,0,true,true) == ReadHit)
+    assert(cache.performAccess(14,0,true,true) == ReadMiss)
   }
 }
 
@@ -101,15 +101,15 @@ trait PartitionedTests[C<: SoftCache with PartitionedReplacement[_]] extends Sim
     cache.assignWay(2, 2);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(9,1) // way 1
-    cache.getCacheLine(18,2) // way 2
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(9,1,true,true) // way 1
+    cache.performAccess(18,2,true,true) // way 2
 
-    assert(cache.getCacheLine(27,2) == false) // try to use set 0 again
-    assert(cache.getCacheLine(27,2) == true) // Ensure did get saved
+    assert(cache.performAccess(27,2,true,true) == ReadMiss) // try to use set 0 again
+    assert(cache.performAccess(27,2,true,true) == ReadHit) // Ensure did get saved
 
-    assert(cache.getCacheLine(0,0) == true) // Ensure was not evicted
-    assert(cache.getCacheLine(9,1) == true) // Ensure was not evicted
+    assert(cache.performAccess(0,0,true,true) == ReadHit) // Ensure was not evicted
+    assert(cache.performAccess(9,1,true,true) == ReadHit) // Ensure was not evicted
   }
 
   test("May evict unassigned ways") {
@@ -117,15 +117,15 @@ trait PartitionedTests[C<: SoftCache with PartitionedReplacement[_]] extends Sim
     cache.assignWay(2, 2);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(9,1) // way 1
-    cache.getCacheLine(18,2) // way 2
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(9,1,true,true) // way 1
+    cache.performAccess(18,2,true,true) // way 2
 
-    assert(cache.getCacheLine(27,2) == false) // try to use set 0 again
-    assert(cache.getCacheLine(27,2) == true) // Ensure did get saved
+    assert(cache.performAccess(27,2,true,true) == ReadMiss) // try to use set 0 again
+    assert(cache.performAccess(27,2,true,true) == ReadHit) // Ensure did get saved
 
-    assert(cache.getCacheLine(9,0) == true) // Ensure was not evicted
-    assert(cache.getCacheLine(18,1) == true) // Ensure was not evicted
+    assert(cache.performAccess(9,0,true,true) == ReadHit) // Ensure was not evicted
+    assert(cache.performAccess(18,1,true,true) == ReadHit) // Ensure was not evicted
   }
 
   test("May hit in other's ways") {
@@ -135,19 +135,19 @@ trait PartitionedTests[C<: SoftCache with PartitionedReplacement[_]] extends Sim
     cache.assignWay(2, 2);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(9,1) // way 1
-    cache.getCacheLine(18,2) // way 2
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(9,1,true,true) // way 1
+    cache.performAccess(18,2,true,true) // way 2
 
     // Each hits in the others'
-    assert(cache.getCacheLine(9,0) == true)
-    assert(cache.getCacheLine(18,0) == true)
+    assert(cache.performAccess(9,0,true,true) == ReadHit)
+    assert(cache.performAccess(18,0,true,true) == ReadHit)
 
-    assert(cache.getCacheLine(0,1) == true)
-    assert(cache.getCacheLine(18,1) == true)
+    assert(cache.performAccess(0,1,true,true) == ReadHit)
+    assert(cache.performAccess(18,1,true,true) == ReadHit)
 
-    assert(cache.getCacheLine(0,2) == true)
-    assert(cache.getCacheLine(9,2) == true)
+    assert(cache.performAccess(0,2,true,true) == ReadHit)
+    assert(cache.performAccess(9,2,true,true) == ReadHit)
   }
 }
 
@@ -182,16 +182,16 @@ class ContentionCacheTest extends AnyFunSuite with LruTests[ContentionCache] {
     cache.setCriticality(0, 0);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(9,0) // way 1
-    cache.getCacheLine(18,0) // way 2
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(9,0,true,true) // way 1
+    cache.performAccess(18,0,true,true) // way 2
 
-    assert(cache.getCacheLine(27,1) == false) // try to use set 0 again
-    assert(cache.getCacheLine(27,1) == false) // Ensure did not get saved
+    assert(cache.performAccess(27,1,true,true) == ReadMiss) // try to use set 0 again
+    assert(cache.performAccess(27,1,true,true) == ReadMiss) // Ensure did not get saved
 
-    assert(cache.getCacheLine(0,1) == true) // Ensure did get saved
-    assert(cache.getCacheLine(9,1) == true)
-    assert(cache.getCacheLine(18,1) == true)
+    assert(cache.performAccess(0,1,true,true) == ReadHit) // Ensure did get saved
+    assert(cache.performAccess(9,1,true,true) == ReadHit)
+    assert(cache.performAccess(18,1,true,true) == ReadHit)
   }
 
   test("Low criticality cannot evict high criticality with contention lower than cost") {
@@ -199,16 +199,16 @@ class ContentionCacheTest extends AnyFunSuite with LruTests[ContentionCache] {
     cache.setCriticality(0, 3);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(9,0) // way 1
-    cache.getCacheLine(18,0) // way 2
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(9,0,true,true) // way 1
+    cache.performAccess(18,0,true,true) // way 2
 
-    assert(cache.getCacheLine(27,1) == false) // try to use set 0 again
-    assert(cache.getCacheLine(27,1) == false) // Ensure did not get saved
+    assert(cache.performAccess(27,1,true,true) == ReadMiss) // try to use set 0 again
+    assert(cache.performAccess(27,1,true,true) == ReadMiss) // Ensure did not get saved
 
-    assert(cache.getCacheLine(0,1) == true) // Ensure did get saved
-    assert(cache.getCacheLine(9,1) == true)
-    assert(cache.getCacheLine(18,1) == true)
+    assert(cache.performAccess(0,1,true,true) == ReadHit) // Ensure did get saved
+    assert(cache.performAccess(9,1,true,true) == ReadHit)
+    assert(cache.performAccess(18,1,true,true) == ReadHit)
   }
 
   test("Low criticality evicts other low-criticality if high-criticality at limit") {
@@ -216,16 +216,16 @@ class ContentionCacheTest extends AnyFunSuite with LruTests[ContentionCache] {
     cache.setCriticality(0, 0);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(9,1) // way 1
-    cache.getCacheLine(18,1) // way 2
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(9,1,true,true) // way 1
+    cache.performAccess(18,1,true,true) // way 2
 
-    assert(cache.getCacheLine(27,1) == false) // try to use set 0 again
-    assert(cache.getCacheLine(27,1) == true) // Ensure did get saved
+    assert(cache.performAccess(27,1,true,true) == ReadMiss) // try to use set 0 again
+    assert(cache.performAccess(27,1,true,true) == ReadHit) // Ensure did get saved
 
-    assert(cache.getCacheLine(0,0) == true) // Ensure critical was not evicted
-    assert(cache.getCacheLine(18,1) == true)
-    assert(cache.getCacheLine(9,1) == false)
+    assert(cache.performAccess(0,0,true,true) == ReadHit) // Ensure critical was not evicted
+    assert(cache.performAccess(18,1,true,true) == ReadHit)
+    assert(cache.performAccess(9,1,true,true) == ReadMiss)
   }
 
   test("Low criticality can evict high criticality not at limit") {
@@ -233,12 +233,12 @@ class ContentionCacheTest extends AnyFunSuite with LruTests[ContentionCache] {
     cache.setCriticality(0, 100);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(9,0) // way 1
-    cache.getCacheLine(18,0) // way 2
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(9,0,true,true) // way 1
+    cache.performAccess(18,0,true,true) // way 2
 
-    assert(cache.getCacheLine(27,1) == false) // try to use set 0 again
-    assert(cache.getCacheLine(27,1) == true) // Ensure did get saved
+    assert(cache.performAccess(27,1,true,true) == ReadMiss) // try to use set 0 again
+    assert(cache.performAccess(27,1,true,true) == ReadHit) // Ensure did get saved
   }
 
   test("Low criticality can evict high criticality not at limit 2") {
@@ -247,14 +247,14 @@ class ContentionCacheTest extends AnyFunSuite with LruTests[ContentionCache] {
     cache.setCriticality(1, 0);
 
     // Fill up set 0
-    cache.getCacheLine(0,1) // way 0
-    cache.getCacheLine(9,0) // way 1
-    cache.getCacheLine(18,0) // way 2
+    cache.performAccess(0,1,true,true) // way 0
+    cache.performAccess(9,0,true,true) // way 1
+    cache.performAccess(18,0,true,true) // way 2
 
-    assert(cache.getCacheLine(27,2) == false) // try to use set 0 again
-    assert(cache.getCacheLine(27,2) == true) // Ensure did get saved
-    assert(cache.getCacheLine(0,1) == true) // Ensure limited was saved
-    assert(cache.getCacheLine(9,0) == false) // Ensure limited was saved
+    assert(cache.performAccess(27,2,true,true) == ReadMiss) // try to use set 0 again
+    assert(cache.performAccess(27,2,true,true) == ReadHit) // Ensure did get saved
+    assert(cache.performAccess(0,1,true,true) == ReadHit) // Ensure limited was saved
+    assert(cache.performAccess(9,0,true,true) == ReadMiss) // Ensure limited was saved
   }
 
   test("Unlimited eviction reaches limit") {
@@ -262,19 +262,19 @@ class ContentionCacheTest extends AnyFunSuite with LruTests[ContentionCache] {
     cache.setCriticality(0, 10);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(9,0) // way 1
-    cache.getCacheLine(18,0) // way 2
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(9,0,true,true) // way 1
+    cache.performAccess(18,0,true,true) // way 2
     // Fill up set 1
-    cache.getCacheLine(3,0) // way 0
-    cache.getCacheLine(12,0) // way 1
-    cache.getCacheLine(21,0) // way 2
+    cache.performAccess(3,0,true,true) // way 0
+    cache.performAccess(12,0,true,true) // way 1
+    cache.performAccess(21,0,true,true) // way 2
 
-    assert(cache.getCacheLine(27,1) == false) // try to use set 0 again
-    assert(cache.getCacheLine(27,1) == true) // Ensure did get saved
+    assert(cache.performAccess(27,1,true,true) == ReadMiss) // try to use set 0 again
+    assert(cache.performAccess(27,1,true,true) == ReadHit) // Ensure did get saved
 
-    assert(cache.getCacheLine(30,1) == false) // try to use set 1 again
-    assert(cache.getCacheLine(30,1) == false) // Ensure did not get saved (core 0 reached limit from last eviction)
+    assert(cache.performAccess(30,1,true,true) == ReadMiss) // try to use set 1 again
+    assert(cache.performAccess(30,1,true,true) == ReadMiss) // Ensure did not get saved (core 0 reached limit from last eviction)
   }
 
   test("Unlimited eviction reaches limit 2") {
@@ -282,26 +282,26 @@ class ContentionCacheTest extends AnyFunSuite with LruTests[ContentionCache] {
     cache.setCriticality(0, 20);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(9,0) // way 1
-    cache.getCacheLine(18,0) // way 2
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(9,0,true,true) // way 1
+    cache.performAccess(18,0,true,true) // way 2
     // Fill up set 1
-    cache.getCacheLine(3,0) // way 0
-    cache.getCacheLine(12,0) // way 1
-    cache.getCacheLine(21,0) // way 2
+    cache.performAccess(3,0,true,true) // way 0
+    cache.performAccess(12,0,true,true) // way 1
+    cache.performAccess(21,0,true,true) // way 2
     // Fill up set 2
-    cache.getCacheLine(6,0) // way 0
-    cache.getCacheLine(15,0) // way 1
-    cache.getCacheLine(24,0) // way 2
+    cache.performAccess(6,0,true,true) // way 0
+    cache.performAccess(15,0,true,true) // way 1
+    cache.performAccess(24,0,true,true) // way 2
 
-    assert(cache.getCacheLine(27,1) == false) // try to use set 0 again
-    assert(cache.getCacheLine(27,1) == true) // Ensure did get saved
+    assert(cache.performAccess(27,1,true,true) == ReadMiss) // try to use set 0 again
+    assert(cache.performAccess(27,1,true,true) == ReadHit) // Ensure did get saved
 
-    assert(cache.getCacheLine(30,1) == false) // try to use set 1 again
-    assert(cache.getCacheLine(30,1) == true) // Ensure did get saved
+    assert(cache.performAccess(30,1,true,true) == ReadMiss) // try to use set 1 again
+    assert(cache.performAccess(30,1,true,true) == ReadHit) // Ensure did get saved
 
-    assert(cache.getCacheLine(33,1) == false) // try to use set 2 again
-    assert(cache.getCacheLine(33,1) == false) // Ensure did not get saved (core 0 reached limit from last eviction)
+    assert(cache.performAccess(33,1,true,true) == ReadMiss) // try to use set 2 again
+    assert(cache.performAccess(33,1,true,true) == ReadMiss) // Ensure did not get saved (core 0 reached limit from last eviction)
   }
 
   test("Critical can evict non-critical") {
@@ -309,16 +309,16 @@ class ContentionCacheTest extends AnyFunSuite with LruTests[ContentionCache] {
     cache.setCriticality(1, 20);
 
     // Fill up set 1 with non-critical
-    cache.getCacheLine(4,0) // way 0
-    cache.getCacheLine(20,0) // way 1
-    cache.getCacheLine(36,0) // way 2
-    cache.getCacheLine(52,0) // way 3
+    cache.performAccess(4,0,true,true) // way 0
+    cache.performAccess(20,0,true,true) // way 1
+    cache.performAccess(36,0,true,true) // way 2
+    cache.performAccess(52,0,true,true) // way 3
 
-    assert(cache.getCacheLine(68,1) == false) // try to use set 1 for critical
+    assert(cache.performAccess(68,1,true,true) == ReadMiss) // try to use set 1 for critical
 
-    assert(cache.getCacheLine(69,1) == true) // Ensure did get saved
+    assert(cache.performAccess(69,1,true,true) == ReadHit) // Ensure did get saved
 
-    assert(cache.getCacheLine(4,0) == false) // Ensure non-critical was evicted
+    assert(cache.performAccess(4,0,true,true) == ReadMiss) // Ensure non-critical was evicted
   }
 
   test("Critical not at limit may be evicted") {
@@ -326,22 +326,22 @@ class ContentionCacheTest extends AnyFunSuite with LruTests[ContentionCache] {
     cache.setCriticality(1, 20);
 
     // Fill up set 1
-    cache.getCacheLine(4,1) // way 0, critical
-    cache.getCacheLine(20,0) // way 1, non-critical
-    cache.getCacheLine(36,0) // way 2, non-critical
-    cache.getCacheLine(52,0) // way 3, non-critical
+    cache.performAccess(4,1,true,true) // way 0, critical
+    cache.performAccess(20,0,true,true) // way 1, non-critical
+    cache.performAccess(36,0,true,true) // way 2, non-critical
+    cache.performAccess(52,0,true,true) // way 3, non-critical
 
-    assert(cache.getCacheLine(68,1) == false) // try to use set 1 for critical
+    assert(cache.performAccess(68,1,true,true) == ReadMiss) // try to use set 1 for critical
 
-    assert(cache.getCacheLine(69,1) == true) // Ensure new access did get saved
-    assert(cache.getCacheLine(20,0) == true) // Ensure non-LRU stay saved
-    assert(cache.getCacheLine(36,0) == true)
-    assert(cache.getCacheLine(52,0) == true)
+    assert(cache.performAccess(69,1,true,true) == ReadHit) // Ensure new access did get saved
+    assert(cache.performAccess(20,0,true,true) == ReadHit) // Ensure non-LRU stay saved
+    assert(cache.performAccess(36,0,true,true) == ReadHit)
+    assert(cache.performAccess(52,0,true,true) == ReadHit)
 
-    assert(cache.getCacheLine(84,1) == false) // Try another critical load
-    assert(cache.getCacheLine(69,1) == true) // Ensure critical was not evicted because it was at limit
-    assert(cache.getCacheLine(36,0) == true)// Ensure non-LRU stay saved
-    assert(cache.getCacheLine(52,0) == true)
+    assert(cache.performAccess(84,1,true,true) == ReadMiss) // Try another critical load
+    assert(cache.performAccess(69,1,true,true) == ReadHit) // Ensure critical was not evicted because it was at limit
+    assert(cache.performAccess(36,0,true,true) == ReadHit)// Ensure non-LRU stay saved
+    assert(cache.performAccess(52,0,true,true) == ReadHit)
   }
 
   test("Critical may evict critical without contention") {
@@ -350,14 +350,14 @@ class ContentionCacheTest extends AnyFunSuite with LruTests[ContentionCache] {
     cache.setCriticality(1, 0);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(4,0) // way 1
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(4,0,true,true) // way 1
 
-    assert(cache.getCacheLine(8,1) == false) // try to use set 0
-    assert(cache.getCacheLine(8,1) == true) // Ensure was saved
-    assert(cache.getCacheLine(12,1) == false) // try again
-    assert(cache.getCacheLine(8,1) == true) // Ensure was saved
-    assert(cache.getCacheLine(12,1) == true)
+    assert(cache.performAccess(8,1,true,true) == ReadMiss) // try to use set 0
+    assert(cache.performAccess(8,1,true,true) == ReadHit) // Ensure was saved
+    assert(cache.performAccess(12,1,true,true) == ReadMiss) // try again
+    assert(cache.performAccess(8,1,true,true) == ReadHit) // Ensure was saved
+    assert(cache.performAccess(12,1,true,true) == ReadHit)
   }
 
   test("Critical may evict critical without contention 2") {
@@ -366,14 +366,14 @@ class ContentionCacheTest extends AnyFunSuite with LruTests[ContentionCache] {
     cache.setCriticality(1, 0);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(4,0) // way 1
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(4,0,true,true) // way 1
 
-    assert(cache.getCacheLine(8,1) == false) // try to use set 0
-    assert(cache.getCacheLine(8,1) == true) // Ensure was saved
-    assert(cache.getCacheLine(12,1) == false) // try again
-    assert(cache.getCacheLine(8,1) == true) // Ensure was saved
-    assert(cache.getCacheLine(12,1) == true)
+    assert(cache.performAccess(8,1,true,true) == ReadMiss) // try to use set 0
+    assert(cache.performAccess(8,1,true,true) == ReadHit) // Ensure was saved
+    assert(cache.performAccess(12,1,true,true) == ReadMiss) // try again
+    assert(cache.performAccess(8,1,true,true) == ReadHit) // Ensure was saved
+    assert(cache.performAccess(12,1,true,true) == ReadHit)
   }
 
   test("Critical hit on non-critical line increases contention limit") {
@@ -381,17 +381,17 @@ class ContentionCacheTest extends AnyFunSuite with LruTests[ContentionCache] {
     cache.setCriticality(0, 0);
 
     // Fill up set 0 with non-critical
-    cache.getCacheLine(0,1) // way 0
-    cache.getCacheLine(4,1) // way 1
+    cache.performAccess(0,1,true,true) // way 0
+    cache.performAccess(4,1,true,true) // way 1
     // Fill up set 1 with critical
-    cache.getCacheLine(2,0) // way 0
-    cache.getCacheLine(6,0) // way 1
+    cache.performAccess(2,0,true,true) // way 0
+    cache.performAccess(6,0,true,true) // way 1
 
-    assert(cache.getCacheLine(4,0) == true) // try to use set 0 with critical
+    assert(cache.performAccess(4,0,true,true) == ReadHit) // try to use set 0 with critical
 
-    assert(cache.getCacheLine(10,1) == false) // try to overwrite set 1 with non-critical
-    assert(cache.getCacheLine(10,1) == true) // Ensure was saved
-    assert(cache.getCacheLine(6,1) == true)
+    assert(cache.performAccess(10,1,true,true) == ReadMiss) // try to overwrite set 1 with non-critical
+    assert(cache.performAccess(10,1,true,true) == ReadHit) // Ensure was saved
+    assert(cache.performAccess(6,1,true,true) == ReadHit)
   }
 
   test("Critical hit on non-critical line makes it critical") {
@@ -399,18 +399,18 @@ class ContentionCacheTest extends AnyFunSuite with LruTests[ContentionCache] {
     cache.setCriticality(0, 0);
 
     // Fill up set 0 with non-critical
-    cache.getCacheLine(0,1) // way 0
-    cache.getCacheLine(4,1) // way 1
+    cache.performAccess(0,1,true,true) // way 0
+    cache.performAccess(4,1,true,true) // way 1
     // Fill up set 1 with critical
-    cache.getCacheLine(2,0) // way 0
-    cache.getCacheLine(6,0) // way 1
+    cache.performAccess(2,0,true,true) // way 0
+    cache.performAccess(6,0,true,true) // way 1
 
-    assert(cache.getCacheLine(0,0) == true) // try to use set 0 with critical
-    assert(cache.getCacheLine(10,1) == false) // overwrite set 1 with non-critical, negating the previous win
-    assert(cache.getCacheLine(8,0) == false) // overwrite set 0 way 1 with critical
+    assert(cache.performAccess(0,0,true,true) == ReadHit) // try to use set 0 with critical
+    assert(cache.performAccess(10,1,true,true) == ReadMiss) // overwrite set 1 with non-critical, negating the previous win
+    assert(cache.performAccess(8,0,true,true) == ReadMiss) // overwrite set 0 way 1 with critical
 
-    assert(cache.getCacheLine(12,1) == false) // try to use set 0 with non-critical
-    assert(cache.getCacheLine(12,1) == false) //
+    assert(cache.performAccess(12,1,true,true) == ReadMiss) // try to use set 0 with non-critical
+    assert(cache.performAccess(12,1,true,true) == ReadMiss) //
   }
 
   test("Critical hit on critical line does not increase contention count") {
@@ -419,18 +419,18 @@ class ContentionCacheTest extends AnyFunSuite with LruTests[ContentionCache] {
     cache.setCriticality(1, 0);
 
     // Fill up set 0 with crit 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(4,0) // way 1
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(4,0,true,true) // way 1
     // Fill up set 1 with crit 1
-    cache.getCacheLine(2,1) // way 0
-    cache.getCacheLine(6,1) // way 1
+    cache.performAccess(2,1,true,true) // way 0
+    cache.performAccess(6,1,true,true) // way 1
 
-    assert(cache.getCacheLine(3,0) == true) // Hit on other crit
+    assert(cache.performAccess(3,0,true,true) == ReadHit) // Hit on other crit
 
-    assert(cache.getCacheLine(8,2) == false) // Try to evict crit
-    assert(cache.getCacheLine(8,2) == false) // Ensure did not work
-    assert(cache.getCacheLine(0,0) == true) // Ensure was not evicted
-    assert(cache.getCacheLine(4,0) == true) // Ensure was not evicted
+    assert(cache.performAccess(8,2,true,true) == ReadMiss) // Try to evict crit
+    assert(cache.performAccess(8,2,true,true) == ReadMiss) // Ensure did not work
+    assert(cache.performAccess(0,0,true,true) == ReadHit) // Ensure was not evicted
+    assert(cache.performAccess(4,0,true,true) == ReadHit) // Ensure was not evicted
   }
 }
 
@@ -450,14 +450,14 @@ class TimeoutCacheTest extends AnyFunSuite with LruTests[TimeoutCache] {
     cache.setPriority(0, 1);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(4,0) // way 1
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(4,0,true,true) // way 1
 
-    assert(cache.getCacheLine(8,1) == false) // try to use set 0 again
-    assert(cache.getCacheLine(8,1) == false) // Ensure did not get saved
+    assert(cache.performAccess(8,1,true,true) == ReadMiss) // try to use set 0 again
+    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Ensure did not get saved
 
-    assert(cache.getCacheLine(0,0) == true) // Ensure did get saved
-    assert(cache.getCacheLine(4,0) == true)
+    assert(cache.performAccess(0,0,true,true) == ReadHit) // Ensure did get saved
+    assert(cache.performAccess(4,0,true,true) == ReadHit)
   }
 
   test("Low criticality can evict high criticality after timeout") {
@@ -466,15 +466,15 @@ class TimeoutCacheTest extends AnyFunSuite with LruTests[TimeoutCache] {
     cache.setPriority(0, 1);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(4,0) // way 1
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(4,0,true,true) // way 1
 
     cache.advanceCycle()
     cache.advanceCycle()
 
-    assert(cache.getCacheLine(8,1) == false) // try to use set 0 again
-    assert(cache.getCacheLine(8,1) == true) // Ensure did get saved
-    assert(cache.getCacheLine(4,0) == true)
+    assert(cache.performAccess(8,1,true,true) == ReadMiss) // try to use set 0 again
+    assert(cache.performAccess(8,1,true,true) == ReadHit) // Ensure did get saved
+    assert(cache.performAccess(4,0,true,true) == ReadHit)
   }
 
   test("Low criticality can evict high-criticality in in unprioritized way") {
@@ -482,13 +482,13 @@ class TimeoutCacheTest extends AnyFunSuite with LruTests[TimeoutCache] {
     cache.setPriority(0, 0);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0, with prio
-    cache.getCacheLine(4,0) // way 1, without prio
+    cache.performAccess(0,0,true,true) // way 0, with prio
+    cache.performAccess(4,0,true,true) // way 1, without prio
 
-    assert(cache.getCacheLine(8,1) == false) // try to use set 0 again
-    assert(cache.getCacheLine(8,1) == true) // Ensure did get saved
+    assert(cache.performAccess(8,1,true,true) == ReadMiss) // try to use set 0 again
+    assert(cache.performAccess(8,1,true,true) == ReadHit) // Ensure did get saved
 
-    assert(cache.getCacheLine(0,0) == true) // Ensure did get saved
+    assert(cache.performAccess(0,0,true,true) == ReadHit) // Ensure did get saved
   }
 
   test("High-criticality doesn't prefer unprioritised") {
@@ -497,15 +497,15 @@ class TimeoutCacheTest extends AnyFunSuite with LruTests[TimeoutCache] {
     cache.setPriority(1, 1);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0, with prio
-    cache.getCacheLine(4,1) // way 1, with prio
-    cache.getCacheLine(8,2) // way 2, without prio
+    cache.performAccess(0,0,true,true) // way 0, with prio
+    cache.performAccess(4,1,true,true) // way 1, with prio
+    cache.performAccess(8,2,true,true) // way 2, without prio
 
-    assert(cache.getCacheLine(16,0) == false) // try to use set 0 again
-    assert(cache.getCacheLine(16,1) == true) // Ensure did get saved
+    assert(cache.performAccess(16,0,true,true) == ReadMiss) // try to use set 0 again
+    assert(cache.performAccess(16,1,true,true) == ReadHit) // Ensure did get saved
 
-    assert(cache.getCacheLine(4,1) == true) // Ensure did get saved
-    assert(cache.getCacheLine(8,2) == true) // Ensure did get saved
+    assert(cache.performAccess(4,1,true,true) == ReadHit) // Ensure did get saved
+    assert(cache.performAccess(8,2,true,true) == ReadHit) // Ensure did get saved
   }
 
   test("Cycles reduce timeout") {
@@ -514,18 +514,18 @@ class TimeoutCacheTest extends AnyFunSuite with LruTests[TimeoutCache] {
     cache.setPriority(0, 1);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0, with prio
-    cache.getCacheLine(4,0) // way 1, with prio
+    cache.performAccess(0,0,true,true) // way 0, with prio
+    cache.performAccess(4,0,true,true) // way 1, with prio
 
-    assert(cache.getCacheLine(8,1) == false) // try to use without prio
-    assert(cache.getCacheLine(8,1) == false) // Ensure didn't get saved
+    assert(cache.performAccess(8,1,true,true) == ReadMiss) // try to use without prio
+    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Ensure didn't get saved
 
     cache.advanceCycle() // Make the timeouts run out
 
-    assert(cache.getCacheLine(8,1) == false) // try to use without prio
-    assert(cache.getCacheLine(12,1) == false) // try to use without prio
-    assert(cache.getCacheLine(8,1) == true) // Ensure did get saved
-    assert(cache.getCacheLine(12,1) == true) // Ensure did get saved
+    assert(cache.performAccess(8,1,true,true) == ReadMiss) // try to use without prio
+    assert(cache.performAccess(12,1,true,true) == ReadMiss) // try to use without prio
+    assert(cache.performAccess(8,1,true,true) == ReadHit) // Ensure did get saved
+    assert(cache.performAccess(12,1,true,true) == ReadHit) // Ensure did get saved
   }
 
   test("Timeout as given") {
@@ -534,8 +534,8 @@ class TimeoutCacheTest extends AnyFunSuite with LruTests[TimeoutCache] {
     cache.setPriority(0, 1);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0, with prio
-    cache.getCacheLine(4,0) // way 1, with prio
+    cache.performAccess(0,0,true,true) // way 0, with prio
+    cache.performAccess(4,0,true,true) // way 1, with prio
 
 
     cache.advanceCycle() // Make timout reach 1
@@ -543,15 +543,15 @@ class TimeoutCacheTest extends AnyFunSuite with LruTests[TimeoutCache] {
     cache.advanceCycle()
     cache.advanceCycle()
 
-    assert(cache.getCacheLine(8,1) == false) // Ensure timeout hasn't been reached
-    assert(cache.getCacheLine(8,1) == false) // Ensure didn't get saved
+    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Ensure timeout hasn't been reached
+    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Ensure didn't get saved
 
     cache.advanceCycle() // Timeout reached
 
-    assert(cache.getCacheLine(8,1) == false) // Ensure didn't get saved
-    assert(cache.getCacheLine(12,1) == false) // try to use without prio
-    assert(cache.getCacheLine(8,1) == true) // Ensure did get saved
-    assert(cache.getCacheLine(12,1) == true) // Ensure did get saved
+    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Ensure didn't get saved
+    assert(cache.performAccess(12,1,true,true) == ReadMiss) // try to use without prio
+    assert(cache.performAccess(8,1,true,true) == ReadHit) // Ensure did get saved
+    assert(cache.performAccess(12,1,true,true) == ReadHit) // Ensure did get saved
   }
 
 }
@@ -573,16 +573,16 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.setCriticality(0, 0);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(9,0) // way 1
-    cache.getCacheLine(18,0) // way 2
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(9,0,true,true) // way 1
+    cache.performAccess(18,0,true,true) // way 2
 
-    assert(cache.getCacheLine(27,1) == false) // try to use set 0 again
-    assert(cache.getCacheLine(27,1) == false) // Ensure did not get saved
+    assert(cache.performAccess(27,1,true,true) == ReadMiss) // try to use set 0 again
+    assert(cache.performAccess(27,1,true,true) == ReadMiss) // Ensure did not get saved
 
-    assert(cache.getCacheLine(0,1) == true) // Ensure did get saved
-    assert(cache.getCacheLine(9,1) == true)
-    assert(cache.getCacheLine(18,1) == true)
+    assert(cache.performAccess(0,1,true,true) == ReadHit) // Ensure did get saved
+    assert(cache.performAccess(9,1,true,true) == ReadHit)
+    assert(cache.performAccess(18,1,true,true) == ReadHit)
   }
 
   test("Low criticality cannot evict high criticality with contention lower than cost") {
@@ -590,16 +590,16 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.setCriticality(0, 3);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(9,0) // way 1
-    cache.getCacheLine(18,0) // way 2
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(9,0,true,true) // way 1
+    cache.performAccess(18,0,true,true) // way 2
 
-    assert(cache.getCacheLine(27,1) == false) // try to use set 0 again
-    assert(cache.getCacheLine(27,1) == false) // Ensure did not get saved
+    assert(cache.performAccess(27,1,true,true) == ReadMiss) // try to use set 0 again
+    assert(cache.performAccess(27,1,true,true) == ReadMiss) // Ensure did not get saved
 
-    assert(cache.getCacheLine(0,1) == true) // Ensure did get saved
-    assert(cache.getCacheLine(9,1) == true)
-    assert(cache.getCacheLine(18,1) == true)
+    assert(cache.performAccess(0,1,true,true) == ReadHit) // Ensure did get saved
+    assert(cache.performAccess(9,1,true,true) == ReadHit)
+    assert(cache.performAccess(18,1,true,true) == ReadHit)
   }
 
   test("Low criticality evicts other low-criticality if high-criticality at limit") {
@@ -607,16 +607,16 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.setCriticality(0, 0);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(9,1) // way 1
-    cache.getCacheLine(18,1) // way 2
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(9,1,true,true) // way 1
+    cache.performAccess(18,1,true,true) // way 2
 
-    assert(cache.getCacheLine(27,1) == false) // try to use set 0 again
-    assert(cache.getCacheLine(27,1) == true) // Ensure did get saved
+    assert(cache.performAccess(27,1,true,true) == ReadMiss) // try to use set 0 again
+    assert(cache.performAccess(27,1,true,true) == ReadHit) // Ensure did get saved
 
-    assert(cache.getCacheLine(0,0) == true) // Ensure critical was not evicted
-    assert(cache.getCacheLine(18,1) == true)
-    assert(cache.getCacheLine(9,1) == false)
+    assert(cache.performAccess(0,0,true,true) == ReadHit) // Ensure critical was not evicted
+    assert(cache.performAccess(18,1,true,true) == ReadHit)
+    assert(cache.performAccess(9,1,true,true) == ReadMiss)
   }
 
   test("Low criticality can evict high criticality not at limit") {
@@ -624,12 +624,12 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.setCriticality(0, 100);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(9,0) // way 1
-    cache.getCacheLine(18,0) // way 2
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(9,0,true,true) // way 1
+    cache.performAccess(18,0,true,true) // way 2
 
-    assert(cache.getCacheLine(27,1) == false) // try to use set 0 again
-    assert(cache.getCacheLine(27,1) == true) // Ensure did get saved
+    assert(cache.performAccess(27,1,true,true) == ReadMiss) // try to use set 0 again
+    assert(cache.performAccess(27,1,true,true) == ReadHit) // Ensure did get saved
   }
 
   test("Low criticality can evict high criticality not at limit 2") {
@@ -638,14 +638,14 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.setCriticality(1, 0);
 
     // Fill up set 0
-    cache.getCacheLine(0,1) // way 0
-    cache.getCacheLine(9,0) // way 1
-    cache.getCacheLine(18,0) // way 2
+    cache.performAccess(0,1,true,true) // way 0
+    cache.performAccess(9,0,true,true) // way 1
+    cache.performAccess(18,0,true,true) // way 2
 
-    assert(cache.getCacheLine(27,2) == false) // try to use set 0 again
-    assert(cache.getCacheLine(27,2) == true) // Ensure did get saved
-    assert(cache.getCacheLine(0,1) == true) // Ensure limited was saved
-    assert(cache.getCacheLine(9,0) == false) // Ensure limited was saved
+    assert(cache.performAccess(27,2,true,true) == ReadMiss) // try to use set 0 again
+    assert(cache.performAccess(27,2,true,true) == ReadHit) // Ensure did get saved
+    assert(cache.performAccess(0,1,true,true) == ReadHit) // Ensure limited was saved
+    assert(cache.performAccess(9,0,true,true) == ReadMiss) // Ensure limited was saved
   }
 
   test("Unlimited eviction reaches limit") {
@@ -653,19 +653,19 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.setCriticality(0, 10);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(9,0) // way 1
-    cache.getCacheLine(18,0) // way 2
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(9,0,true,true) // way 1
+    cache.performAccess(18,0,true,true) // way 2
     // Fill up set 1
-    cache.getCacheLine(3,0) // way 0
-    cache.getCacheLine(12,0) // way 1
-    cache.getCacheLine(21,0) // way 2
+    cache.performAccess(3,0,true,true) // way 0
+    cache.performAccess(12,0,true,true) // way 1
+    cache.performAccess(21,0,true,true) // way 2
 
-    assert(cache.getCacheLine(27,1) == false) // try to use set 0 again
-    assert(cache.getCacheLine(27,1) == true) // Ensure did get saved
+    assert(cache.performAccess(27,1,true,true) == ReadMiss) // try to use set 0 again
+    assert(cache.performAccess(27,1,true,true) == ReadHit) // Ensure did get saved
 
-    assert(cache.getCacheLine(30,1) == false) // try to use set 1 again
-    assert(cache.getCacheLine(30,1) == false) // Ensure did not get saved (core 0 reached limit from last eviction)
+    assert(cache.performAccess(30,1,true,true) == ReadMiss) // try to use set 1 again
+    assert(cache.performAccess(30,1,true,true) == ReadMiss) // Ensure did not get saved (core 0 reached limit from last eviction)
   }
 
   test("Unlimited eviction reaches limit 2") {
@@ -673,26 +673,26 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.setCriticality(0, 20);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(9,0) // way 1
-    cache.getCacheLine(18,0) // way 2
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(9,0,true,true) // way 1
+    cache.performAccess(18,0,true,true) // way 2
     // Fill up set 1
-    cache.getCacheLine(3,0) // way 0
-    cache.getCacheLine(12,0) // way 1
-    cache.getCacheLine(21,0) // way 2
+    cache.performAccess(3,0,true,true) // way 0
+    cache.performAccess(12,0,true,true) // way 1
+    cache.performAccess(21,0,true,true) // way 2
     // Fill up set 2
-    cache.getCacheLine(6,0) // way 0
-    cache.getCacheLine(15,0) // way 1
-    cache.getCacheLine(24,0) // way 2
+    cache.performAccess(6,0,true,true) // way 0
+    cache.performAccess(15,0,true,true) // way 1
+    cache.performAccess(24,0,true,true) // way 2
 
-    assert(cache.getCacheLine(27,1) == false) // try to use set 0 again
-    assert(cache.getCacheLine(27,1) == true) // Ensure did get saved
+    assert(cache.performAccess(27,1,true,true) == ReadMiss) // try to use set 0 again
+    assert(cache.performAccess(27,1,true,true) == ReadHit) // Ensure did get saved
 
-    assert(cache.getCacheLine(30,1) == false) // try to use set 1 again
-    assert(cache.getCacheLine(30,1) == true) // Ensure did get saved
+    assert(cache.performAccess(30,1,true,true) == ReadMiss) // try to use set 1 again
+    assert(cache.performAccess(30,1,true,true) == ReadHit) // Ensure did get saved
 
-    assert(cache.getCacheLine(33,1) == false) // try to use set 2 again
-    assert(cache.getCacheLine(33,1) == false) // Ensure did not get saved (core 0 reached limit from last eviction)
+    assert(cache.performAccess(33,1,true,true) == ReadMiss) // try to use set 2 again
+    assert(cache.performAccess(33,1,true,true) == ReadMiss) // Ensure did not get saved (core 0 reached limit from last eviction)
   }
 
   test("Critical can evict non-critical") {
@@ -700,16 +700,16 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.setCriticality(1, 20);
 
     // Fill up set 1 with non-critical
-    cache.getCacheLine(4,0) // way 0
-    cache.getCacheLine(20,0) // way 1
-    cache.getCacheLine(36,0) // way 2
-    cache.getCacheLine(52,0) // way 3
+    cache.performAccess(4,0,true,true) // way 0
+    cache.performAccess(20,0,true,true) // way 1
+    cache.performAccess(36,0,true,true) // way 2
+    cache.performAccess(52,0,true,true) // way 3
 
-    assert(cache.getCacheLine(68,1) == false) // try to use set 1 for critical
+    assert(cache.performAccess(68,1,true,true) == ReadMiss) // try to use set 1 for critical
 
-    assert(cache.getCacheLine(69,1) == true) // Ensure did get saved
+    assert(cache.performAccess(69,1,true,true) == ReadHit) // Ensure did get saved
 
-    assert(cache.getCacheLine(4,0) == false) // Ensure non-critical was evicted
+    assert(cache.performAccess(4,0,true,true) == ReadMiss) // Ensure non-critical was evicted
   }
 
   test("Critical not at limit may be evicted") {
@@ -717,22 +717,22 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.setCriticality(1, 20);
 
     // Fill up set 1
-    cache.getCacheLine(4,1) // way 0, critical
-    cache.getCacheLine(20,0) // way 1, non-critical
-    cache.getCacheLine(36,0) // way 2, non-critical
-    cache.getCacheLine(52,0) // way 3, non-critical
+    cache.performAccess(4,1,true,true) // way 0, critical
+    cache.performAccess(20,0,true,true) // way 1, non-critical
+    cache.performAccess(36,0,true,true) // way 2, non-critical
+    cache.performAccess(52,0,true,true) // way 3, non-critical
 
-    assert(cache.getCacheLine(68,1) == false) // try to use set 1 for critical
+    assert(cache.performAccess(68,1,true,true) == ReadMiss) // try to use set 1 for critical
 
-    assert(cache.getCacheLine(69,1) == true) // Ensure new access did get saved
-    assert(cache.getCacheLine(20,0) == true) // Ensure non-LRU stay saved
-    assert(cache.getCacheLine(36,0) == true)
-    assert(cache.getCacheLine(52,0) == true)
+    assert(cache.performAccess(69,1,true,true) == ReadHit) // Ensure new access did get saved
+    assert(cache.performAccess(20,0,true,true) == ReadHit) // Ensure non-LRU stay saved
+    assert(cache.performAccess(36,0,true,true) == ReadHit)
+    assert(cache.performAccess(52,0,true,true) == ReadHit)
 
-    assert(cache.getCacheLine(84,1) == false) // Try another critical load
-    assert(cache.getCacheLine(69,1) == true) // Ensure critical was not evicted because it was at limit
-    assert(cache.getCacheLine(36,0) == true)// Ensure non-LRU stay saved
-    assert(cache.getCacheLine(52,0) == true)
+    assert(cache.performAccess(84,1,true,true) == ReadMiss) // Try another critical load
+    assert(cache.performAccess(69,1,true,true) == ReadHit) // Ensure critical was not evicted because it was at limit
+    assert(cache.performAccess(36,0,true,true) == ReadHit)// Ensure non-LRU stay saved
+    assert(cache.performAccess(52,0,true,true) == ReadHit)
   }
 
   test("Critical hit on non-critical line increases contention limit") {
@@ -740,17 +740,17 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.setCriticality(0, 0);
 
     // Fill up set 0 with non-critical
-    cache.getCacheLine(0,1) // way 0
-    cache.getCacheLine(4,1) // way 1
+    cache.performAccess(0,1,true,true) // way 0
+    cache.performAccess(4,1,true,true) // way 1
     // Fill up set 1 with critical
-    cache.getCacheLine(2,0) // way 0
-    cache.getCacheLine(6,0) // way 1
+    cache.performAccess(2,0,true,true) // way 0
+    cache.performAccess(6,0,true,true) // way 1
 
-    assert(cache.getCacheLine(4,0) == true) // try to use set 0 with critical
+    assert(cache.performAccess(4,0,true,true) == ReadHit) // try to use set 0 with critical
 
-    assert(cache.getCacheLine(10,1) == false) // try to overwrite set 1 with non-critical
-    assert(cache.getCacheLine(10,1) == true) // Ensure was saved
-    assert(cache.getCacheLine(6,1) == true)
+    assert(cache.performAccess(10,1,true,true) == ReadMiss) // try to overwrite set 1 with non-critical
+    assert(cache.performAccess(10,1,true,true) == ReadHit) // Ensure was saved
+    assert(cache.performAccess(6,1,true,true) == ReadHit)
   }
 
   test("Critical hit on non-critical line makes it critical") {
@@ -758,18 +758,18 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.setCriticality(0, 0);
 
     // Fill up set 0 with non-critical
-    cache.getCacheLine(0,1) // way 0
-    cache.getCacheLine(4,1) // way 1
+    cache.performAccess(0,1,true,true) // way 0
+    cache.performAccess(4,1,true,true) // way 1
     // Fill up set 1 with critical
-    cache.getCacheLine(2,0) // way 0
-    cache.getCacheLine(6,0) // way 1
+    cache.performAccess(2,0,true,true) // way 0
+    cache.performAccess(6,0,true,true) // way 1
 
-    assert(cache.getCacheLine(0,0) == true) // try to use set 0 with critical
-    assert(cache.getCacheLine(10,1) == false) // overwrite set 1 with non-critical, negating the previous win
-    assert(cache.getCacheLine(8,0) == false) // overwrite set 0 way 1 with critical
+    assert(cache.performAccess(0,0,true,true) == ReadHit) // try to use set 0 with critical
+    assert(cache.performAccess(10,1,true,true) == ReadMiss) // overwrite set 1 with non-critical, negating the previous win
+    assert(cache.performAccess(8,0,true,true) == ReadMiss) // overwrite set 0 way 1 with critical
 
-    assert(cache.getCacheLine(12,1) == false) // try to use set 0 with non-critical
-    assert(cache.getCacheLine(12,1) == false) //
+    assert(cache.performAccess(12,1,true,true) == ReadMiss) // try to use set 0 with non-critical
+    assert(cache.performAccess(12,1,true,true) == ReadMiss) //
   }
 
   test("Critical hit on critical line does not increase contention count") {
@@ -778,18 +778,18 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.setCriticality(1, 0);
 
     // Fill up set 0 with crit 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(4,0) // way 1
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(4,0,true,true) // way 1
     // Fill up set 1 with crit 1
-    cache.getCacheLine(2,1) // way 0
-    cache.getCacheLine(6,1) // way 1
+    cache.performAccess(2,1,true,true) // way 0
+    cache.performAccess(6,1,true,true) // way 1
 
-    assert(cache.getCacheLine(3,0) == true) // Hit on other crit
+    assert(cache.performAccess(3,0,true,true) == ReadHit) // Hit on other crit
 
-    assert(cache.getCacheLine(8,2) == false) // Try to evict crit
-    assert(cache.getCacheLine(8,2) == false) // Ensure did not work
-    assert(cache.getCacheLine(0,0) == true) // Ensure was not evicted
-    assert(cache.getCacheLine(4,0) == true) // Ensure was not evicted
+    assert(cache.performAccess(8,2,true,true) == ReadMiss) // Try to evict crit
+    assert(cache.performAccess(8,2,true,true) == ReadMiss) // Ensure did not work
+    assert(cache.performAccess(0,0,true,true) == ReadHit) // Ensure was not evicted
+    assert(cache.performAccess(4,0,true,true) == ReadHit) // Ensure was not evicted
   }
 
   ////////////////////////////////////////////////////////////////////////////////////
@@ -802,12 +802,12 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.assignWay(1,1);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(4,1) // way 1
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(4,1,true,true) // way 1
 
-    assert(cache.getCacheLine(8,1) == false) // Try to evict
-    assert(cache.getCacheLine(0,0) == true) // Ensure evicted self
-    assert(cache.getCacheLine(4,1) == false) // Ensure evicted self
+    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Try to evict
+    assert(cache.performAccess(0,0,true,true) == ReadHit) // Ensure evicted self
+    assert(cache.performAccess(4,1,true,true) == ReadMiss) // Ensure evicted self
   }
 
   test("Critical can only evict own partition 2") {
@@ -818,12 +818,12 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.assignWay(1,1);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(4,1) // way 1
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(4,1,true,true) // way 1
 
-    assert(cache.getCacheLine(8,1) == false) // Try to evict
-    assert(cache.getCacheLine(0,0) == true) // Ensure evicted self
-    assert(cache.getCacheLine(4,1) == false) // Ensure evicted self
+    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Try to evict
+    assert(cache.performAccess(0,0,true,true) == ReadHit) // Ensure evicted self
+    assert(cache.performAccess(4,1,true,true) == ReadMiss) // Ensure evicted self
   }
 
   test("Critical can only evict own partition 3") {
@@ -834,11 +834,11 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.assignWay(0,1);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(4,0) // way 1
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(4,0,true,true) // way 1
 
-    assert(cache.getCacheLine(8,1) == false) // Try to evict
-    assert(cache.getCacheLine(8,1) == false) // Ensure did not work
+    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Try to evict
+    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Ensure did not work
   }
 
   test("Critical can only evict own partition 4") {
@@ -851,17 +851,17 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.assignWay(1,3);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(4,0) // way 1
-    cache.getCacheLine(8,1) // way 2
-    cache.getCacheLine(12,1) // way 3
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(4,0,true,true) // way 1
+    cache.performAccess(8,1,true,true) // way 2
+    cache.performAccess(12,1,true,true) // way 3
 
 
-    assert(cache.getCacheLine(16,1) == false) // Try to evict
-    assert(cache.getCacheLine(16,1) == true) // Ensure evicted self
-    assert(cache.getCacheLine(0,0) == true)
-    assert(cache.getCacheLine(4,0) == true)
-    assert(cache.getCacheLine(12,1) == true)
+    assert(cache.performAccess(16,1,true,true) == ReadMiss) // Try to evict
+    assert(cache.performAccess(16,1,true,true) == ReadHit) // Ensure evicted self
+    assert(cache.performAccess(0,0,true,true) == ReadHit)
+    assert(cache.performAccess(4,0,true,true) == ReadHit)
+    assert(cache.performAccess(12,1,true,true) == ReadHit)
   }
 
   test("Critical can evict unassigned way") {
@@ -871,12 +871,12 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.assignWay(0,0);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(4,2) // way 1
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(4,2,true,true) // way 1
 
-    assert(cache.getCacheLine(8,1) == false) // Try to evict
-    assert(cache.getCacheLine(8,1) == true) // Ensure did work
-    assert(cache.getCacheLine(0,0) == true) // Ensure did not get evicted
+    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Try to evict
+    assert(cache.performAccess(8,1,true,true) == ReadHit) // Ensure did work
+    assert(cache.performAccess(0,0,true,true) == ReadHit) // Ensure did not get evicted
   }
 
   test("Non-critical can evict unlimited assigned way") {
@@ -886,12 +886,12 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.assignWay(0,1);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(4,0) // way 1
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(4,0,true,true) // way 1
 
-    assert(cache.getCacheLine(8,1) == false) // Try to evict
-    assert(cache.getCacheLine(8,1) == true) // Ensure did work
-    assert(cache.getCacheLine(4,0) == true)
+    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Try to evict
+    assert(cache.performAccess(8,1,true,true) == ReadHit) // Ensure did work
+    assert(cache.performAccess(4,0,true,true) == ReadHit)
   }
 
   test("Non-critical can evict non-critical from limited assigned way") {
@@ -901,12 +901,12 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.assignWay(0,1);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(4,1) // way 1
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(4,1,true,true) // way 1
 
-    assert(cache.getCacheLine(8,1) == false) // Try to evict
-    assert(cache.getCacheLine(8,1) == true) // Ensure can evict non-critical
-    assert(cache.getCacheLine(0,0) == true) // Ensure critical was not evicted
+    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Try to evict
+    assert(cache.performAccess(8,1,true,true) == ReadHit) // Ensure can evict non-critical
+    assert(cache.performAccess(0,0,true,true) == ReadHit) // Ensure critical was not evicted
   }
 
   test("Non-critical cannot evict limited assigned way") {
@@ -916,13 +916,13 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.assignWay(0,1);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(4,0) // way 1
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(4,0,true,true) // way 1
 
-    assert(cache.getCacheLine(8,1) == false) // Try to evict
-    assert(cache.getCacheLine(8,1) == false) // Ensure did not work
-    assert(cache.getCacheLine(0,0) == true)
-    assert(cache.getCacheLine(4,0) == true)
+    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Try to evict
+    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Ensure did not work
+    assert(cache.performAccess(0,0,true,true) == ReadHit)
+    assert(cache.performAccess(4,0,true,true) == ReadHit)
   }
 
   test("Limited critical self-eviction") {
@@ -933,12 +933,12 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.assignWay(1,1);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(4,4) // way 1
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(4,4,true,true) // way 1
 
-    assert(cache.getCacheLine(8,0) == false) // Try to evict self
-    assert(cache.getCacheLine(8,0) == true) // Ensure did work
-    assert(cache.getCacheLine(4,4) == true) // Ensure did not use other partition
+    assert(cache.performAccess(8,0,true,true) == ReadMiss) // Try to evict self
+    assert(cache.performAccess(8,0,true,true) == ReadHit) // Ensure did work
+    assert(cache.performAccess(4,4,true,true) == ReadHit) // Ensure did not use other partition
   }
 
   test("Non-critical evict of critical in non-assigned") {
@@ -947,17 +947,17 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.assignWay(0,0);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(4,0) // way 1
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(4,0,true,true) // way 1
 
-    assert(cache.getCacheLine(8,1) == false) // Try to evict with on-critical
-    assert(cache.getCacheLine(8,1) == true) // Ensure did work
-    assert(cache.getCacheLine(4,0) == true)
+    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Try to evict with on-critical
+    assert(cache.performAccess(8,1,true,true) == ReadHit) // Ensure did work
+    assert(cache.performAccess(4,0,true,true) == ReadHit)
 
-    assert(cache.getCacheLine(12,1) == false) // Try to evict with on-critical again
-    assert(cache.getCacheLine(12,1) == true) // Ensure did not evict critical
-    assert(cache.getCacheLine(4,0) == true)
-    assert(cache.getCacheLine(8,1) == false)
+    assert(cache.performAccess(12,1,true,true) == ReadMiss) // Try to evict with on-critical again
+    assert(cache.performAccess(12,1,true,true) == ReadHit) // Ensure did not evict critical
+    assert(cache.performAccess(4,0,true,true) == ReadHit)
+    assert(cache.performAccess(8,1,true,true) == ReadMiss)
   }
 
   test("Evict only own partition 2") {
@@ -970,15 +970,15 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.assignWay(2, 2);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(9,1) // way 1
-    cache.getCacheLine(18,2) // way 2
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(9,1,true,true) // way 1
+    cache.performAccess(18,2,true,true) // way 2
 
-    assert(cache.getCacheLine(27,2) == false) // try to use set 0 again
-    assert(cache.getCacheLine(27,2) == true) // Ensure did get saved
+    assert(cache.performAccess(27,2,true,true) == ReadMiss) // try to use set 0 again
+    assert(cache.performAccess(27,2,true,true) == ReadHit) // Ensure did get saved
 
-    assert(cache.getCacheLine(0,0) == true) // Ensure was not evicted
-    assert(cache.getCacheLine(9,1) == true) // Ensure was not evicted
+    assert(cache.performAccess(0,0,true,true) == ReadHit) // Ensure was not evicted
+    assert(cache.performAccess(9,1,true,true) == ReadHit) // Ensure was not evicted
   }
 
   test("Limited critical prefer evicting non-critical in own partition") {
@@ -988,13 +988,13 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.assignWay(0, 1);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(4,1) // way 1
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(4,1,true,true) // way 1
 
-    assert(cache.getCacheLine(8,0) == false) // Get critical
-    assert(cache.getCacheLine(8,0) == true) // Ensure did get saved
+    assert(cache.performAccess(8,0,true,true) == ReadMiss) // Get critical
+    assert(cache.performAccess(8,0,true,true) == ReadHit) // Ensure did get saved
 
-    assert(cache.getCacheLine(0,0) == true) // Ensure was not evicted
+    assert(cache.performAccess(0,0,true,true) == ReadHit) // Ensure was not evicted
   }
 
   test("Unlimited critical doesn't prefer evicting non-critical in own partition") {
@@ -1004,16 +1004,16 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.assignWay(0, 1);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(4,1) // way 1
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(4,1,true,true) // way 1
 
-    assert(cache.getCacheLine(8,0) == false) // Get critical
-    assert(cache.getCacheLine(8,0) == true) // Ensure did get saved
-    assert(cache.getCacheLine(4,1) == true) // Ensure was not evicted
+    assert(cache.performAccess(8,0,true,true) == ReadMiss) // Get critical
+    assert(cache.performAccess(8,0,true,true) == ReadHit) // Ensure did get saved
+    assert(cache.performAccess(4,1,true,true) == ReadHit) // Ensure was not evicted
 
-    assert(cache.getCacheLine(12,0) == false) // Try again, now as limited
-    assert(cache.getCacheLine(12,0) == true) // Try again, now as limited
-    assert(cache.getCacheLine(8,0) == true) // Ensure did get saved
+    assert(cache.performAccess(12,0,true,true) == ReadMiss) // Try again, now as limited
+    assert(cache.performAccess(12,0,true,true) == ReadHit) // Try again, now as limited
+    assert(cache.performAccess(8,0,true,true) == ReadHit) // Ensure did get saved
   }
 
   test("Unlimited critical doesn't prefer evicting non-critical in unassigned") {
@@ -1022,16 +1022,16 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.assignWay(0, 0);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(4,1) // way 1
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(4,1,true,true) // way 1
 
-    assert(cache.getCacheLine(8,0) == false) // Get critical
-    assert(cache.getCacheLine(8,0) == true) // Ensure did get saved
-    assert(cache.getCacheLine(4,1) == true) // Ensure was not evicted
+    assert(cache.performAccess(8,0,true,true) == ReadMiss) // Get critical
+    assert(cache.performAccess(8,0,true,true) == ReadHit) // Ensure did get saved
+    assert(cache.performAccess(4,1,true,true) == ReadHit) // Ensure was not evicted
 
-    assert(cache.getCacheLine(12,0) == false) // Try again, now limited
-    assert(cache.getCacheLine(12,0) == true) // Ensure did get saved
-    assert(cache.getCacheLine(8,0) == true) // Ensure was not evicted
+    assert(cache.performAccess(12,0,true,true) == ReadMiss) // Try again, now limited
+    assert(cache.performAccess(12,0,true,true) == ReadHit) // Ensure did get saved
+    assert(cache.performAccess(8,0,true,true) == ReadHit) // Ensure was not evicted
   }
 
   test("Limited critical prefers evicting non-critical in unassigned") {
@@ -1040,13 +1040,13 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.assignWay(0, 0);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(4,1) // way 1
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(4,1,true,true) // way 1
 
-    assert(cache.getCacheLine(8,0) == false) // Get critical
-    assert(cache.getCacheLine(8,0) == true) // Ensure did get saved
+    assert(cache.performAccess(8,0,true,true) == ReadMiss) // Get critical
+    assert(cache.performAccess(8,0,true,true) == ReadHit) // Ensure did get saved
 
-    assert(cache.getCacheLine(0,0) == true) // Ensure was not evicted
+    assert(cache.performAccess(0,0,true,true) == ReadHit) // Ensure was not evicted
   }
 
   test("Critical may evict unassigned") {
@@ -1055,13 +1055,13 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.assignWay(0, 1);
 
     // Fill up set 0
-    cache.getCacheLine(0,1) // way 0
-    cache.getCacheLine(4,0) // way 1
+    cache.performAccess(0,1,true,true) // way 0
+    cache.performAccess(4,0,true,true) // way 1
 
-    assert(cache.getCacheLine(8,0) == false) // Get critical
-    assert(cache.getCacheLine(8,0) == true) // Ensure did get saved
+    assert(cache.performAccess(8,0,true,true) == ReadMiss) // Get critical
+    assert(cache.performAccess(8,0,true,true) == ReadHit) // Ensure did get saved
 
-    assert(cache.getCacheLine(4,0) == true) // Ensure was not evicted
+    assert(cache.performAccess(4,0,true,true) == ReadHit) // Ensure was not evicted
   }
 
   test("Non-critical triggers contention if evicting critical in unassigned") {
@@ -1070,21 +1070,21 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.assignWay(0, 1);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(4,0) // way 1
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(4,0,true,true) // way 1
 
-    assert(cache.getCacheLine(8,1) == false) // Get non-critical
-    assert(cache.getCacheLine(8,1) == true) // Ensure did get saved
-    assert(cache.getCacheLine(4,0) == true) // Ensure was not evicted
+    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Get non-critical
+    assert(cache.performAccess(8,1,true,true) == ReadHit) // Ensure did get saved
+    assert(cache.performAccess(4,0,true,true) == ReadHit) // Ensure was not evicted
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(4,0) // way 1
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(4,0,true,true) // way 1
 
-    assert(cache.getCacheLine(8,1) == false) // Try again
-    assert(cache.getCacheLine(8,1) == false) // Ensure failed because critical is now limited
-    assert(cache.getCacheLine(0,0) == true) // Ensure was not evicted
-    assert(cache.getCacheLine(4,0) == true) // Ensure was not evicted
+    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Try again
+    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Ensure failed because critical is now limited
+    assert(cache.performAccess(0,0,true,true) == ReadHit) // Ensure was not evicted
+    assert(cache.performAccess(4,0,true,true) == ReadHit) // Ensure was not evicted
 
   }
 
@@ -1094,14 +1094,14 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.assignWay(0, 0);
 
     // Fill up set 0
-    cache.getCacheLine(0,0) // way 0
-    cache.getCacheLine(4,0) // way 1
-    cache.getCacheLine(8,1) // way 1
+    cache.performAccess(0,0,true,true) // way 0
+    cache.performAccess(4,0,true,true) // way 1
+    cache.performAccess(8,1,true,true) // way 1
 
-    assert(cache.getCacheLine(12,1) == false) // Get non-critical
-    assert(cache.getCacheLine(12,1) == true) // Ensure did get saved
-    assert(cache.getCacheLine(0,0) == true) // Ensure was not evicted
-    assert(cache.getCacheLine(4,0) == true) // Ensure was not evicted
+    assert(cache.performAccess(12,1,true,true) == ReadMiss) // Get non-critical
+    assert(cache.performAccess(12,1,true,true) == ReadHit) // Ensure did get saved
+    assert(cache.performAccess(0,0,true,true) == ReadHit) // Ensure was not evicted
+    assert(cache.performAccess(4,0,true,true) == ReadHit) // Ensure was not evicted
   }
 
 }
@@ -1190,7 +1190,7 @@ class CacheTrafficTest extends AnyFunSuite {
 
   test("Refill after external") {
     var lruCache = new LruCache(1, 1, 1)
-    lruCache.getCacheLine(0,0) // Prefill cache line
+    lruCache.performAccess(0,0,true,true) // Prefill cache line
     var cache = new CacheTraffic(8,
       new RoundRobinArbiter(1,1,
         Array(new SingleTraffic(1,100)),
@@ -1201,11 +1201,11 @@ class CacheTrafficTest extends AnyFunSuite {
     )
 
     assert(cache.requestMemoryAccess().contains((100,())))
-    assert(lruCache.getCacheLine(0,0,false)) // Ensure the miss didn't evict the prefilled line already
+    assert(lruCache.performAccess(0,0,true,false).isReadHit()) // Ensure the miss didn't evict the prefilled line already
     cache.triggerCycle()
-    assert(lruCache.getCacheLine(0,0,false))
+    assert(lruCache.performAccess(0,0,true,false).isReadHit())
     cache.serveMemoryAccess(())
-    assert(!lruCache.getCacheLine(0,0,false)) // After serve, fill should happen
+    assert(!lruCache.performAccess(0,0,true,false).isReadHit()) // After serve, fill should happen
   }
 
   test("Triggers cycles") {
@@ -1224,13 +1224,12 @@ class CacheTrafficTest extends AnyFunSuite {
         override def isDone(): Boolean = false
       },
       new SoftCache(1,1,1) {
-        override def getCacheLine(addr: Long, core: Int, withRefill: Boolean): Boolean = false
+        override def performAccess(addr: Long, core: Int, isRead: Boolean, withRefill: Boolean): CacheResponse = ReadMiss;
 
         override def isHit(addr: Long): Option[(Int, Int)] = None
 
         override def printAll(): Unit = {
         }
-
 
         override def advanceCycle(): Unit = {
           cacheTickCount += 1
@@ -1255,8 +1254,8 @@ class CacheTrafficTest extends AnyFunSuite {
  * @param addr
  */
 class SelectCache(lineSize:Int, hotAddr:Long) extends SoftCache(lineSize,1,1) {
-  override def getCacheLine(addr: Long, core: Int, withRefill: Boolean = true): Boolean = {
-    hotAddr == addr
+  override def performAccess(addr: Long, core: Int, isRead: Boolean, withRefill: Boolean): CacheResponse = {
+    if(hotAddr == addr) ReadHit else ReadMiss
   };
   override def isHit(addr: Long): Option[(Int, Int)] = { None }
   override def printAll(): Unit = {}
@@ -1632,7 +1631,7 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
         override def isDone(): Boolean = false
       },
       new SoftCache(1,1,1) {
-        override def getCacheLine(addr: Long, core: Int, withRefill: Boolean): Boolean = false
+        override def performAccess(addr: Long, core: Int, isRead: Boolean, withRefill: Boolean): CacheResponse = ReadMiss;
 
         override def isHit(addr: Long): Option[(Int, Int)] = None
 
