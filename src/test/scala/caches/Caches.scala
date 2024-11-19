@@ -114,6 +114,36 @@ trait SimpleCacheTests[C<: SoftCache] extends AnyFunSuite {
     assert(cache.performAccess(12,0,true,true) == ReadHit)
   }
 
+  test("Evict line") {
+    val cache = createInstance(2,4,2);
+    assert(cache.performAccess(0,0,false,true) == ReadMiss)
+    assert(cache.performAccess(4,0,true,true) == ReadMiss)
+    assert(cache.performAccess(8,0,true,true) == ReadMiss)
+    assert(cache.performAccess(12,0,true,true) == ReadMiss)
+
+    cache.evict(8);
+
+    assert(cache.performAccess(0,0,true,true) == ReadHit)
+    assert(cache.performAccess(4,0,true,true) == ReadHit)
+    assert(cache.performAccess(8,0,true,true) == ReadMiss)
+    assert(cache.performAccess(12,0,true,true) == ReadHit)
+  }
+
+  test("Evict line 2") {
+    val cache = createInstance(2,4,2);
+    assert(cache.performAccess(0,0,false,true) == ReadMiss)
+    assert(cache.performAccess(4,0,true,true) == ReadMiss)
+    assert(cache.performAccess(8,0,true,true) == ReadMiss)
+    assert(cache.performAccess(12,0,true,true) == ReadMiss)
+
+    cache.evict(0);
+
+    assert(cache.performAccess(0,0,true,true) == ReadMiss)
+    assert(cache.performAccess(4,0,true,true) == ReadHit)
+    assert(cache.performAccess(8,0,true,true) == ReadHit)
+    assert(cache.performAccess(12,0,true,true) == ReadHit)
+  }
+
 }
 
 trait LruTests[C<: SoftCache with LRUReplacement[_]] extends SimpleCacheTests[C]
@@ -1209,6 +1239,44 @@ class CacheTrafficTest extends AnyFunSuite {
     assert(wasHit.contains(true))
   }
 
+  test("Write results in write-back on evict") {
+    var cache = new CacheTraffic(8,
+      new RoundRobinArbiter(2,1,
+        Array(new TraceTraffic(1, Array(
+          new MemAccess(0,false, 0, 0),
+          new MemAccess(0,false, 4, 0),
+          new MemAccess(0,false, 8, 0),
+        ).toIterator,(_) => ())),
+        (_) => None,
+      ),
+      new LruCache(2,2,2),
+      (_, _) => {}
+    )
+
+    assert(cache.requestMemoryAccess().contains((0,true,()))) // First write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+    assert(cache.requestMemoryAccess().isEmpty)
+    cache.triggerCycle() // One cycle for bus response
+
+    assert(cache.requestMemoryAccess().contains((4,true,()))) // second write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+    assert(cache.requestMemoryAccess().isEmpty)
+    cache.triggerCycle() // One cycle for bus response
+
+    assert(cache.requestMemoryAccess().contains((0,false,()))) // Third write needs to evict first
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+    // No need for a bus latency (to internal), so should continue servicing the access
+
+    assert(cache.requestMemoryAccess().contains((8,true,()))) // Third write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+    assert(cache.requestMemoryAccess().isEmpty)
+    cache.triggerCycle() // One cycle for bus response
+  }
+
   test("Serve miss after external serve") {
     var wasHit: Option[Boolean] = None
     var done = false
@@ -1255,7 +1323,7 @@ class CacheTrafficTest extends AnyFunSuite {
         (_) => None
       ),
       lruCache,
-      (_, isHit) => {}
+      (_, _) => {}
     )
 
     assert(cache.requestMemoryAccess().contains((100,true,())))
@@ -1263,7 +1331,8 @@ class CacheTrafficTest extends AnyFunSuite {
     cache.triggerCycle()
     assert(lruCache.performAccess(0,0,true,false).isReadHit())
     cache.serveMemoryAccess(())
-    assert(!lruCache.performAccess(0,0,true,false).isReadHit()) // After serve, fill should happen
+    cache.requestMemoryAccess()
+    assert(!lruCache.performAccess(0,0,true,false).isReadHit()) // After serve and at least request, fill should happen
   }
 
   test("Triggers cycles") {
@@ -1292,6 +1361,8 @@ class CacheTrafficTest extends AnyFunSuite {
         override def advanceCycle(): Unit = {
           cacheTickCount += 1
         }
+
+        override def evict(addr: Long): Unit = {}
       },
       (_,_) => (),
     )
@@ -1317,6 +1388,7 @@ class SelectCache(lineSize:Int, hotAddr:Long) extends SoftCache(lineSize,1,1) {
   };
   override def isHit(addr: Long): Option[(Int, Int)] = { None }
   override def printAll(): Unit = {}
+  override def evict(addr: Long): Unit = {}
 }
 
 /**
@@ -1696,6 +1768,7 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
         override def printAll(): Unit = {
         }
 
+        override def evict(addr: Long): Unit = {}
 
         override def advanceCycle(): Unit = {
           cacheTickCount += 1

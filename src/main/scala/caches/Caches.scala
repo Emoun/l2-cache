@@ -75,6 +75,12 @@ abstract class SoftCache(l: Int, w: Int, s: Int)  {
   def isHit(addr: Long): Option[(Int, Int)];
 
   def printAll();
+
+  /**
+   * Evict the cache line containing this address, wherever it may reside.
+   * @param addr
+   */
+  def evict(addr: Long): Unit;
 }
 
 abstract class TrackingCache[T](l: Int, w: Int, s: Int) extends
@@ -182,6 +188,17 @@ abstract class TrackingCache[T](l: Int, w: Int, s: Int) extends
         }
       }
     }
+  }
+
+  def evict(addr: Long): Unit = {
+    var set = setForAddr(addr)
+    val found = set.zipWithIndex.find(entry => {
+      entry._1.isDefined && entry._1.get._1 == addr
+    })
+
+    assert(found.isDefined)
+
+    set(found.get._2) = None
   }
 }
 
@@ -695,6 +712,7 @@ class MainMemory(lineSize:Int) extends SoftCache(lineSize,1,1) {
   override def isHit(addr: Long): Option[(Int, Int)] = { None }
   override def printAll(): Unit = {}
   override def performAccess(addr: Long, core: Int, isRead: Boolean, withRefill: Boolean): CacheResponse = ReadHit;
+  override def evict(addr: Long): Unit = {}
 }
 
 /**
@@ -743,9 +761,14 @@ class CacheTraffic(
    * First is the address needed from external
    * The second is request state
    * Third is the request token
-   * Fourth is whether the request is a read
+   * Fourth is whether the request to extern is a read
+   * Fifth is whether the request from traf is a read
    */
-  var busy: Option[(Long, RequestState, Int, Boolean)] = None
+  var busy: Option[(Long, RequestState, Int, Boolean, Boolean)] = None
+  /**
+   * In case we are writing back, this stores the address of the original write that should be loded af the write-back
+   */
+  var writeAddr: Option[Long] = None
 
   def waitingToIssue(): Boolean = {
     busy.isDefined && busy.get._2 == Waiting
@@ -755,20 +778,31 @@ class CacheTraffic(
   }
   def waitingForInternal(): Boolean = {
     busy match {
-      case Some((_, Servicing(0),_,_)) => true
+      case Some((_, Servicing(0),_,true,_)) => true
+      case _ => false
+    }
+  }
+  def waitingForWrite(): Boolean = {
+    busy match {
+      case Some((_, Servicing(0),_,false,_)) => {
+        assert(writeAddr.isDefined)
+        true
+      }
       case _ => false
     }
   }
 
   def checkServe(): Unit = {
     if(waitingForInternal() && traf.serveMemoryAccess(busy.get._3)) {
-      if(busy.get._4){
-        busy = None
-      } else {
-        // On a write, we must also reload the cache line
-        // Cache.evict(busy.get._1)
-        busy = Some((busy.get._1,  Waiting, busy.get._3,true))
-      }
+      val response = cache.performAccess(busy.get._1, busy.get._3, busy.get._5,true)
+      assert(!response.isWriteBack())
+      busy = None
+    }
+    if(waitingForWrite()) {
+      // On a write, we must also reload the cache line
+      cache.evict(busy.get._1)
+      busy = Some((writeAddr.get,  Waiting, busy.get._3, true, busy.get._5))
+      writeAddr = None
     }
   }
 
@@ -779,17 +813,18 @@ class CacheTraffic(
           val isHit = cache.performAccess(addr, coreId,isRead,false) match {
             case ReadHit => {
               // Cache hit, service next cycle
-              busy = Some((addr, Servicing(1), coreId, true))
+              busy = Some((addr, Servicing(1), coreId, true, isRead))
               true
             }
             case ReadMiss => {
               // Cache read miss
-              busy = Some((addr, Waiting, coreId, true))
+              busy = Some((addr, Waiting, coreId, true, isRead))
               false
             }
-            case WriteBack(writeAddr) => {
+            case WriteBack(writeBackAddr) => {
               // Cache write back
-              busy = Some((addr, Waiting, coreId, false))
+              busy = Some((writeBackAddr, Waiting, coreId, false, isRead))
+              writeAddr = Some(addr)
               false
             }
           }
@@ -805,11 +840,7 @@ class CacheTraffic(
     if(waitingForInternal()) {
       false
     } else if(waitingForExternal()) {
-      // Now we can update the cache
-      val response = cache.performAccess(busy.get._1, busy.get._3, busy.get._4,true)
-      assert(response.isReadMiss()) // cannot be write back, as we should have already evicted it
-
-      busy = Some(busy.get._1, Servicing(0), busy.get._3, busy.get._4)
+      busy = Some(busy.get._1, Servicing(0), busy.get._3, busy.get._4, busy.get._5)
       true
     } else {
       assert(false) // Unreachable
@@ -822,7 +853,7 @@ class CacheTraffic(
     checkTraf()
 
     if(waitingToIssue()) {
-      busy = Some((busy.get._1, Issued, busy.get._3, busy.get._4))
+      busy = Some((busy.get._1, Issued, busy.get._3, busy.get._4, busy.get._5))
       return Some((busy.get._1, busy.get._4, ()))
     }
 
@@ -834,8 +865,8 @@ class CacheTraffic(
     checkTraf()
 
     busy match {
-      case Some((addr, Servicing(l),token, isRead)) if l>0 => {
-        busy = Some((addr, Servicing(l-1), token, isRead))
+      case Some((addr, Servicing(l),token, isExtRead, isIntRead)) if l>0 => {
+        busy = Some((addr, Servicing(l-1), token, isExtRead, isIntRead))
       }
       case _ =>
     }

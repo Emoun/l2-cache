@@ -458,19 +458,21 @@ object Sim {
 //      "2024-05-21-Trace/Trace_dtu/dtrace_test.txt",
       "2024-05-21-Trace/Trace_dtu/dtrace_64.txt",
       "2024-05-21-Trace/Trace_dtu/dtrace_65.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_66.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_67.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_68.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_69.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_70.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_71.txt",
+      "2024-05-21-Trace/Trace_dtu/dtrace_66.txt",
+      "2024-05-21-Trace/Trace_dtu/dtrace_67.txt",
+      "2024-05-21-Trace/Trace_dtu/dtrace_68.txt",
+      "2024-05-21-Trace/Trace_dtu/dtrace_69.txt",
+      "2024-05-21-Trace/Trace_dtu/dtrace_70.txt",
+      "2024-05-21-Trace/Trace_dtu/dtrace_71.txt",
     )
 
     var coreAccesses: Array[Int] = Array.fill(traceFiles.length){0}
+    var l2Accesses: Array[Int] = Array.fill(traceFiles.length){0}
     var cumulativeLatencies: Array[Int] = Array.fill(traceFiles.length){0}
     var hits: Array[Int] = Array.fill(traceFiles.length){0}
     var l2Hits: Array[Int] = Array.fill(traceFiles.length){0}
     var l2HitsAfterMiss: Array[Int] = Array.fill(traceFiles.length){0}
+    var mainMemAccesses: Int = 0
 
     val l1Latency = 1
     val l2Latency = 8
@@ -557,7 +559,7 @@ object Sim {
       )
     })
 
-    var l2Cache2 = new BufferedCacheTraffic(
+    var l2Cache2 = new CacheTraffic(
       memBurstSize,
       new RoundRobinArbiter(
         l2BurstSize,
@@ -568,6 +570,7 @@ object Sim {
       ),
       l2Cache, // 64B line, 8-way set associative 8KB cache
       (coreId, hitType) => {
+        l2Accesses(coreId) += 1
         hitType match {
           case Hit => l2Hits(coreId)+=1
           case HitAfterMiss =>l2HitsAfterMiss(coreId)+=1
@@ -587,7 +590,9 @@ object Sim {
         }
       ),
       new MainMemory(memBurstSize),
-      (_,_) => {}
+      (_,_) => {
+        mainMemAccesses += 1
+      }
     )
 
     while(!MainMemTraffic.isDone()) {
@@ -595,17 +600,19 @@ object Sim {
     }
 
     for(i <- 0 until traceFiles.length) {
-      printf("Count: %d, L1 Hits: %d, L1 Hit Pct: %f, L2 Hits: %d(%d), L2 Hit Pct: %f(%f), Avg. Latency: %f\n",
+      printf("Count: %d, L1 Hits: %d, L1 Hit Pct: %f, L1 Write-Backs: %d, L2 Hits: %d(%d), L2 Hit Pct: %f(%f), Avg. Latency: %f\n",
         coreAccesses(i),
         hits(i),
         hits(i).toDouble/coreAccesses(i).toDouble,
+        l2Accesses(i)-(coreAccesses(i)-hits(i)),
         l2Hits(i),
         l2HitsAfterMiss(i),
-        l2Hits(i)/(coreAccesses(i)-hits(i)).toDouble,
-        (l2Hits(i)+l2HitsAfterMiss(i))/(coreAccesses(i)-hits(i)).toDouble,
+        l2Hits(i)/(l2Accesses(i)).toDouble,
+        (l2Hits(i)+l2HitsAfterMiss(i))/(l2Accesses(i)).toDouble,
         (cumulativeLatencies(i).toDouble)/
           (coreAccesses(i).toDouble) )
     }
+    printf("L2 Write-Backs: %d\n", mainMemAccesses - (l2Accesses.sum-l2Hits.sum))
   }
 
 }
