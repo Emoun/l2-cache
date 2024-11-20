@@ -196,7 +196,9 @@ abstract class TrackingCache[T](l: Int, w: Int, s: Int) extends
       entry._1.isDefined && entry._1.get._1 == addr
     })
 
-    assert(found.isDefined)
+    if(found.isEmpty) {
+      assert(false)
+    }
 
     set(found.get._2) = None
   }
@@ -910,9 +912,10 @@ class BufferedCacheTraffic(
   /**
    * Ordered queue of cache misses that are waiting for external.
    * First is the address requested, second is the request token.
-   * Third is whether it's a read. In case of write.
+   * Third is whether it's an extern read and if so, whether it is then an intern read too
+   * (on extern writes, there is no intern response, as a read will come after)
    */
-  var externQueue: Array[(Long,Int,Boolean)] = Array.empty
+  var externQueue: Array[(Long,Int,Option[Boolean])] = Array.empty
   /**
    * The status of the head of the extern queue.
    * If false, has yet to issue the request to extern
@@ -930,7 +933,18 @@ class BufferedCacheTraffic(
 
     if(interPrio.isEmpty && externStatus == Servicing(0)) {
       assert(externQueue.length>0)
-      interPrio = Some(externQueue(0)._2)
+
+      if(externQueue(0)._3.isDefined){
+        // Update cache
+        cache.performAccess(externQueue(0)._1, externQueue(0)._2,externQueue(0)._3.get,true)
+        // Only schedule reads for core servicing
+        interPrio = Some(externQueue(0)._2)
+      } else {
+        // Evict cache line
+        cache.evict(externQueue(0)._1)
+        // Writes don't service the core because the following read will
+      }
+
       externQueue = externQueue.drop(1)
       externStatus = Waiting
       checkServe() // Potentially serve immediately
@@ -956,13 +970,8 @@ class BufferedCacheTraffic(
               interPrio = Some(coreId)
               true
             }
-            case ReadMiss => {
-              externQueue = externQueue :+ (addr, coreId, true)
-              false
-            }
-            case WriteBack(writeAddr) => {
-              // First write back the cache line, then issue a read to fill it
-              externQueue = externQueue :+ (writeAddr, coreId, false) :+ (addr, coreId, true)
+            case _ => {
+              externQueue = externQueue :+ (addr, coreId, Some(isRead))
               false
             }
           }
@@ -974,7 +983,7 @@ class BufferedCacheTraffic(
   }
 
   def externQueueHeadHits(): Boolean = {
-    externQueue.length>0 &&
+    externQueue.length>0 && externQueue(0)._3.isDefined &&
       cache.performAccess(externQueue(0)._1, externQueue(0)._2,true,false).isReadHit()
   }
 
@@ -982,8 +991,6 @@ class BufferedCacheTraffic(
     assert(externStatus == Issued)
     assert(externQueue.length > 0)
 
-    // Update cache
-    cache.performAccess(externQueue(0)._1, externQueue(0)._2,true,true).isReadHit()
     externStatus = Servicing(0)
 
     true
@@ -994,8 +1001,25 @@ class BufferedCacheTraffic(
     checkReq()
 
     if(externStatus == Waiting && externQueue.length>0 && !externQueueHeadHits()) {
+
       externStatus = Issued
-      Some((externQueue(0)._1, externQueue(0)._3, ()))
+      cache.performAccess(
+          externQueue(0)._1, externQueue(0)._2, externQueue(0)._3.isDefined, false
+      ) match {
+        case WriteBack(writeAddr) => {
+          // This external read has not evicted yet, evict first
+          externQueue = Array((writeAddr, externQueue(0)._2, None)) ++ externQueue
+          Some((writeAddr, false, ()))
+        }
+        case ReadMiss => {
+          Some((externQueue(0)._1, true, ()))
+        }
+        case ReadHit => {
+          assert(false)
+          None
+        };
+      }
+
     } else {
       None
     }

@@ -1375,6 +1375,78 @@ class CacheTrafficTest extends AnyFunSuite {
     assert(triggerCount == cacheTickCount)
   }
 
+  test("Write-Back only report once") {
+    var reportCount= 0
+    var missCount = 0
+    var cache = new CacheTraffic(8,
+      new RoundRobinArbiter(2,1,
+        Array(new TraceTraffic(1, Array(
+          new MemAccess(0,false, 0, 0),
+          new MemAccess(0,false, 4, 0),
+          new MemAccess(0,false, 8, 0),
+        ).toIterator,(_) => ())),
+        (_) => None,
+      ),
+      new SoftCache(2,2,2) {
+        override def performAccess(addr: Long, core: Int, isRead: Boolean, withRefill: Boolean): CacheResponse = {
+          if(withRefill) {
+            ReadMiss
+          } else {
+            WriteBack(300)
+          }
+        }
+
+        override def isHit(addr: Long): Option[(Int, Int)] = None
+
+        override def printAll(): Unit = {}
+        override def evict(addr: Long): Unit = {}
+      },
+      (_, isHit) => {
+        reportCount+=1
+        if(isHit.isMiss()) missCount += 1
+      }
+    )
+
+    assert(cache.requestMemoryAccess().contains((300,false,()))) // First write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+
+    assert(cache.requestMemoryAccess().contains((0,true,()))) // second write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+    assert(cache.requestMemoryAccess().isEmpty)
+    cache.triggerCycle() // One cycle for bus response
+
+    assert(reportCount == 1)
+    assert(missCount == 1)
+
+    assert(cache.requestMemoryAccess().contains((300,false,()))) // First write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+
+    assert(cache.requestMemoryAccess().contains((4,true,()))) // second write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+    assert(cache.requestMemoryAccess().isEmpty)
+    cache.triggerCycle() // One cycle for bus response
+
+    assert(reportCount == 2)
+    assert(missCount == 2)
+
+    assert(cache.requestMemoryAccess().contains((300,false,()))) // First write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+
+    assert(cache.requestMemoryAccess().contains((8,true,()))) // second write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+    assert(cache.requestMemoryAccess().isEmpty)
+    cache.triggerCycle() // One cycle for bus response
+
+    assert(reportCount == 3)
+    assert(missCount == 3)
+  }
+
 }
 
 /**
@@ -1423,6 +1495,25 @@ class ArrayTraffic(traf: Array[(Long, Boolean)], onDone: () => Unit) extends Tra
   override def isDone(): Boolean = {
     done == traf.length
   }
+}
+
+/**
+ * A traffic that can be given requests to issue live.
+ */
+class TriggerTraffic extends Traffic[Unit] {
+  override def burstSize: Int = 1
+  var nextRequest: Option[(Long, Boolean, Unit)] = None;
+
+
+  override def serveMemoryAccess(token: Unit): Boolean = true
+  override def requestMemoryAccess(): Option[(Long, Boolean, Unit)] = {
+    val result = nextRequest
+    nextRequest = None
+    result
+  }
+  override def triggerCycle(): Unit = {}
+  override def isDone(): Boolean = false
+
 }
 
 class BufferedCacheTrafficTest extends AnyFunSuite {
@@ -1783,5 +1874,238 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
       cache.triggerCycle()
     }
     assert(triggerCount == cacheTickCount)
+  }
+
+  test("Write results in write-back on evict") {
+    var cache = new CacheTraffic(8,
+      new RoundRobinArbiter(2,1,
+        Array(new TraceTraffic(1, Array(
+          new MemAccess(0,false, 0, 0),
+          new MemAccess(0,false, 4, 0),
+          new MemAccess(0,false, 8, 0),
+        ).toIterator,(_) => ())),
+        (_) => None,
+        true
+      ),
+      new LruCache(2,2,2),
+      (_, _) => {}
+    )
+
+    assert(cache.requestMemoryAccess().contains((0,true,()))) // First write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+    assert(cache.requestMemoryAccess().isEmpty)
+    cache.triggerCycle() // One cycle for bus response
+
+    assert(cache.requestMemoryAccess().contains((4,true,()))) // second write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+    assert(cache.requestMemoryAccess().isEmpty)
+    cache.triggerCycle() // One cycle for bus response
+
+    assert(cache.requestMemoryAccess().contains((0,false,()))) // Third write needs to evict first
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+    // No need for a bus latency (to internal), so should continue servicing the access
+
+    assert(cache.requestMemoryAccess().contains((8,true,()))) // Third write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+    assert(cache.requestMemoryAccess().isEmpty)
+    cache.triggerCycle() // One cycle for bus response
+  }
+
+  test("Write-back evicts line after write") {
+    var lruCache = new LruCache(2,2,2);
+    // Fill set 1 with dirty lines
+    lruCache.performAccess(0,0,false,true)
+    lruCache.performAccess(4,0,false,true)
+    var traf1 = new TriggerTraffic;
+    var traf2 = new TriggerTraffic;
+    var cache = new BufferedCacheTraffic(8,
+      new RoundRobinArbiter(2,1,
+        Array(traf1,traf2),
+        (_) => None,
+        true
+      ),
+      lruCache,
+      (_, _) => {}
+    )
+
+    traf1.nextRequest = Some(8,true,())
+    assert(cache.requestMemoryAccess().contains((0,false,()))) // traf1 access needs to evict first
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+    // No need for a bus latency (to internal), so should continue servicing the access
+
+    traf2.nextRequest = Some(0,true,()) // traf2 requests line that was just evicted, should miss
+
+    assert(cache.requestMemoryAccess().contains((8,true,()))) // traf1 access needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+    assert(cache.requestMemoryAccess().contains((4,false,()))) // Traf2 access must evict line2
+    cache.triggerCycle() // One cycle for bus response to traf1
+
+    cache.triggerCycle() // One cycle for traf2 request
+    assert(cache.serveMemoryAccess(()))
+    // No need for a bus latency (to internal), so should continue servicing the access
+
+    cache.triggerCycle() // One cycles to check that traf1 does not issue request
+
+    assert(cache.requestMemoryAccess().contains((0,true,()))) // Traf2 access needs to load
+  }
+
+  test("Concurrent write-backs") {
+    var lruCache = new LruCache(2,2,2);
+    // Fill set 1 with dirty lines
+    lruCache.performAccess(0,0,false,true)
+    lruCache.performAccess(4,0,false,true)
+    var traf1 = new TriggerTraffic;
+    var traf2 = new TriggerTraffic;
+    var cache = new BufferedCacheTraffic(8,
+      new RoundRobinArbiter(2,1,
+        Array(traf1,traf2),
+        (_) => None,
+        true
+      ),
+      lruCache,
+      (_, _) => {}
+    )
+
+    // Both accesses will need to write-back
+    traf1.nextRequest = Some(80,true,())
+    traf2.nextRequest = Some(120,true,())
+
+    assert(cache.requestMemoryAccess().contains((0,false,()))) // traf1 access needs to evict first
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+    // No need for a bus latency (to internal), so should continue servicing the access
+
+    assert(cache.requestMemoryAccess().contains((80,true,()))) // traf1 access needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+    assert(cache.requestMemoryAccess().contains((4,false,()))) // Traf2 access must evict line2
+    cache.triggerCycle() // One cycle for bus response to traf1
+
+    cache.triggerCycle() // One cycle for request of traf2
+    assert(cache.serveMemoryAccess(()))
+    // No need for a bus latency (to internal), so should continue servicing the access
+
+    cache.triggerCycle() // One cycles to check that traf1 does not issue request
+
+    assert(cache.requestMemoryAccess().contains((120,true,()))) // Traf2 access needs to load
+  }
+
+  test("Concurrent write-backs 2") {
+    var lruCache = new LruCache(2,2,2);
+    // Fill set 1 with dirty lines
+    lruCache.performAccess(0,0,false,true)
+    lruCache.performAccess(4,0,false,true)
+    var traf1 = new TriggerTraffic;
+    var traf2 = new TriggerTraffic;
+    var cache = new BufferedCacheTraffic(8,
+      new RoundRobinArbiter(2,1,
+        Array(traf1,traf2),
+        (_) => None,
+        true
+      ),
+      lruCache,
+      (_, _) => {}
+    )
+
+    // Both accesses will need to write-back
+    traf1.nextRequest = Some(80,true,())
+    traf2.nextRequest = Some(120,true,())
+
+    assert(cache.requestMemoryAccess().contains((0,false,()))) // traf1 access needs to evict first
+    cache.triggerCycle() // One cycle for request
+    // Simulate high latency
+    for(_ <- 0 until 3) {
+      assert(cache.requestMemoryAccess().isEmpty)
+      cache.triggerCycle()
+    }
+    assert(cache.serveMemoryAccess(()))
+    // No need for a bus latency (to internal), so should continue servicing the access
+
+    assert(cache.requestMemoryAccess().contains((80,true,()))) // traf1 access needs to load
+    cache.triggerCycle() // One cycle for request
+    // Simulate high latency
+    for(_ <- 0 until 3) {
+      assert(cache.requestMemoryAccess().isEmpty)
+      cache.triggerCycle()
+    }
+    assert(cache.serveMemoryAccess(()))
+    assert(cache.requestMemoryAccess().contains((4,false,()))) // Traf2 access must evict line2
+    cache.triggerCycle() // One cycle for bus response to traf1
+
+    cache.triggerCycle() // One cycle for request of traf2
+    assert(cache.serveMemoryAccess(()))
+    // No need for a bus latency (to internal), so should continue servicing the access
+
+    cache.triggerCycle() // One cycles to check that traf1 does not issue request
+
+    assert(cache.requestMemoryAccess().contains((120,true,()))) // Traf2 access needs to load
+  }
+
+  test("Write-Back only report once") {
+    var reportCount= 0
+    var missCount = 0
+    var lruCache = new LruCache(2, 2, 2)
+    lruCache.performAccess(0,0,false,true)
+    lruCache.performAccess(4,0,false,true)
+    var cache = new BufferedCacheTraffic(8,
+      new RoundRobinArbiter(2,1,
+        Array(new TraceTraffic(1, Array(
+          new MemAccess(0,false, 8, 0),
+          new MemAccess(0,false, 12, 0),
+          new MemAccess(0,false, 16, 0),
+        ).toIterator,(_) => ())),
+        (_) => None,
+      ),
+      lruCache,
+      (_, isHit) => {
+        reportCount+=1
+        if(isHit.isMiss()) missCount += 1
+      }
+    )
+
+    assert(cache.requestMemoryAccess().contains((0,false,()))) // First write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+
+    assert(cache.requestMemoryAccess().contains((8,true,()))) // second write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+    assert(cache.requestMemoryAccess().isEmpty)
+    cache.triggerCycle() // One cycle for bus response
+
+    assert(reportCount == 1)
+    assert(missCount == 1)
+
+    assert(cache.requestMemoryAccess().contains((4,false,()))) // First write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+
+    assert(cache.requestMemoryAccess().contains((12,true,()))) // second write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+    assert(cache.requestMemoryAccess().isEmpty)
+    cache.triggerCycle() // One cycle for bus response
+
+    assert(reportCount == 2)
+    assert(missCount == 2)
+
+    assert(cache.requestMemoryAccess().contains((8,false,()))) // First write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+
+    assert(cache.requestMemoryAccess().contains((16,true,()))) // second write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+    assert(cache.requestMemoryAccess().isEmpty)
+    cache.triggerCycle() // One cycle for bus response
+
+    assert(reportCount == 3)
+    assert(missCount == 3)
   }
 }
