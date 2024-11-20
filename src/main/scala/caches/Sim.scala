@@ -456,14 +456,14 @@ object Sim {
 //      "2024-05-21-Trace/Trace_dtu/dtrace_test.txt",
 //      "2024-05-21-Trace/Trace_dtu/dtrace_test.txt",
 //      "2024-05-21-Trace/Trace_dtu/dtrace_test.txt",
-      "2024-05-21-Trace/Trace_dtu/dtrace_64.txt",
+//      "2024-05-21-Trace/Trace_dtu/dtrace_64.txt",
       "2024-05-21-Trace/Trace_dtu/dtrace_65.txt",
-      "2024-05-21-Trace/Trace_dtu/dtrace_66.txt",
-      "2024-05-21-Trace/Trace_dtu/dtrace_67.txt",
-      "2024-05-21-Trace/Trace_dtu/dtrace_68.txt",
-      "2024-05-21-Trace/Trace_dtu/dtrace_69.txt",
-      "2024-05-21-Trace/Trace_dtu/dtrace_70.txt",
-      "2024-05-21-Trace/Trace_dtu/dtrace_71.txt",
+//      "2024-05-21-Trace/Trace_dtu/dtrace_66.txt",
+//      "2024-05-21-Trace/Trace_dtu/dtrace_67.txt",
+//      "2024-05-21-Trace/Trace_dtu/dtrace_68.txt",
+//      "2024-05-21-Trace/Trace_dtu/dtrace_69.txt",
+//      "2024-05-21-Trace/Trace_dtu/dtrace_70.txt",
+//      "2024-05-21-Trace/Trace_dtu/dtrace_71.txt",
     )
 
     var coreAccesses: Array[Int] = Array.fill(traceFiles.length){0}
@@ -499,16 +499,16 @@ object Sim {
 //    };
 
 //    var l2Cache = new ContentionCache(memBurstSize, 8, 16, memLatency) // 64B line, 8-way set associative 8KB cache
-//    l2Cache.setCriticality(0, 500)
-//    l2Cache.setCriticality(1, 500)
+//    l2Cache.setCriticality(0, 1000)
+//    l2Cache.setCriticality(1, 1000)
 //    val l2OnDone  = (coreId:Int) => {
 //      l2Cache.unassign(coreId)
 //      None
 //    };
 
 //    var l2Cache = new ContentionPartCache(memBurstSize, 8, 16, memLatency) // 64B line, 8-way set associative 8KB cache
-//    l2Cache.setCriticality(0, 500)
-//    l2Cache.setCriticality(1, 500)
+//    l2Cache.setCriticality(0, 1000)
+//    l2Cache.setCriticality(1, 1000)
 //    l2Cache.assignWay(0,0)
 //    l2Cache.assignWay(0,1)
 //    l2Cache.assignWay(0,2)
@@ -536,7 +536,6 @@ object Sim {
 //      None
 //    };
 
-
     var l1Cache = traceFiles.zipWithIndex.map(pathIdx => {
       new CacheTraffic(
         l2BurstSize,
@@ -559,7 +558,7 @@ object Sim {
       )
     })
 
-    var l2Cache2 = new CacheTraffic(
+    var l2Cache2 = new BufferedCacheTraffic(
       memBurstSize,
       new RoundRobinArbiter(
         l2BurstSize,
