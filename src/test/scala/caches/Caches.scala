@@ -1375,6 +1375,78 @@ class CacheTrafficTest extends AnyFunSuite {
     assert(triggerCount == cacheTickCount)
   }
 
+  test("Write-Back only report once") {
+    var reportCount= 0
+    var missCount = 0
+    var cache = new CacheTraffic(8,
+      new RoundRobinArbiter(2,1,
+        Array(new TraceTraffic(1, Array(
+          new MemAccess(0,false, 0, 0),
+          new MemAccess(0,false, 4, 0),
+          new MemAccess(0,false, 8, 0),
+        ).toIterator,(_) => ())),
+        (_) => None,
+      ),
+      new SoftCache(2,2,2) {
+        override def performAccess(addr: Long, core: Int, isRead: Boolean, withRefill: Boolean): CacheResponse = {
+          if(withRefill) {
+            ReadMiss
+          } else {
+            WriteBack(300)
+          }
+        }
+
+        override def isHit(addr: Long): Option[(Int, Int)] = None
+
+        override def printAll(): Unit = {}
+        override def evict(addr: Long): Unit = {}
+      },
+      (_, isHit) => {
+        reportCount+=1
+        if(isHit.isMiss()) missCount += 1
+      }
+    )
+
+    assert(cache.requestMemoryAccess().contains((300,false,()))) // First write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+
+    assert(cache.requestMemoryAccess().contains((0,true,()))) // second write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+    assert(cache.requestMemoryAccess().isEmpty)
+    cache.triggerCycle() // One cycle for bus response
+
+    assert(reportCount == 1)
+    assert(missCount == 1)
+
+    assert(cache.requestMemoryAccess().contains((300,false,()))) // First write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+
+    assert(cache.requestMemoryAccess().contains((4,true,()))) // second write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+    assert(cache.requestMemoryAccess().isEmpty)
+    cache.triggerCycle() // One cycle for bus response
+
+    assert(reportCount == 2)
+    assert(missCount == 2)
+
+    assert(cache.requestMemoryAccess().contains((300,false,()))) // First write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+
+    assert(cache.requestMemoryAccess().contains((8,true,()))) // second write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+    assert(cache.requestMemoryAccess().isEmpty)
+    cache.triggerCycle() // One cycle for bus response
+
+    assert(reportCount == 3)
+    assert(missCount == 3)
+  }
+
 }
 
 /**
@@ -1973,5 +2045,67 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
     cache.triggerCycle() // One cycles to check that traf1 does not issue request
 
     assert(cache.requestMemoryAccess().contains((120,true,()))) // Traf2 access needs to load
+  }
+
+  test("Write-Back only report once") {
+    var reportCount= 0
+    var missCount = 0
+    var lruCache = new LruCache(2, 2, 2)
+    lruCache.performAccess(0,0,false,true)
+    lruCache.performAccess(4,0,false,true)
+    var cache = new BufferedCacheTraffic(8,
+      new RoundRobinArbiter(2,1,
+        Array(new TraceTraffic(1, Array(
+          new MemAccess(0,false, 8, 0),
+          new MemAccess(0,false, 12, 0),
+          new MemAccess(0,false, 16, 0),
+        ).toIterator,(_) => ())),
+        (_) => None,
+      ),
+      lruCache,
+      (_, isHit) => {
+        reportCount+=1
+        if(isHit.isMiss()) missCount += 1
+      }
+    )
+
+    assert(cache.requestMemoryAccess().contains((0,false,()))) // First write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+
+    assert(cache.requestMemoryAccess().contains((8,true,()))) // second write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+    assert(cache.requestMemoryAccess().isEmpty)
+    cache.triggerCycle() // One cycle for bus response
+
+    assert(reportCount == 1)
+    assert(missCount == 1)
+
+    assert(cache.requestMemoryAccess().contains((4,false,()))) // First write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+
+    assert(cache.requestMemoryAccess().contains((12,true,()))) // second write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+    assert(cache.requestMemoryAccess().isEmpty)
+    cache.triggerCycle() // One cycle for bus response
+
+    assert(reportCount == 2)
+    assert(missCount == 2)
+
+    assert(cache.requestMemoryAccess().contains((8,false,()))) // First write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+
+    assert(cache.requestMemoryAccess().contains((16,true,()))) // second write needs to load
+    cache.triggerCycle() // One cycle for request
+    assert(cache.serveMemoryAccess(()))
+    assert(cache.requestMemoryAccess().isEmpty)
+    cache.triggerCycle() // One cycle for bus response
+
+    assert(reportCount == 3)
+    assert(missCount == 3)
   }
 }

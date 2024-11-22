@@ -474,63 +474,80 @@ object Sim {
     var l2HitsAfterMiss: Array[Int] = Array.fill(traceFiles.length){0}
     var mainMemAccesses: Int = 0
 
+    ////////////////////////// Huawei settings /////////////////////////
+//    val l1Latency = 1
+//    val l2Latency = 15
+//    val memLatency = 60
+//    val l1BurstSize = 4
+//    val l2BurstSize = 64
+//    val memBurstSize = 64
+
+    // 32KB L1 cache
+//    val l1LineSize=l2BurstSize
+//    val l1Ways = 4
+//    val l1Sets = 128
+
+    // 1MB L2 cache
+//    val l2LineSize=memBurstSize
+//    val l2Ways = 8
+//    val l2Sets = 2048
+
+    //////////////////////// Original Setting//////////////////////////
     val l1Latency = 1
     val l2Latency = 8
-    val memLatency = 16
+    val memLatency = 20
     val l1BurstSize = 4
     val l2BurstSize = 16
     val memBurstSize = 64
 
-    var l2Cache = new LruCache(memBurstSize, 8, 16) // 64B line, 8-way set associative 8KB cache
+    // 1KB L1 cache
+    val l1LineSize=l2BurstSize
+    val l1Ways = 4
+    val l1Sets = 16
+
+    // 8KB L2 cache
+    val l2LineSize=memBurstSize
+    val l2Ways = 8
+    val l2Sets = 16
+
+    var l2Cache = new LruCache(l2LineSize, l2Ways, l2Sets)
     val l2OnDone  = (_:Int) => None;
 
-//    var l2Cache = new PartitionedCache(memBurstSize, 8, 16) // 64B line, 8-way set associative 8KB cache
-//    l2Cache.assignWay(0,0)
-//    l2Cache.assignWay(0,1)
-//    l2Cache.assignWay(0,2)
-//    l2Cache.assignWay(0,3)
-//    l2Cache.assignWay(1,4)
-//    l2Cache.assignWay(1,5)
-//    l2Cache.assignWay(1,6)
-//    l2Cache.assignWay(1,7)
+//    var l2Cache = new PartitionedCache(l2LineSize, l2Ways, l2Sets)
+//    for(i <- 0 until l2Ways/2) {
+//      l2Cache.assignWay(0,i)
+//      l2Cache.assignWay(1,(l2Ways/2)+i)
+//    }
 //    val l2OnDone  = (coreId:Int) => {
 //      l2Cache.unassignCore(coreId)
 //      None
 //    };
 
-//    var l2Cache = new ContentionCache(memBurstSize, 8, 16, memLatency) // 64B line, 8-way set associative 8KB cache
-//    l2Cache.setCriticality(0, 1000)
-//    l2Cache.setCriticality(1, 1000)
+//    var l2Cache = new ContentionCache(l2LineSize, l2Ways, l2Sets, 2*memLatency)
+//    l2Cache.setCriticality(0, 500)
+//    l2Cache.setCriticality(1, 500)
 //    val l2OnDone  = (coreId:Int) => {
 //      l2Cache.unassign(coreId)
 //      None
 //    };
 
-//    var l2Cache = new ContentionPartCache(memBurstSize, 8, 16, memLatency) // 64B line, 8-way set associative 8KB cache
-//    l2Cache.setCriticality(0, 1000)
-//    l2Cache.setCriticality(1, 1000)
-//    l2Cache.assignWay(0,0)
-//    l2Cache.assignWay(0,1)
-//    l2Cache.assignWay(0,2)
-//    l2Cache.assignWay(0,3)
-//    l2Cache.assignWay(1,4)
-//    l2Cache.assignWay(1,5)
-//    l2Cache.assignWay(1,6)
-//    l2Cache.assignWay(1,7)
+//    var l2Cache = new ContentionPartCache(l2LineSize, l2Ways, l2Sets, memLatency)
+//    l2Cache.setCriticality(0, 500)
+//    l2Cache.setCriticality(1, 500)
+//    for(i <- 0 until l2Ways/2) {
+//      l2Cache.assignWay(0,i)
+//      l2Cache.assignWay(1,(l2Ways/2)+i)
+//    }
 //    val l2OnDone  = (coreId:Int) => {
 //      l2Cache.unassign(coreId)
 //      None
 //    };
 
-//    var l2Cache = new TimeoutCache(memBurstSize, 8, 16, 200000) // 64B line, 8-way set associative 8KB cache
-//    l2Cache.setPriority(0,0)
-//    l2Cache.setPriority(0,1)
-//    l2Cache.setPriority(0,2)
-//    l2Cache.setPriority(0,3)
-//    l2Cache.setPriority(1,4)
-//    l2Cache.setPriority(1,5)
-//    l2Cache.setPriority(1,6)
-//    l2Cache.setPriority(1,7)
+//    var l2Cache = new TimeoutCache(l2LineSize, l2Ways, l2Sets, 1000)
+//    for(i <- 0 until l2Ways/2) {
+//      l2Cache.setPriority(0,i)
+//      l2Cache.setPriority(1,(l2Ways/2)+i)
+//    }
 //    val l2OnDone  = (coreId:Int) => {
 //      l2Cache.removePriority(coreId)
 //      None
@@ -551,7 +568,7 @@ object Sim {
             None
           }
         ),
-        new LruCache(l2BurstSize,4,16), // 16B line, 4-way set associative 1KiB cache
+        new LruCache(l1LineSize,l1Ways,l1Sets), // 16B line, 4-way set associative 1KiB cache
         (_, hitType) => {
           if(hitType.isHit()) hits(pathIdx._2)+=1;
         }
@@ -572,7 +589,10 @@ object Sim {
         l2Accesses(coreId) += 1
         hitType match {
           case Hit => l2Hits(coreId)+=1
-          case HitAfterMiss =>l2HitsAfterMiss(coreId)+=1
+          case HitAfterMiss => {
+            l2HitsAfterMiss(coreId)+=1
+            l2Accesses(coreId) -= 1 //Already counted during the miss
+          }
           case _ => ()
         }
       }
@@ -589,7 +609,8 @@ object Sim {
         }
       ),
       new MainMemory(memBurstSize),
-      (_,_) => {
+      (_,isHit) => {
+        assert(isHit.isHit())
         mainMemAccesses += 1
       }
     )
@@ -599,11 +620,13 @@ object Sim {
     }
 
     for(i <- 0 until traceFiles.length) {
-      printf("Count: %d, L1 Hits: %d, L1 Hit Pct: %f, L1 Write-Backs: %d, L2 Hits: %d(%d), L2 Hit Pct: %f(%f), Avg. Latency: %f\n",
+      val l1Misses = coreAccesses(i) - hits(i)
+      printf("Count: %d, L1 Hits: %d, L1 Hit Pct: %f, L1 Write-Backs: %d, L2 Accesses: %d, L2 Hits: %d(%d), L2 Hit Pct: %f(%f), Avg. Latency: %f\n",
         coreAccesses(i),
         hits(i),
         hits(i).toDouble/coreAccesses(i).toDouble,
-        l2Accesses(i)-(coreAccesses(i)-hits(i)),
+        l2Accesses(i)- l1Misses,
+        l2Accesses(i),
         l2Hits(i),
         l2HitsAfterMiss(i),
         l2Hits(i)/(l2Accesses(i)).toDouble,
@@ -611,7 +634,8 @@ object Sim {
         (cumulativeLatencies(i).toDouble)/
           (coreAccesses(i).toDouble) )
     }
-    printf("L2 Write-Backs: %d\n", mainMemAccesses - (l2Accesses.sum-l2Hits.sum))
+    val l2Misses = l2Accesses.sum - l2Hits.sum - l2HitsAfterMiss.sum
+    printf("L2 Write-Backs: %d\n", mainMemAccesses - l2Misses)
   }
 
 }
