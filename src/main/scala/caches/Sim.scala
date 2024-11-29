@@ -1,7 +1,10 @@
 package caches
 
+import java.io.{BufferedWriter, File, FileWriter}
 import scala.io.{BufferedSource, Source}
 import scala.util.matching.Regex
+import java.nio.file.{DirectoryStream, Files, Paths}
+import scala.jdk.CollectionConverters._
 
 // Define case classes for DAW and DAR
 sealed trait LogEntry
@@ -448,24 +451,48 @@ object Sim {
     })
   }
 
-  def main(args: Array[String]): Unit = {
-    println("Running Simulator")
+  def emptyDirectory(dir: java.nio.file.Path): Unit = {
+    val stream: DirectoryStream[java.nio.file.Path] = Files.newDirectoryStream(dir)
+    try {
+      for (entry <- stream.asScala) {
+        if (Files.isRegularFile(entry)) {
+          Files.delete(entry)
+        }
+      }
+    } finally {
+      stream.close()
+    }
+  }
 
-
+  def runConfig(
+    configId: String,
+    newL1Cache: () => SoftCache,
+    l2Cache: SoftCache,
+    l2OnDone: () => Unit,
+    l1Latency: Int,
+    l2Latency: Int,
+    mainMemLatency: Int,
+    accessTimesFile: BufferedWriter,
+    coreStatsFile: BufferedWriter,
+    globalStatsFile: BufferedWriter,
+  ): Unit = {
     val traceFiles = Array(
 //      "2024-05-21-Trace/Trace_dtu/dtrace_test.txt",
 //      "2024-05-21-Trace/Trace_dtu/dtrace_test.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_test.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_64.txt",
-      "2024-05-21-Trace/Trace_dtu/dtrace_65.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_66.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_67.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_68.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_69.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_70.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_71.txt",
+//            "2024-05-21-Trace/Trace_dtu/dtrace_test.txt",
+            "2024-05-21-Trace/Trace_dtu/dtrace_64.txt",
+            "2024-05-21-Trace/Trace_dtu/dtrace_65.txt",
+      //      "2024-05-21-Trace/Trace_dtu/dtrace_66.txt",
+      //      "2024-05-21-Trace/Trace_dtu/dtrace_67.txt",
+      //      "2024-05-21-Trace/Trace_dtu/dtrace_68.txt",
+      //      "2024-05-21-Trace/Trace_dtu/dtrace_69.txt",
+      //      "2024-05-21-Trace/Trace_dtu/dtrace_70.txt",
+      //      "2024-05-21-Trace/Trace_dtu/dtrace_71.txt",
     )
 
+    val l1BurstSize = 4
+
+    var clock: Long = 0;
     var coreAccesses: Array[Int] = Array.fill(traceFiles.length){0}
     var l2Accesses: Array[Int] = Array.fill(traceFiles.length){0}
     var cumulativeLatencies: Array[Int] = Array.fill(traceFiles.length){0}
@@ -473,6 +500,111 @@ object Sim {
     var l2Hits: Array[Int] = Array.fill(traceFiles.length){0}
     var l2HitsAfterMiss: Array[Int] = Array.fill(traceFiles.length){0}
     var mainMemAccesses: Int = 0
+
+    var l1Cache = newL1Cache()
+    val l2BurstSize = l1Cache.lineLength
+    var l1CacheTraffic = traceFiles.zipWithIndex.map(pathIdx => {
+      new CacheTraffic(
+        l2BurstSize,
+        new RoundRobinArbiter(
+          l1BurstSize,
+          l1Latency,
+          Array(new TraceTraffic(l1BurstSize, loadAccesses(pathIdx._1), latency => {
+            cumulativeLatencies(pathIdx._2) += latency
+            coreAccesses(pathIdx._2) += 1
+            printf("Clock: (%d), Core: (%d), Latency: (%d)\n", clock, pathIdx._2, latency)
+            accessTimesFile.write(f"${pathIdx._2},$clock,$latency\n")
+          })),
+          (_) => {
+            None
+          }
+        ),
+        l1Cache,
+        (_, hitType) => {
+          if(hitType.isHit()) hits(pathIdx._2)+=1;
+        }
+      )
+    })
+
+    var l2CacheTraffic = new BufferedCacheTraffic(
+      l2Cache.lineLength,
+      new RoundRobinArbiter(
+        l2BurstSize,
+        l2Latency,
+        l1CacheTraffic,
+        (_:Int) => {
+          l2OnDone()
+          None
+        },
+        true
+      ),
+      l2Cache, // 64B line, 8-way set associative 8KB cache
+      (coreId, hitType) => {
+        l2Accesses(coreId) += 1
+        hitType match {
+          case Hit => l2Hits(coreId)+=1
+          case HitAfterMiss => {
+            l2HitsAfterMiss(coreId)+=1
+            l2Accesses(coreId) -= 1 //Already counted during the miss
+          }
+          case _ => ()
+        }
+      }
+    )
+
+    var MainMemTraffic = new CacheTraffic(
+      l2Cache.lineLength,
+      new RoundRobinArbiter(
+        l2Cache.lineLength,
+        mainMemLatency,
+        Array(l2CacheTraffic),
+        (_) => {
+          None
+        }
+      ),
+      new MainMemory(l2Cache.lineLength),
+      (_,isHit) => {
+        assert(isHit.isHit())
+        mainMemAccesses += 1
+      }
+    )
+
+    while(!MainMemTraffic.isDone()) {
+      MainMemTraffic.triggerCycle()
+      clock += 1
+    }
+
+    for(i <- 0 until traceFiles.length) {
+      val l1Misses = coreAccesses(i) - hits(i)
+      val l1WriteBack = l2Accesses(i) - l1Misses
+      printf("Count: %d, L1 Hits: %d, L1 Hit Pct: %f, L1 Write-Backs: %d, L2 Accesses: %d, L2 Hits: %d(%d), L2 Hit Pct: %f(%f), Avg. Latency: %f\n",
+        coreAccesses(i),
+        hits(i),
+        hits(i).toDouble/coreAccesses(i).toDouble,
+        l1WriteBack,
+        l2Accesses(i),
+        l2Hits(i),
+        l2HitsAfterMiss(i),
+        l2Hits(i)/(l2Accesses(i)).toDouble,
+        (l2Hits(i)+l2HitsAfterMiss(i))/(l2Accesses(i)).toDouble,
+        (cumulativeLatencies(i).toDouble)/
+          (coreAccesses(i).toDouble) )
+      coreStatsFile.write(f"$i,${coreAccesses(i)},${hits(i)},${l1WriteBack},${l2Accesses(i)},${l2Hits(i)+l2HitsAfterMiss(i)}\n")
+    }
+    val l2Misses = l2Accesses.sum - l2Hits.sum - l2HitsAfterMiss.sum
+    printf("L2 Write-Backs: %d\n", mainMemAccesses - l2Misses)
+    globalStatsFile.write(f"l2WriteBack,${mainMemAccesses - l2Misses}\n")
+  }
+
+  def main(args: Array[String]): Unit = {
+    println("Running Simulator")
+
+    val path = Paths.get(args(0))
+    if (!Files.isDirectory(path)) {
+      println(s"${args(0)} is not a directory.")
+      return
+    }
+    emptyDirectory(path)
 
     ////////////////////////// Huawei settings /////////////////////////
 //    val l1Latency = 1
@@ -511,7 +643,7 @@ object Sim {
     val l2Sets = 16
 
     var l2Cache = new LruCache(l2LineSize, l2Ways, l2Sets)
-    val l2OnDone  = (_:Int) => None;
+    val l2OnDone  = () => {};
 
 //    var l2Cache = new PartitionedCache(l2LineSize, l2Ways, l2Sets)
 //    for(i <- 0 until l2Ways/2) {
@@ -553,89 +685,36 @@ object Sim {
 //      None
 //    };
 
-    var l1Cache = traceFiles.zipWithIndex.map(pathIdx => {
-      new CacheTraffic(
-        l2BurstSize,
-        new RoundRobinArbiter(
-          l1BurstSize,
-          l1Latency,
-          Array(new TraceTraffic(l1BurstSize, loadAccesses(pathIdx._1), latency => {
-            cumulativeLatencies(pathIdx._2) += latency
-            coreAccesses(pathIdx._2) += 1
-            printf("{ %d, %d }\n", pathIdx._2, latency)
-          })),
-          (_) => {
-            None
-          }
-        ),
-        new LruCache(l1LineSize,l1Ways,l1Sets), // 16B line, 4-way set associative 1KiB cache
-        (_, hitType) => {
-          if(hitType.isHit()) hits(pathIdx._2)+=1;
-        }
-      )
-    })
+    val newResultFile = (name:String) => {
+      new BufferedWriter(new FileWriter(new File(s"$path/$name")))
+    }
 
-    var l2Cache2 = new BufferedCacheTraffic(
-      memBurstSize,
-      new RoundRobinArbiter(
-        l2BurstSize,
-        l2Latency,
-        l1Cache,
+    val accessTimesFile = newResultFile("access_times.csv")
+    val coreStatsFile = newResultFile("core_stats.csv")
+    val globalStatsFile = newResultFile("global_stats.csv")
+
+    try {
+      accessTimesFile.write("coreNr,clockFinish,latency\n")
+      coreStatsFile.write("coreNr,accessCount,l1Hits,l1WriteBacks,l2Accesses,l2Hits\n")
+
+      runConfig(
+        "0",
+        () => {new LruCache(l1LineSize, l1Ways, l1Sets)},
+        l2Cache,
         l2OnDone,
-        true
-      ),
-      l2Cache, // 64B line, 8-way set associative 8KB cache
-      (coreId, hitType) => {
-        l2Accesses(coreId) += 1
-        hitType match {
-          case Hit => l2Hits(coreId)+=1
-          case HitAfterMiss => {
-            l2HitsAfterMiss(coreId)+=1
-            l2Accesses(coreId) -= 1 //Already counted during the miss
-          }
-          case _ => ()
-        }
-      }
-    )
-
-    var MainMemTraffic = new CacheTraffic(
-      memBurstSize,
-      new RoundRobinArbiter(
-        memBurstSize,
+        l1Latency,
+        l2Latency,
         memLatency,
-        Array(l2Cache2),
-        (_) => {
-          None
-        }
-      ),
-      new MainMemory(memBurstSize),
-      (_,isHit) => {
-        assert(isHit.isHit())
-        mainMemAccesses += 1
-      }
-    )
+        accessTimesFile,
+        coreStatsFile,
+        globalStatsFile
+      )
 
-    while(!MainMemTraffic.isDone()) {
-      val trig = MainMemTraffic.triggerCycle()
+    } finally {
+      accessTimesFile.close()
+      coreStatsFile.close()
+      globalStatsFile.close()
     }
-
-    for(i <- 0 until traceFiles.length) {
-      val l1Misses = coreAccesses(i) - hits(i)
-      printf("Count: %d, L1 Hits: %d, L1 Hit Pct: %f, L1 Write-Backs: %d, L2 Accesses: %d, L2 Hits: %d(%d), L2 Hit Pct: %f(%f), Avg. Latency: %f\n",
-        coreAccesses(i),
-        hits(i),
-        hits(i).toDouble/coreAccesses(i).toDouble,
-        l2Accesses(i)- l1Misses,
-        l2Accesses(i),
-        l2Hits(i),
-        l2HitsAfterMiss(i),
-        l2Hits(i)/(l2Accesses(i)).toDouble,
-        (l2Hits(i)+l2HitsAfterMiss(i))/(l2Accesses(i)).toDouble,
-        (cumulativeLatencies(i).toDouble)/
-          (coreAccesses(i).toDouble) )
-    }
-    val l2Misses = l2Accesses.sum - l2Hits.sum - l2HitsAfterMiss.sum
-    printf("L2 Write-Backs: %d\n", mainMemAccesses - l2Misses)
   }
 
 }

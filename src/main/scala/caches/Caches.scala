@@ -197,9 +197,11 @@ abstract class TrackingCache[T](l: Int, w: Int, s: Int) extends
     })
 
     if(found.isEmpty) {
+      println(f"Looking for address: ${addr}. Set: ${setIdxForAddr(addr)}")
+      printAll()
       assert(false)
     }
-
+    println(f"Evicting addr: ${addr} in set ${setIdxForAddr(addr)}")
     set(found.get._2) = None
   }
 }
