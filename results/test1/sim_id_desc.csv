@@ -1,0 +1,8 @@
+simId,l1Latency,l2Latency,mainMemLatency,l1BurstSize,l2BurstSize,mainMemBurstSize,l1CacheType,l2CacheType,misc
+allTraceCont2000,1,8,20,4,16,64,Lru,Contention,,
+allTraceCont1000,1,8,20,4,16,64,Lru,Contention,,
+allTraceCont500,1,8,20,4,16,64,Lru,Contention,,
+allTracePart,1,8,20,4,16,64,Lru,Partition,,
+allTraceLru,1,8,20,4,16,64,Lru,Lru,,
+trace65Alone,1,8,20,4,16,64,Lru,Lru,,
+trace64Alone,1,8,20,4,16,64,Lru,Lru,,

@@ -2,6 +2,9 @@ package caches
 
 import scala.io.{BufferedSource, Source}
 import scala.util.matching.Regex
+import java.io.{BufferedWriter, File, FileWriter}
+import java.nio.file.{DirectoryStream, Files, Paths}
+import scala.jdk.CollectionConverters._
 
 // Define case classes for DAW and DAR
 sealed trait LogEntry
@@ -448,49 +451,68 @@ object Sim {
     })
   }
 
+  def emptyDirectory(dir: java.nio.file.Path): Unit = {
+    val stream: DirectoryStream[java.nio.file.Path] = Files.newDirectoryStream(dir)
+    try {
+      for (entry <- stream.asScala) {
+        if (Files.isRegularFile(entry)) {
+          Files.delete(entry)
+        }
+      }
+    } finally {
+      stream.close()
+    }
+  }
+
   def main(args: Array[String]): Unit = {
-    println("Running Simulator")
-
-
     val traceFiles = Array(
-//      "2024-05-21-Trace/Trace_dtu/dtrace_test.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_test.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_test.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_64.txt",
+      "2024-05-21-Trace/Trace_dtu/dtrace_test.txt",
+      "2024-05-21-Trace/Trace_dtu/dtrace_64.txt",
       "2024-05-21-Trace/Trace_dtu/dtrace_65.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_66.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_67.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_68.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_69.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_70.txt",
-//      "2024-05-21-Trace/Trace_dtu/dtrace_71.txt",
+      "2024-05-21-Trace/Trace_dtu/dtrace_66.txt",
+      "2024-05-21-Trace/Trace_dtu/dtrace_67.txt",
+      "2024-05-21-Trace/Trace_dtu/dtrace_68.txt",
+      "2024-05-21-Trace/Trace_dtu/dtrace_69.txt",
+      "2024-05-21-Trace/Trace_dtu/dtrace_70.txt",
+      "2024-05-21-Trace/Trace_dtu/dtrace_71.txt",
     )
 
-    var coreAccesses: Array[Int] = Array.fill(traceFiles.length){0}
-    var l2Accesses: Array[Int] = Array.fill(traceFiles.length){0}
-    var cumulativeLatencies: Array[Int] = Array.fill(traceFiles.length){0}
-    var hits: Array[Int] = Array.fill(traceFiles.length){0}
-    var l2Hits: Array[Int] = Array.fill(traceFiles.length){0}
-    var l2HitsAfterMiss: Array[Int] = Array.fill(traceFiles.length){0}
-    var mainMemAccesses: Int = 0
+    if(args.length == 0) {
+      println(s"Expected result directory path as first argument.")
+      return
+    }
+    val path = Paths.get(args(0))
+    if (!Files.isDirectory(path)) {
+      println(s"${args(0)} is not a directory.")
+      return
+    }
+    emptyDirectory(path)
+
+    val newResultFile = (name:String) => {
+      new BufferedWriter(new FileWriter(new File(s"$path/$name")))
+    }
+    val simIdDescFile = newResultFile("sim_id_desc.csv")
+    val accessTimesFile = newResultFile("access_times.csv")
+    val coreStatsFile = newResultFile("core_stats.csv")
+    val globalStatsFile = newResultFile("global_stats.csv")
 
     ////////////////////////// Huawei settings /////////////////////////
-//    val l1Latency = 1
-//    val l2Latency = 15
-//    val memLatency = 60
-//    val l1BurstSize = 4
-//    val l2BurstSize = 64
-//    val memBurstSize = 64
+    //    val l1Latency = 1
+    //    val l2Latency = 15
+    //    val memLatency = 60
+    //    val l1BurstSize = 4
+    //    val l2BurstSize = 64
+    //    val memBurstSize = 64
 
     // 32KB L1 cache
-//    val l1LineSize=l2BurstSize
-//    val l1Ways = 4
-//    val l1Sets = 128
+    //    val l1LineSize=l2BurstSize
+    //    val l1Ways = 4
+    //    val l1Sets = 128
 
     // 1MB L2 cache
-//    val l2LineSize=memBurstSize
-//    val l2Ways = 8
-//    val l2Sets = 2048
+    //    val l2LineSize=memBurstSize
+    //    val l2Ways = 8
+    //    val l2Sets = 2048
 
     //////////////////////// Original Setting//////////////////////////
     val l1Latency = 1
@@ -510,50 +532,255 @@ object Sim {
     val l2Ways = 8
     val l2Sets = 16
 
-    var l2Cache = new LruCache(l2LineSize, l2Ways, l2Sets)
-    val l2OnDone  = (_:Int) => None;
+    var configs: Array[(
+        String, //simId
+        Array[String], // TraceFiles
+        () => SoftCache, //L1Cache
+        () => (SoftCache, (Int) => Unit), // L2Cache and L2CacheOnDone
+        Int, //l1Latency
+        Int, //l2Latency
+        Int, //memLatency
+        Int, //l1BurstSize
+        Int, //l2BurstSize
+        Int, //memBurstSize
+        String, // L1 cache name
+        String, // L2 cache name
+        String, //Misc info
+    )] = Array.empty;
 
-//    var l2Cache = new PartitionedCache(l2LineSize, l2Ways, l2Sets)
-//    for(i <- 0 until l2Ways/2) {
-//      l2Cache.assignWay(0,i)
-//      l2Cache.assignWay(1,(l2Ways/2)+i)
-//    }
-//    val l2OnDone  = (coreId:Int) => {
-//      l2Cache.unassignCore(coreId)
-//      None
-//    };
+    val l1LruDtuCache = () => new LruCache(l1LineSize,l1Ways,l1Sets)
 
-//    var l2Cache = new ContentionCache(l2LineSize, l2Ways, l2Sets, 2*memLatency)
-//    l2Cache.setCriticality(0, 500)
-//    l2Cache.setCriticality(1, 500)
-//    val l2OnDone  = (coreId:Int) => {
-//      l2Cache.unassign(coreId)
-//      None
-//    };
+//    val l2LruDtuCache = () => new LruCache(l2LineSize, l2Ways, l2Sets)
+//    val l2LruDtuCacheOnDone  = (_:Int) => {};
 
-//    var l2Cache = new ContentionPartCache(l2LineSize, l2Ways, l2Sets, memLatency)
-//    l2Cache.setCriticality(0, 500)
-//    l2Cache.setCriticality(1, 500)
-//    for(i <- 0 until l2Ways/2) {
-//      l2Cache.assignWay(0,i)
-//      l2Cache.assignWay(1,(l2Ways/2)+i)
-//    }
-//    val l2OnDone  = (coreId:Int) => {
-//      l2Cache.unassign(coreId)
-//      None
-//    };
+    val l2LruDtuCache = () => {
+      (new LruCache(l2LineSize, l2Ways, l2Sets), (_:Int) => {})
+    }
 
-//    var l2Cache = new TimeoutCache(l2LineSize, l2Ways, l2Sets, 1000)
-//    for(i <- 0 until l2Ways/2) {
-//      l2Cache.setPriority(0,i)
-//      l2Cache.setPriority(1,(l2Ways/2)+i)
-//    }
-//    val l2OnDone  = (coreId:Int) => {
-//      l2Cache.removePriority(coreId)
-//      None
-//    };
+    configs +:=(
+      "trace64Alone",
+      traceFiles.slice(1, 2),
+      l1LruDtuCache,
+      l2LruDtuCache,
+      l1Latency,
+      l2Latency,
+      memLatency,
+      l1BurstSize,
+      l2BurstSize,
+      memBurstSize,
+      "Lru",
+      "Lru",
+      "",
+    );
+    configs +:=(
+      "trace65Alone",
+      traceFiles.slice(2, 3),
+      l1LruDtuCache,
+      l2LruDtuCache,
+      l1Latency,
+      l2Latency,
+      memLatency,
+      l1BurstSize,
+      l2BurstSize,
+      memBurstSize,
+      "Lru",
+      "Lru",
+      "",
+    );
+    configs +:=(
+      "allTraceLru",
+      traceFiles.slice(1, 9),
+      l1LruDtuCache,
+      l2LruDtuCache,
+      l1Latency,
+      l2Latency,
+      memLatency,
+      l1BurstSize,
+      l2BurstSize,
+      memBurstSize,
+      "Lru",
+      "Lru",
+      "",
+    );
 
-    var l1Cache = traceFiles.zipWithIndex.map(pathIdx => {
+    var l2PartCache = () => {
+      var cache = new PartitionedCache(l2LineSize, l2Ways, l2Sets)
+      for (i <- 0 until l2Ways / 2) {
+        cache.assignWay(0, i)
+        cache.assignWay(1, (l2Ways / 2) + i)
+      }
+
+      (cache, (coreId:Int) => {
+        cache.unassignCore(coreId)
+      })
+    }
+
+    configs +:=(
+      "allTracePart",
+      traceFiles.slice(1, 9),
+      l1LruDtuCache,
+      l2PartCache,
+      l1Latency,
+      l2Latency,
+      memLatency,
+      l1BurstSize,
+      l2BurstSize,
+      memBurstSize,
+      "Lru",
+      "Partition",
+      "",
+    );
+
+    var l2ContCache = (limit:Int) => {
+      val cache = new ContentionCache(l2LineSize, l2Ways, l2Sets, 2*memLatency)
+      cache.setCriticality(0, limit)
+      cache.setCriticality(1, limit)
+      (cache, (coreId:Int) => {
+        cache.unassign(coreId)
+      })
+    }
+
+    for(limit <- Array(500,1000,2000,4000)) {
+      configs +:=(
+        "allTraceCont"+limit,
+        traceFiles.slice(1, 9),
+        l1LruDtuCache,
+        () => l2ContCache(limit),
+        l1Latency,
+        l2Latency,
+        memLatency,
+        l1BurstSize,
+        l2BurstSize,
+        memBurstSize,
+        "Lru",
+        "Contention",
+        "",
+      );
+    }
+
+    val l2ContPartCache = (limit: Int) => {
+      val cache = new ContentionPartCache(l2LineSize, l2Ways, l2Sets, memLatency)
+      cache.setCriticality(0, limit)
+      cache.setCriticality(1, limit)
+      for(i <- 0 until l2Ways/2) {
+        cache.assignWay(0,i)
+        cache.assignWay(1,(l2Ways/2)+i)
+      }
+      (cache, (coreId:Int) => {
+        cache.unassign(coreId)
+      })
+    }
+
+    for(limit <- Array(500,1000,2000,4000)) {
+      configs +:=(
+        "allTraceContPart"+limit,
+        traceFiles.slice(1, 9),
+        l1LruDtuCache,
+        () => l2ContPartCache(limit),
+        l1Latency,
+        l2Latency,
+        memLatency,
+        l1BurstSize,
+        l2BurstSize,
+        memBurstSize,
+        "Lru",
+        "ContentionPartition",
+        "",
+      );
+    }
+
+    var l2TimeoutCache = (limit: Int) => {
+      val cache = new TimeoutCache(l2LineSize, l2Ways, l2Sets, limit)
+      for(i <- 0 until l2Ways/2) {
+        cache.setPriority(0,i)
+        cache.setPriority(1,(l2Ways/2)+i)
+      }
+      (cache, (coreId:Int) => {
+        cache.removePriority(coreId)
+      })
+    }
+
+    for(limit <- Array(("10k", 10000),("100k", 100000),("200k", 200000))) {
+      configs +:= (
+        "allTraceTimeout"+limit._1,
+        traceFiles.slice(1, 9),
+        l1LruDtuCache,
+        () => l2TimeoutCache(limit._2),
+        l1Latency,
+        l2Latency,
+        memLatency,
+        l1BurstSize,
+        l2BurstSize,
+        memBurstSize,
+        "Lru",
+        "Timeout",
+        "",
+      );
+    }
+
+    try {
+      accessTimesFile.write("simId,coreNr,clockFinish,latency\n")
+      coreStatsFile.write("simId,coreNr,accessCount,l1Hits,l1WriteBacks,l2Accesses,l2Hits\n")
+      globalStatsFile.write("simId,l2WriteBack\n")
+      simIdDescFile.write("simId,l1Latency,l2Latency,mainMemLatency,l1BurstSize,l2BurstSize,mainMemBurstSize,l1CacheType,l2CacheType,misc\n")
+
+      for(conf <- configs) {
+        simIdDescFile.write(f"${conf._1},${conf._5},${conf._6},${conf._7},${conf._8},${conf._9},${conf._10},${conf._11},${conf._12},${conf._13},\n")
+        runSim(
+          conf._1,
+          conf._2,
+          conf._3,
+          conf._4,
+          conf._5,
+          conf._6,
+          conf._7,
+          conf._8,
+          accessTimesFile,
+          coreStatsFile,
+          globalStatsFile
+        )
+      }
+
+    } finally {
+      accessTimesFile.close()
+      coreStatsFile.close()
+      globalStatsFile.close()
+      simIdDescFile.close()
+    }
+  }
+
+  def runSim(
+              simID: String,
+              traceFiles: Array[String],
+              newL1Cache: () => SoftCache,
+              l2CacheGen: () => (SoftCache, (Int) => Unit),
+              l1Latency: Int,
+              l2Latency: Int,
+              memLatency: Int,
+              l1BurstSize: Int,
+              accessTimesFile: BufferedWriter,
+              coreStatsFile: BufferedWriter,
+              globalStatsFile: BufferedWriter,
+  ): Unit = {
+    println("Running Simulation '" + simID + "'")
+
+    var clock: Long = 0;
+    var coreAccesses: Array[Int] = Array.fill(traceFiles.length){0}
+    var l2Accesses: Array[Int] = Array.fill(traceFiles.length){0}
+    var cumulativeLatencies: Array[Int] = Array.fill(traceFiles.length){0}
+    var hits: Array[Int] = Array.fill(traceFiles.length){0}
+    var l2Hits: Array[Int] = Array.fill(traceFiles.length){0}
+    var l2HitsAfterMiss: Array[Int] = Array.fill(traceFiles.length){0}
+    var mainMemAccesses: Int = 0
+
+    val l2CacheGen2 = l2CacheGen()
+    val l2Cache = l2CacheGen2._1
+    val l2OnDone = l2CacheGen2._2
+
+    val l2BurstSize = newL1Cache().lineLength
+    val memBurstSize = l2Cache.lineLength
+
+    var l1CacheTraffic = traceFiles.zipWithIndex.map(pathIdx => {
       new CacheTraffic(
         l2BurstSize,
         new RoundRobinArbiter(
@@ -562,13 +789,13 @@ object Sim {
           Array(new TraceTraffic(l1BurstSize, loadAccesses(pathIdx._1), latency => {
             cumulativeLatencies(pathIdx._2) += latency
             coreAccesses(pathIdx._2) += 1
-            printf("{ %d, %d }\n", pathIdx._2, latency)
+            accessTimesFile.write(f"$simID,${pathIdx._2},$clock,$latency\n")
           })),
           (_) => {
             None
           }
         ),
-        new LruCache(l1LineSize,l1Ways,l1Sets), // 16B line, 4-way set associative 1KiB cache
+        newL1Cache(), // 16B line, 4-way set associative 1KiB cache
         (_, hitType) => {
           if(hitType.isHit()) hits(pathIdx._2)+=1;
         }
@@ -580,8 +807,11 @@ object Sim {
       new RoundRobinArbiter(
         l2BurstSize,
         l2Latency,
-        l1Cache,
-        l2OnDone,
+        l1CacheTraffic,
+        (coreId:Int) => {
+          l2OnDone(coreId)
+          None
+        },
         true
       ),
       l2Cache, // 64B line, 8-way set associative 8KB cache
@@ -617,15 +847,17 @@ object Sim {
 
     while(!MainMemTraffic.isDone()) {
       val trig = MainMemTraffic.triggerCycle()
+      clock+=1
     }
 
     for(i <- 0 until traceFiles.length) {
       val l1Misses = coreAccesses(i) - hits(i)
+      val l1WriteBack = l2Accesses(i) - l1Misses
       printf("Count: %d, L1 Hits: %d, L1 Hit Pct: %f, L1 Write-Backs: %d, L2 Accesses: %d, L2 Hits: %d(%d), L2 Hit Pct: %f(%f), Avg. Latency: %f\n",
         coreAccesses(i),
         hits(i),
         hits(i).toDouble/coreAccesses(i).toDouble,
-        l2Accesses(i)- l1Misses,
+        l1WriteBack,
         l2Accesses(i),
         l2Hits(i),
         l2HitsAfterMiss(i),
@@ -633,9 +865,10 @@ object Sim {
         (l2Hits(i)+l2HitsAfterMiss(i))/(l2Accesses(i)).toDouble,
         (cumulativeLatencies(i).toDouble)/
           (coreAccesses(i).toDouble) )
+      coreStatsFile.write(f"$simID,$i,${coreAccesses(i)},${hits(i)},${l1WriteBack},${l2Accesses(i)},${l2Hits(i)+l2HitsAfterMiss(i)}\n")
     }
     val l2Misses = l2Accesses.sum - l2Hits.sum - l2HitsAfterMiss.sum
-    printf("L2 Write-Backs: %d\n", mainMemAccesses - l2Misses)
+    globalStatsFile.write(f"$simID,${mainMemAccesses - l2Misses}\n")
   }
 
 }
