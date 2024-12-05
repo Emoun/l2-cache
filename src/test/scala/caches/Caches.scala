@@ -274,8 +274,8 @@ class ContentionCacheTest extends AnyFunSuite with LruTests[ContentionCache] {
     cache.performAccess(9,0,true,true) // way 1
     cache.performAccess(18,0,true,true) // way 2
 
-    assert(cache.performAccess(27,1,true,true) == ReadMiss) // try to use set 0 again
-    assert(cache.performAccess(27,1,true,true) == ReadMiss) // Ensure did not get saved
+    assert(cache.performAccess(27,1,true,true) == Reject) // try to use set 0 again
+    assert(cache.performAccess(27,1,true,true) == Reject) // Ensure did not get saved
 
     assert(cache.performAccess(0,1,true,true) == ReadHit) // Ensure did get saved
     assert(cache.performAccess(9,1,true,true) == ReadHit)
@@ -291,8 +291,8 @@ class ContentionCacheTest extends AnyFunSuite with LruTests[ContentionCache] {
     cache.performAccess(9,0,true,true) // way 1
     cache.performAccess(18,0,true,true) // way 2
 
-    assert(cache.performAccess(27,1,true,true) == ReadMiss) // try to use set 0 again
-    assert(cache.performAccess(27,1,true,true) == ReadMiss) // Ensure did not get saved
+    assert(cache.performAccess(27,1,true,true) == Reject) // try to use set 0 again
+    assert(cache.performAccess(27,1,true,true) == Reject) // Ensure did not get saved
 
     assert(cache.performAccess(0,1,true,true) == ReadHit) // Ensure did get saved
     assert(cache.performAccess(9,1,true,true) == ReadHit)
@@ -361,8 +361,8 @@ class ContentionCacheTest extends AnyFunSuite with LruTests[ContentionCache] {
     assert(cache.performAccess(27,1,true,true) == ReadMiss) // try to use set 0 again
     assert(cache.performAccess(27,1,true,true) == ReadHit) // Ensure did get saved
 
-    assert(cache.performAccess(30,1,true,true) == ReadMiss) // try to use set 1 again
-    assert(cache.performAccess(30,1,true,true) == ReadMiss) // Ensure did not get saved (core 0 reached limit from last eviction)
+    assert(cache.performAccess(30,1,true,true) == Reject) // try to use set 1 again
+    assert(cache.performAccess(30,1,true,true) == Reject) // Ensure did not get saved (core 0 reached limit from last eviction)
   }
 
   test("Unlimited eviction reaches limit 2") {
@@ -388,8 +388,8 @@ class ContentionCacheTest extends AnyFunSuite with LruTests[ContentionCache] {
     assert(cache.performAccess(30,1,true,true) == ReadMiss) // try to use set 1 again
     assert(cache.performAccess(30,1,true,true) == ReadHit) // Ensure did get saved
 
-    assert(cache.performAccess(33,1,true,true) == ReadMiss) // try to use set 2 again
-    assert(cache.performAccess(33,1,true,true) == ReadMiss) // Ensure did not get saved (core 0 reached limit from last eviction)
+    assert(cache.performAccess(33,1,true,true) == Reject) // try to use set 2 again
+    assert(cache.performAccess(33,1,true,true) == Reject) // Ensure did not get saved (core 0 reached limit from last eviction)
   }
 
   test("Critical can evict non-critical") {
@@ -497,8 +497,8 @@ class ContentionCacheTest extends AnyFunSuite with LruTests[ContentionCache] {
     assert(cache.performAccess(10,1,true,true) == ReadMiss) // overwrite set 1 with non-critical, negating the previous win
     assert(cache.performAccess(8,0,true,true) == ReadMiss) // overwrite set 0 way 1 with critical
 
-    assert(cache.performAccess(12,1,true,true) == ReadMiss) // try to use set 0 with non-critical
-    assert(cache.performAccess(12,1,true,true) == ReadMiss) //
+    assert(cache.performAccess(12,1,true,true) == Reject) // try to use set 0 with non-critical
+    assert(cache.performAccess(12,1,true,true) == Reject) //
   }
 
   test("Critical hit on critical line does not increase contention count") {
@@ -515,8 +515,8 @@ class ContentionCacheTest extends AnyFunSuite with LruTests[ContentionCache] {
 
     assert(cache.performAccess(3,0,true,true) == ReadHit) // Hit on other crit
 
-    assert(cache.performAccess(8,2,true,true) == ReadMiss) // Try to evict crit
-    assert(cache.performAccess(8,2,true,true) == ReadMiss) // Ensure did not work
+    assert(cache.performAccess(8,2,true,true) == Reject) // Try to evict crit
+    assert(cache.performAccess(8,2,true,true) == Reject) // Ensure did not work
     assert(cache.performAccess(0,0,true,true) == ReadHit) // Ensure was not evicted
     assert(cache.performAccess(4,0,true,true) == ReadHit) // Ensure was not evicted
   }
@@ -541,8 +541,8 @@ class TimeoutCacheTest extends AnyFunSuite with LruTests[TimeoutCache] {
     cache.performAccess(0,0,true,true) // way 0
     cache.performAccess(4,0,true,true) // way 1
 
-    assert(cache.performAccess(8,1,true,true) == ReadMiss) // try to use set 0 again
-    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Ensure did not get saved
+    assert(cache.performAccess(8,1,true,true) == Reject) // try to use set 0 again
+    assert(cache.performAccess(8,1,true,true) == Reject) // Ensure did not get saved
 
     assert(cache.performAccess(0,0,true,true) == ReadHit) // Ensure did get saved
     assert(cache.performAccess(4,0,true,true) == ReadHit)
@@ -605,8 +605,8 @@ class TimeoutCacheTest extends AnyFunSuite with LruTests[TimeoutCache] {
     cache.performAccess(0,0,true,true) // way 0, with prio
     cache.performAccess(4,0,true,true) // way 1, with prio
 
-    assert(cache.performAccess(8,1,true,true) == ReadMiss) // try to use without prio
-    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Ensure didn't get saved
+    assert(cache.performAccess(8,1,true,true) == Reject) // try to use without prio
+    assert(cache.performAccess(8,1,true,true) == Reject) // Ensure didn't get saved
 
     cache.advanceCycle() // Make the timeouts run out
 
@@ -631,8 +631,8 @@ class TimeoutCacheTest extends AnyFunSuite with LruTests[TimeoutCache] {
     cache.advanceCycle()
     cache.advanceCycle()
 
-    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Ensure timeout hasn't been reached
-    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Ensure didn't get saved
+    assert(cache.performAccess(8,1,true,true) == Reject) // Ensure timeout hasn't been reached
+    assert(cache.performAccess(8,1,true,true) == Reject) // Ensure didn't get saved
 
     cache.advanceCycle() // Timeout reached
 
@@ -665,8 +665,8 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.performAccess(9,0,true,true) // way 1
     cache.performAccess(18,0,true,true) // way 2
 
-    assert(cache.performAccess(27,1,true,true) == ReadMiss) // try to use set 0 again
-    assert(cache.performAccess(27,1,true,true) == ReadMiss) // Ensure did not get saved
+    assert(cache.performAccess(27,1,true,true) == Reject) // try to use set 0 again
+    assert(cache.performAccess(27,1,true,true) == Reject) // Ensure did not get saved
 
     assert(cache.performAccess(0,1,true,true) == ReadHit) // Ensure did get saved
     assert(cache.performAccess(9,1,true,true) == ReadHit)
@@ -682,8 +682,8 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.performAccess(9,0,true,true) // way 1
     cache.performAccess(18,0,true,true) // way 2
 
-    assert(cache.performAccess(27,1,true,true) == ReadMiss) // try to use set 0 again
-    assert(cache.performAccess(27,1,true,true) == ReadMiss) // Ensure did not get saved
+    assert(cache.performAccess(27,1,true,true) == Reject) // try to use set 0 again
+    assert(cache.performAccess(27,1,true,true) == Reject) // Ensure did not get saved
 
     assert(cache.performAccess(0,1,true,true) == ReadHit) // Ensure did get saved
     assert(cache.performAccess(9,1,true,true) == ReadHit)
@@ -752,8 +752,8 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     assert(cache.performAccess(27,1,true,true) == ReadMiss) // try to use set 0 again
     assert(cache.performAccess(27,1,true,true) == ReadHit) // Ensure did get saved
 
-    assert(cache.performAccess(30,1,true,true) == ReadMiss) // try to use set 1 again
-    assert(cache.performAccess(30,1,true,true) == ReadMiss) // Ensure did not get saved (core 0 reached limit from last eviction)
+    assert(cache.performAccess(30,1,true,true) == Reject) // try to use set 1 again
+    assert(cache.performAccess(30,1,true,true) == Reject) // Ensure did not get saved (core 0 reached limit from last eviction)
   }
 
   test("Unlimited eviction reaches limit 2") {
@@ -779,8 +779,8 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     assert(cache.performAccess(30,1,true,true) == ReadMiss) // try to use set 1 again
     assert(cache.performAccess(30,1,true,true) == ReadHit) // Ensure did get saved
 
-    assert(cache.performAccess(33,1,true,true) == ReadMiss) // try to use set 2 again
-    assert(cache.performAccess(33,1,true,true) == ReadMiss) // Ensure did not get saved (core 0 reached limit from last eviction)
+    assert(cache.performAccess(33,1,true,true) == Reject) // try to use set 2 again
+    assert(cache.performAccess(33,1,true,true) == Reject) // Ensure did not get saved (core 0 reached limit from last eviction)
   }
 
   test("Critical can evict non-critical") {
@@ -856,8 +856,8 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     assert(cache.performAccess(10,1,true,true) == ReadMiss) // overwrite set 1 with non-critical, negating the previous win
     assert(cache.performAccess(8,0,true,true) == ReadMiss) // overwrite set 0 way 1 with critical
 
-    assert(cache.performAccess(12,1,true,true) == ReadMiss) // try to use set 0 with non-critical
-    assert(cache.performAccess(12,1,true,true) == ReadMiss) //
+    assert(cache.performAccess(12,1,true,true) == Reject) // try to use set 0 with non-critical
+    assert(cache.performAccess(12,1,true,true) == Reject) //
   }
 
   test("Critical hit on critical line does not increase contention count") {
@@ -874,8 +874,8 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
 
     assert(cache.performAccess(3,0,true,true) == ReadHit) // Hit on other crit
 
-    assert(cache.performAccess(8,2,true,true) == ReadMiss) // Try to evict crit
-    assert(cache.performAccess(8,2,true,true) == ReadMiss) // Ensure did not work
+    assert(cache.performAccess(8,2,true,true) == Reject) // Try to evict crit
+    assert(cache.performAccess(8,2,true,true) == Reject) // Ensure did not work
     assert(cache.performAccess(0,0,true,true) == ReadHit) // Ensure was not evicted
     assert(cache.performAccess(4,0,true,true) == ReadHit) // Ensure was not evicted
   }
@@ -925,8 +925,8 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.performAccess(0,0,true,true) // way 0
     cache.performAccess(4,0,true,true) // way 1
 
-    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Try to evict
-    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Ensure did not work
+    assert(cache.performAccess(8,1,true,true) == Reject) // Try to evict
+    assert(cache.performAccess(8,1,true,true) == Reject) // Ensure did not work
   }
 
   test("Critical can only evict own partition 4") {
@@ -1007,8 +1007,8 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.performAccess(0,0,true,true) // way 0
     cache.performAccess(4,0,true,true) // way 1
 
-    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Try to evict
-    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Ensure did not work
+    assert(cache.performAccess(8,1,true,true) == Reject) // Try to evict
+    assert(cache.performAccess(8,1,true,true) == Reject) // Ensure did not work
     assert(cache.performAccess(0,0,true,true) == ReadHit)
     assert(cache.performAccess(4,0,true,true) == ReadHit)
   }
@@ -1169,8 +1169,8 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
     cache.performAccess(0,0,true,true) // way 0
     cache.performAccess(4,0,true,true) // way 1
 
-    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Try again
-    assert(cache.performAccess(8,1,true,true) == ReadMiss) // Ensure failed because critical is now limited
+    assert(cache.performAccess(8,1,true,true) == Reject) // Try again
+    assert(cache.performAccess(8,1,true,true) == Reject) // Ensure failed because critical is now limited
     assert(cache.performAccess(0,0,true,true) == ReadHit) // Ensure was not evicted
     assert(cache.performAccess(4,0,true,true) == ReadHit) // Ensure was not evicted
 
@@ -1250,7 +1250,8 @@ class CacheTrafficTest extends AnyFunSuite {
         (_) => None,
       ),
       new LruCache(2,2,2),
-      (_, _) => {}
+      (_, _) => {},
+      true
     )
 
     assert(cache.requestMemoryAccess().contains((0,true,()))) // First write needs to load
@@ -1404,7 +1405,8 @@ class CacheTrafficTest extends AnyFunSuite {
       (_, isHit) => {
         reportCount+=1
         if(isHit.isMiss()) missCount += 1
-      }
+      },
+      true
     )
 
     assert(cache.requestMemoryAccess().contains((300,false,()))) // First write needs to load
@@ -1497,6 +1499,33 @@ class ArrayTraffic(traf: Array[(Long, Boolean)], onDone: () => Unit) extends Tra
   }
 }
 
+class ArrayTrafficUnit(traf: Array[(Long, Boolean)], onDone: () => Unit) extends Traffic[Unit] {
+  override def burstSize: Int = 1
+  var done = 0;
+  var status = 0;
+
+  override def serveMemoryAccess(token: Unit): Boolean = {
+    onDone()
+    done += 1
+    true
+  }
+
+  override def requestMemoryAccess(): Option[(Long, Boolean, Unit)] = {
+
+    val result = if(status < traf.length) {
+      Some((traf(status)._1, traf(status)._2, ()))
+    } else {
+      None
+    }
+    status +=1
+    result
+  }
+  override def triggerCycle(): Unit = {}
+  override def isDone(): Boolean = {
+    done == traf.length
+  }
+}
+
 /**
  * A traffic that can be given requests to issue live.
  */
@@ -1514,6 +1543,37 @@ class TriggerTraffic extends Traffic[Unit] {
   override def triggerCycle(): Unit = {}
   override def isDone(): Boolean = false
 
+}
+
+class MapCache extends SoftCache(1,1,1) {
+  var map: Map[Long,CacheResponse] = Map.empty
+  override def performAccess(addr: Long, core: Int, isRead: Boolean, withRefill: Boolean): CacheResponse = {
+    map(addr)
+  }
+
+  override def isHit(addr: Long): Option[(Int, Int)] = None
+  override def printAll(): Unit = {
+
+  }
+
+  override def evict(addr: Long): Unit = {}
+}
+
+class TriggerResponseCache(responseAddr: Long, accept: CacheResponse, reject: CacheResponse) extends SoftCache(1,1,1) {
+  var shouldRespond = false
+  override def performAccess(addr: Long, core: Int, isRead: Boolean, withRefill: Boolean): CacheResponse = {
+    if(responseAddr == addr && !shouldRespond) {
+      reject
+    } else {
+      accept
+    }
+  }
+
+  override def isHit(addr: Long): Option[(Int, Int)] = {None}
+
+  override def printAll(): Unit = {}
+
+  override def evict(addr: Long): Unit = {}
 }
 
 class BufferedCacheTrafficTest extends AnyFunSuite {
@@ -1675,6 +1735,8 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
     assert(wasMiss == 1)
     cache.triggerCycle() // One cycle for bus response and new request
     assert(!cache.isDone() && done==1)
+    cache.triggerCycle() // One cycle for possible needed wait for new request
+    assert(!cache.isDone() && done==1)
     assert(wasMiss == 2)
 
     assert(cache.requestMemoryAccess().contains((40,true,())))
@@ -1771,6 +1833,7 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
     cache.triggerCycle() // One cycle for cache response
     assert(!cache.isDone() && done==1)
     cache.triggerCycle() // One cycle for bus response
+    cache.triggerCycle() // One cycle for possible arbiter wait
     assert(cache.isDone() && done==2)
   }
 
@@ -1836,6 +1899,406 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
 
   }
 
+  test("ReadMiss after reject") {
+    val traffic = new Traffic[Int] {
+      var requests: Array[(Long,Boolean, Int)] = Array((20,false,0),(40,false,1))
+      override def burstSize: Int = 1
+
+      override def serveMemoryAccess(token: Int): Boolean = {true}
+
+      override def requestMemoryAccess(): Option[(Long, Boolean, Int)] = {
+        if(!requests.isEmpty) {
+          val req = requests(0)
+          requests = requests.drop(1)
+          Some(req)
+        } else {
+          None
+        }
+      }
+
+      override def triggerCycle(): Unit = {}
+      override def isDone(): Boolean = {
+        requests.isEmpty
+      }
+    }
+    var shouldRespond = false
+    var cache = new BufferedCacheTraffic(8,
+      traffic,
+      new SoftCache(1,1,1) {
+        override def performAccess(addr: Long, core: Int, isRead: Boolean, withRefill: Boolean): CacheResponse = {
+          if(addr == 20 && !shouldRespond) {
+            Reject
+          } else {
+            ReadMiss
+          }
+        }
+
+        override def isHit(addr: Long): Option[(Int, Int)] = {None}
+
+        override def printAll(): Unit = {}
+
+        override def evict(addr: Long): Unit = {}
+      },
+      (_, _) => {}
+    )
+
+    assert(cache.requestMemoryAccess().isEmpty) // First access is rejected
+    cache.triggerCycle()
+
+    assert(cache.requestMemoryAccess().contains((40,true,()))) // Second access is a miss
+
+  }
+
+  test("ReadMiss after reject 2") {
+    val traffic = new Traffic[Int] {
+      var requests: Array[(Long,Boolean, Int)] = Array((20,false,0),(20,false,1),(40,false,2))
+      override def burstSize: Int = 1
+
+      override def serveMemoryAccess(token: Int): Boolean = {true}
+
+      override def requestMemoryAccess(): Option[(Long, Boolean, Int)] = {
+        if(!requests.isEmpty) {
+          val req = requests(0)
+          requests = requests.drop(1)
+          Some(req)
+        } else {
+          None
+        }
+      }
+
+      override def triggerCycle(): Unit = {}
+      override def isDone(): Boolean = {
+        requests.isEmpty
+      }
+    }
+    var cache = new BufferedCacheTraffic(8,
+      traffic,
+      new SoftCache(1,1,1) {
+        override def performAccess(addr: Long, core: Int, isRead: Boolean, withRefill: Boolean): CacheResponse = {
+          if(addr == 20) {
+            Reject
+          } else {
+            ReadMiss
+          }
+        }
+
+        override def isHit(addr: Long): Option[(Int, Int)] = {None}
+
+        override def printAll(): Unit = {}
+
+        override def evict(addr: Long): Unit = {}
+      },
+      (_, _) => {}
+    )
+
+    assert(cache.requestMemoryAccess().isEmpty) // First access is rejected
+    cache.triggerCycle()
+    assert(cache.requestMemoryAccess().isEmpty) // second access is rejected
+    cache.triggerCycle()
+
+    assert(cache.requestMemoryAccess().contains((40,true,()))) // third access is a miss
+  }
+
+  test("ReadHit after reject") {
+    var done = 0
+    var responseCache= new TriggerResponseCache(20, ReadHit, Reject)
+    val traffic = new RoundRobinArbiter(
+      1,1,
+      Array(
+        new ArrayTrafficUnit(Array((20,false)), ()=> ()),
+        new ArrayTrafficUnit(Array((40,false)), ()=> ()),
+      ),
+      (_) => {
+        done += 1
+        None
+      },
+      true
+    )
+    var cache = new BufferedCacheTraffic(8,
+      traffic,
+      responseCache,
+      (_, _) => {}
+    )
+
+    assert(cache.requestMemoryAccess().isEmpty) // First access is rejected
+    cache.triggerCycle()
+    assert(done == 0)
+
+    assert(cache.requestMemoryAccess().isEmpty) // second access is accepted
+    cache.triggerCycle()
+    assert(done == 0)
+
+    assert(cache.requestMemoryAccess().isEmpty) // one cycle for latency
+    cache.triggerCycle()
+    assert(done == 1)
+
+    responseCache.shouldRespond = true
+
+    assert(cache.requestMemoryAccess().isEmpty) // First access is now a hit
+    cache.triggerCycle()// one cycle for response
+    assert(cache.requestMemoryAccess().isEmpty) // First access is now a hit
+    cache.triggerCycle()// one cycle for latency
+    assert(done == 2)
+  }
+
+  test("ReadHit after reject 2") {
+    var done = 0
+    var responseCache= new TriggerResponseCache(20, ReadHit, Reject)
+    val traffic = new RoundRobinArbiter(
+      1,1,
+      Array(
+        new ArrayTrafficUnit(Array((20,false)), ()=> ()),
+        new ArrayTrafficUnit(Array((20,false)), ()=> ()),
+        new ArrayTrafficUnit(Array((40,false)), ()=> ()),
+      ),
+      (_) => {
+        done += 1
+        None
+      },
+      true
+    )
+    var cache = new BufferedCacheTraffic(8,
+      traffic,
+      responseCache,
+      (_, _) => {}
+    )
+
+    assert(cache.requestMemoryAccess().isEmpty) // First access is rejected
+    cache.triggerCycle()
+    assert(done == 0)
+
+    assert(cache.requestMemoryAccess().isEmpty) // second access is rejected
+    cache.triggerCycle()
+    assert(done == 0)
+
+    assert(cache.requestMemoryAccess().isEmpty) // second access is Accepted
+    cache.triggerCycle()
+    cache.triggerCycle()// one cycle for latency
+    assert(done == 1)
+
+    responseCache.shouldRespond = true
+
+    assert(cache.requestMemoryAccess().isEmpty) // First access is now a hit
+    cache.triggerCycle()// one cycle for response
+    cache.triggerCycle()// one cycle for latency
+    assert(done == 2)
+
+    assert(cache.requestMemoryAccess().isEmpty) // second access is now a hit
+    cache.triggerCycle()// one cycle for response
+    cache.triggerCycle()// one cycle for latency
+    assert(done == 3)
+  }
+
+  test("Miss becomes hit after Reject") {
+    var done1 = false
+    var done2 = false
+    var done3 = false
+    var responseCache= new MapCache
+    val traffic = new RoundRobinArbiter(
+      1,1,
+      Array(
+        new ArrayTrafficUnit(Array((20,false)), ()=> done1 = true),
+        new ArrayTrafficUnit(Array((40,false)), ()=> done2 = true),
+        new ArrayTrafficUnit(Array((60,false)), ()=> done3 = true),
+      ),
+      (_) => {
+        None
+      },
+      true
+    )
+    var cache = new BufferedCacheTraffic(8,
+      traffic,
+      responseCache,
+      (_, _) => {}
+    )
+
+    responseCache.map += (20L -> Reject)
+    responseCache.map += (40L -> ReadMiss)
+    responseCache.map += (60L -> ReadMiss)
+    assert(cache.requestMemoryAccess().isEmpty) // First access is rejected
+    cache.triggerCycle()
+    assert(!done1 && !done2 && !done3)
+
+    assert(cache.requestMemoryAccess().contains((40,true,()))) // second access is Miss
+    cache.triggerCycle()
+    assert(!done1 && !done2 && !done2)
+
+    assert(cache.requestMemoryAccess().isEmpty) // third access is Miss
+    cache.triggerCycle()
+    assert(!done1 && !done2 && !done2)
+
+    cache.serveMemoryAccess(()) // Serve second access
+    responseCache.map += (60L -> ReadHit) // Make third access now a hit
+
+    assert(cache.requestMemoryAccess().isEmpty) // response latency for second access
+    cache.triggerCycle()
+    assert(!done1 && !done2 && !done3)
+
+    assert(cache.requestMemoryAccess().isEmpty) // third access is hit
+    cache.triggerCycle()
+    assert(!done1 && done2 && !done3)
+
+    assert(cache.requestMemoryAccess().isEmpty) // third access latency
+    cache.triggerCycle()
+    assert(!done1 && done2 && !done3)
+
+    assert(cache.requestMemoryAccess().isEmpty) // third access latency
+    cache.triggerCycle()
+    assert(!done1 && done2 && done3)
+
+    responseCache.map += (20L -> ReadHit) // First access now a hit
+
+    assert(cache.requestMemoryAccess().isEmpty) // first access latency
+    cache.triggerCycle()
+    assert(!done1 && done2 && done3)
+
+    assert(cache.requestMemoryAccess().isEmpty) // first access latency
+    cache.triggerCycle()
+    assert(done1 && done2 && done3)
+
+  }
+
+  test("Reject becomes hit after Reject") {
+    var done1 = false
+    var done2 = false
+    var done3 = false
+    var responseCache= new MapCache
+    val traffic = new RoundRobinArbiter(
+      1,1,
+      Array(
+        new ArrayTrafficUnit(Array((20,false)), ()=> done1 = true),
+        new ArrayTrafficUnit(Array((40,false)), ()=> done2 = true),
+        new ArrayTrafficUnit(Array((60,false)), ()=> done3 = true),
+      ),
+      (_) => {
+        None
+      },
+      true
+    )
+    var cache = new BufferedCacheTraffic(8,
+      traffic,
+      responseCache,
+      (_, _) => {}
+    )
+
+    responseCache.map += (20L -> Reject)
+    responseCache.map += (40L -> ReadMiss)
+    responseCache.map += (60L -> Reject)
+    assert(cache.requestMemoryAccess().isEmpty) // First access is rejected
+    cache.triggerCycle()
+    assert(!done1 && !done2 && !done3)
+
+    assert(cache.requestMemoryAccess().contains((40,true,()))) // second access is Miss
+    cache.triggerCycle()
+    assert(!done1 && !done2 && !done2)
+
+    assert(cache.requestMemoryAccess().isEmpty) // third access is Miss
+    cache.triggerCycle()
+    assert(!done1 && !done2 && !done2)
+
+    cache.serveMemoryAccess(()) // Serve second access
+    responseCache.map += (60L -> ReadHit) // Make third access now a hit
+
+    assert(cache.requestMemoryAccess().isEmpty) // response latency for second access
+    cache.triggerCycle()
+    assert(!done1 && !done2 && !done3)
+
+    assert(cache.requestMemoryAccess().isEmpty) // third access is hit
+    cache.triggerCycle()
+    assert(!done1 && done2 && !done3)
+
+    assert(cache.requestMemoryAccess().isEmpty) // third access latency
+    cache.triggerCycle()
+    assert(!done1 && done2 && !done3)
+
+    assert(cache.requestMemoryAccess().isEmpty) // third access latency
+    cache.triggerCycle()
+    assert(!done1 && done2 && done3)
+
+    responseCache.map += (20L -> ReadHit) // First access now a hit
+
+    assert(cache.requestMemoryAccess().isEmpty) // first access latency
+    cache.triggerCycle()
+    assert(!done1 && done2 && done3)
+
+    assert(cache.requestMemoryAccess().isEmpty) // first access latency
+    cache.triggerCycle()
+    assert(done1 && done2 && done3)
+  }
+
+  test("Reject becomes hit after Reject 2") {
+    var done1 = false
+    var done2 = false
+    var done3 = false
+    var done4 = false
+    var responseCache= new MapCache
+    val traffic = new RoundRobinArbiter(
+      1,1,
+      Array(
+        new ArrayTrafficUnit(Array((20,false)), ()=> done1 = true),
+        new ArrayTrafficUnit(Array((40,false)), ()=> done2 = true),
+        new ArrayTrafficUnit(Array((60,false)), ()=> done3 = true),
+        new ArrayTrafficUnit(Array((80,false)), ()=> done4 = true),
+      ),
+      (_) => {
+        None
+      },
+      true
+    )
+    var cache = new BufferedCacheTraffic(8,
+      traffic,
+      responseCache,
+      (_, _) => {}
+    )
+
+    responseCache.map += (20L -> Reject)
+    responseCache.map += (40L -> ReadMiss)
+    responseCache.map += (60L -> Reject)
+    responseCache.map += (80L -> Reject)
+    assert(cache.requestMemoryAccess().isEmpty) // First access is rejected
+    cache.triggerCycle()
+    assert(!done1 && !done2 && !done3 && !done4)
+
+    assert(cache.requestMemoryAccess().contains((40,true,()))) // second access is Miss
+    cache.triggerCycle()
+    assert(!done1 && !done2 && !done3 && !done4)
+
+    assert(cache.requestMemoryAccess().isEmpty) // third access is Miss
+    cache.triggerCycle()
+    assert(!done1 && !done2 && !done3 && !done4)
+
+    cache.serveMemoryAccess(()) // Serve second access
+
+    assert(cache.requestMemoryAccess().isEmpty) // response latency for second access
+    cache.triggerCycle()
+    assert(!done1 && !done2 && !done3 && !done4)
+
+    responseCache.map += (60L -> ReadHit) // Make third access now a hit
+    responseCache.map += (80L -> ReadHit) // Make fourth access now a hit
+
+    assert(cache.requestMemoryAccess().isEmpty) // third access is hit
+    cache.triggerCycle()
+    assert(!done1 && done2 && !done3 && !done4)
+
+    assert(cache.requestMemoryAccess().isEmpty) // third access latency and fourth hit
+    cache.triggerCycle()
+    assert(!done1 && done2 && done3 && !done4)
+
+    assert(cache.requestMemoryAccess().isEmpty) // fourth access latency
+    cache.triggerCycle()
+    assert(!done1 && done2 && done3 && done4)
+
+    responseCache.map += (20L -> ReadHit) // First access now a hit
+
+    assert(cache.requestMemoryAccess().isEmpty) // first access latency
+    cache.triggerCycle()
+    assert(!done1 && done2 && done3 && done4)
+
+    assert(cache.requestMemoryAccess().isEmpty) // first access latency
+    cache.triggerCycle()
+    assert(done1 && done2 && done3 && done4)
+  }
+
   test("Triggers cycles") {
     var cacheTickCount = 0;
     var trafTicks = 0;
@@ -1877,7 +2340,7 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
   }
 
   test("Write results in write-back on evict") {
-    var cache = new CacheTraffic(8,
+    var cache = new BufferedCacheTraffic(8,
       new RoundRobinArbiter(2,1,
         Array(new TraceTraffic(1, Array(
           new MemAccess(0,false, 0, 0),
@@ -1888,7 +2351,8 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
         true
       ),
       new LruCache(2,2,2),
-      (_, _) => {}
+      (_, _) => {},
+      true
     )
 
     assert(cache.requestMemoryAccess().contains((0,true,()))) // First write needs to load
@@ -1929,7 +2393,8 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
         true
       ),
       lruCache,
-      (_, _) => {}
+      (_, _) => {},
+      true
     )
 
     traf1.nextRequest = Some(8,true,())
@@ -1969,7 +2434,8 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
         true
       ),
       lruCache,
-      (_, _) => {}
+      (_, _) => {},
+      true
     )
 
     // Both accesses will need to write-back
@@ -2010,7 +2476,8 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
         true
       ),
       lruCache,
-      (_, _) => {}
+      (_, _) => {},
+      true
     )
 
     // Both accesses will need to write-back
@@ -2066,7 +2533,8 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
       (_, isHit) => {
         reportCount+=1
         if(isHit.isMiss()) missCount += 1
-      }
+      },
+      true
     )
 
     assert(cache.requestMemoryAccess().contains((0,false,()))) // First write needs to load

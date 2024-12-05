@@ -14,11 +14,18 @@ case class DAWS(dsz: Int, addr: Long, timeStamp: Long) extends LogEntry
 case class DARS(dsz: Int, addr: Long, timeStamp: Long) extends LogEntry
 
 sealed trait RequestState
-// Request is ready but has yet to be issued
+/**
+ * Request is ready but has yet to be issued
+ */
 case object Waiting extends RequestState
-// Request has been issued but has yet to be replied to
+
+/**
+ * Request has been issued but has yet to be replied to
+ */
 case object Issued extends RequestState
-// Request has been issued and replied to and is currently being service with the given latency left
+/**
+ * Request has been issued and replied to and is currently being service with the given latency left
+ */
 case class Servicing(latency: Int) extends RequestState
 
 
@@ -91,7 +98,7 @@ trait Traffic[S] {
  * @param source
  * @param reportLatency
  */
-class TraceTraffic(s: Int, source: Iterator[MemAccess], reportLatency: (Int) => Unit) extends Traffic[Unit] {
+class TraceTraffic(s: Int, source: Iterator[MemAccess], reportLatency: (Int) => Unit, startClock: Long = 0) extends Traffic[Unit] {
 
   override def burstSize: Int = s
 
@@ -100,7 +107,7 @@ class TraceTraffic(s: Int, source: Iterator[MemAccess], reportLatency: (Int) => 
   /**
    * Tracks the current clock cycle
    */
-  var clock: Long = 0;
+  var clock: Long = startClock;
 
   /**
    * Tracks how many clock cycles were spent stalled, waiting for memory
@@ -325,7 +332,6 @@ class RoundRobinArbiter[C<:Traffic[Unit]](
       } else {
         // No request from core
       }
-      nextAccess = (nextAccess + 1) % cores.length
       internRequested = true
     }
   }
@@ -361,6 +367,10 @@ class RoundRobinArbiter[C<:Traffic[Unit]](
         }
         case _ => assert(false) // unreachable
       }
+    }
+
+    if(!isBusy()) {
+      nextAccess = (nextAccess + 1) % cores.length
     }
 
     cores.zipWithIndex.foreach(coreIdx => {
@@ -550,9 +560,6 @@ object Sim {
 
     val l1LruDtuCache = () => new LruCache(l1LineSize,l1Ways,l1Sets)
 
-//    val l2LruDtuCache = () => new LruCache(l2LineSize, l2Ways, l2Sets)
-//    val l2LruDtuCacheOnDone  = (_:Int) => {};
-
     val l2LruDtuCache = () => {
       (new LruCache(l2LineSize, l2Ways, l2Sets), (_:Int) => {})
     }
@@ -632,7 +639,7 @@ object Sim {
     );
 
     var l2ContCache = (limit:Int) => {
-      val cache = new ContentionCache(l2LineSize, l2Ways, l2Sets, 2*memLatency)
+      val cache = new ContentionCache(l2LineSize, l2Ways, l2Sets, memLatency)
       cache.setCriticality(0, limit)
       cache.setCriticality(1, limit)
       (cache, (coreId:Int) => {
@@ -640,12 +647,12 @@ object Sim {
       })
     }
 
-    for(limit <- Array(500,1000,2000,4000)) {
+    for(limit <- Array(("10k",10000),("25k",25000),("50k",50000),("100k",100000),("200k",200000))) {
       configs +:=(
-        "allTraceCont"+limit,
+        "allTraceCont"+limit._1,
         traceFiles.slice(1, 9),
         l1LruDtuCache,
-        () => l2ContCache(limit),
+        () => l2ContCache(limit._2),
         l1Latency,
         l2Latency,
         memLatency,
@@ -700,7 +707,7 @@ object Sim {
       })
     }
 
-    for(limit <- Array(("10k", 10000),("100k", 100000),("200k", 200000))) {
+    for(limit <- Array(("10k", 10000),("100k", 100000),("200k", 200000),("400k", 400000))) {
       configs +:= (
         "allTraceTimeout"+limit._1,
         traceFiles.slice(1, 9),
@@ -724,7 +731,7 @@ object Sim {
       globalStatsFile.write("simId,l2WriteBack\n")
       simIdDescFile.write("simId,l1Latency,l2Latency,mainMemLatency,l1BurstSize,l2BurstSize,mainMemBurstSize,l1CacheType,l2CacheType,misc\n")
 
-      for(conf <- configs) {
+      for(conf <- configs.reverse) {
         simIdDescFile.write(f"${conf._1},${conf._5},${conf._6},${conf._7},${conf._8},${conf._9},${conf._10},${conf._11},${conf._12},${conf._13},\n")
         runSim(
           conf._1,
@@ -764,7 +771,7 @@ object Sim {
   ): Unit = {
     println("Running Simulation '" + simID + "'")
 
-    var clock: Long = 0;
+    var clock: Long = 70000000;
     var coreAccesses: Array[Int] = Array.fill(traceFiles.length){0}
     var l2Accesses: Array[Int] = Array.fill(traceFiles.length){0}
     var cumulativeLatencies: Array[Int] = Array.fill(traceFiles.length){0}
@@ -789,8 +796,9 @@ object Sim {
           Array(new TraceTraffic(l1BurstSize, loadAccesses(pathIdx._1), latency => {
             cumulativeLatencies(pathIdx._2) += latency
             coreAccesses(pathIdx._2) += 1
+//            println(f"$clock: {${pathIdx._2}, $latency}")
             accessTimesFile.write(f"$simID,${pathIdx._2},$clock,$latency\n")
-          })),
+          }, 70000000)), // Have all the traces start their internal clock at 70 million because the Huawei traces do the same
           (_) => {
             None
           }
@@ -802,7 +810,7 @@ object Sim {
       )
     })
 
-    var l2Cache2 = new BufferedCacheTraffic(
+    var l2CacheTraffic = new BufferedCacheTraffic(
       memBurstSize,
       new RoundRobinArbiter(
         l2BurstSize,
@@ -833,7 +841,7 @@ object Sim {
       new RoundRobinArbiter(
         memBurstSize,
         memLatency,
-        Array(l2Cache2),
+        Array(l2CacheTraffic),
         (_) => {
           None
         }
@@ -849,6 +857,7 @@ object Sim {
       val trig = MainMemTraffic.triggerCycle()
       clock+=1
     }
+
 
     for(i <- 0 until traceFiles.length) {
       val l1Misses = coreAccesses(i) - hits(i)

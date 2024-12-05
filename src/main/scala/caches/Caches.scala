@@ -23,6 +23,8 @@ case object ReadMiss extends CacheResponse
 // The cache access must evict a cache line, then a cache line must be loaded, before the access is serviced.
 // The given address is for the evicted cache line.
 case class WriteBack(addr:Long) extends CacheResponse
+// The access is rejected, meaning the requested data is not available and will not be made available.
+case object Reject extends CacheResponse
 
 abstract class SoftCache(l: Int, w: Int, s: Int)  {
 
@@ -184,7 +186,7 @@ abstract class TrackingCache[T](l: Int, w: Int, s: Int) extends
             };
             result
           }
-          case None => ReadMiss;
+          case None => Reject;
         }
       }
     }
@@ -752,6 +754,7 @@ class CacheTraffic(
 * For each access, takes the core requesting it and whether it was a hit or miss
 */
   reportHits: (Int, HitType) => Unit,
+  enableWriteBacks: Boolean = false,
 ) extends Traffic[Unit] {
 
   override def burstSize: Int = burst
@@ -797,7 +800,8 @@ class CacheTraffic(
   def checkServe(): Unit = {
     if(waitingForInternal() && traf.serveMemoryAccess(busy.get._3)) {
       val response = cache.performAccess(busy.get._1, busy.get._3, busy.get._5,true)
-      assert(!response.isWriteBack())
+      //println(response)
+      //assert(!enableWriteBacks || response.isWriteBack())
       busy = None
     }
     if(waitingForWrite()) {
@@ -812,22 +816,26 @@ class CacheTraffic(
     if(busy.isEmpty ) {
       traf.requestMemoryAccess() match {
         case Some((addr, isRead, coreId)) => {
-          val isHit = cache.performAccess(addr, coreId,isRead,false) match {
-            case ReadHit => {
+          val isHit = (cache.performAccess(addr, coreId,isRead,false), enableWriteBacks) match {
+            case (ReadHit,_) => {
               // Cache hit, service next cycle
               busy = Some((addr, Servicing(1), coreId, true, isRead))
               true
             }
-            case ReadMiss => {
+            case (ReadMiss,_) | (WriteBack(_),false) => {
               // Cache read miss
               busy = Some((addr, Waiting, coreId, true, isRead))
               false
             }
-            case WriteBack(writeBackAddr) => {
+            case (WriteBack(writeBackAddr),true) => {
               // Cache write back
               busy = Some((writeBackAddr, Waiting, coreId, false, isRead))
               writeAddr = Some(addr)
               false
+            }
+            case (Reject,_) => {
+              assert(false)
+              true
             }
           }
           reportHits(coreId, HitType.fromBool(isHit))
@@ -891,6 +899,8 @@ class BufferedCacheTraffic(
    * For each access, takes the core requesting it and whether it was a hit or miss
    */
   reportHits: (Int, HitType) => Unit,
+  enableWriteBacks: Boolean = false,
+//  serviceRejects: Boolean = true,
 ) extends Traffic[Unit] {
 
   override def burstSize: Int = burst
@@ -905,7 +915,7 @@ class BufferedCacheTraffic(
    */
   var internServed = false;
   /**
-   * Whether we have accepted a requenst from internal this cycles
+   * Whether we have accepted a request from internal this cycles
    */
   var internRequested = false;
 
@@ -948,7 +958,7 @@ class BufferedCacheTraffic(
       externQueue = externQueue.drop(1)
       externStatus = Waiting
       checkServe() // Potentially serve immediately
-    } else if(interPrio.isEmpty && externStatus == Waiting && externQueue.length>0) {
+    } else if(interPrio.isEmpty && externStatus != Servicing(0) && externQueue.length>0) {
       if(externQueueHeadHits()) {
         // This miss is now a hit
         interPrio = Some(externQueue(0)._2)
@@ -964,7 +974,6 @@ class BufferedCacheTraffic(
       traf.requestMemoryAccess() match {
         case Some((addr, isRead, coreId)) => {
           internRequested = true
-
           val wasHit = cache.performAccess(addr, coreId,isRead,false) match {
             case ReadHit => {
               interPrio = Some(coreId)
@@ -1002,24 +1011,49 @@ class BufferedCacheTraffic(
 
     if(externStatus == Waiting && externQueue.length>0 && !externQueueHeadHits()) {
 
-      externStatus = Issued
-      cache.performAccess(
-          externQueue(0)._1, externQueue(0)._2, externQueue(0)._3.isDefined, false
-      ) match {
-        case WriteBack(writeAddr) => {
-          // This external read has not evicted yet, evict first
-          externQueue = Array((writeAddr, externQueue(0)._2, None)) ++ externQueue
-          Some((writeAddr, false, ()))
-        }
-        case ReadMiss => {
-          Some((externQueue(0)._1, true, ()))
-        }
-        case ReadHit => {
-          assert(false)
-          None
-        };
-      }
+      val firstNonReject = externQueue.zipWithIndex.find(entry => {
+        val idx = entry._2
+        val elem = entry._1
+        cache.performAccess(
+          elem._1, elem._2, elem._3.isDefined, false
+        ) != Reject
+      } )
+      assert(firstNonReject.isDefined || externQueue.length < 8) //A check that we are not deadlocking on huawei data
 
+      if(firstNonReject.isDefined) {
+        val countBefore = externQueue.length
+        // Move the non-reject to the front of the queue
+        externQueue = Array(externQueue(firstNonReject.get._2)) ++ externQueue.patch(firstNonReject.get._2, Nil, 1)
+
+        assert(countBefore == externQueue.length)
+
+        (cache.performAccess(
+          externQueue(0)._1, externQueue(0)._2, externQueue(0)._3.isDefined, false
+        ), enableWriteBacks) match {
+          case (WriteBack(writeAddr), true) => {
+            externStatus = Issued
+            // This external read has not evicted yet, evict first
+            externQueue = Array((writeAddr, externQueue(0)._2, None)) ++ externQueue
+            Some((writeAddr, false, ()))
+          }
+          case (ReadMiss, _) | (WriteBack(_), false) => {
+            externStatus = Issued
+            Some((externQueue(0)._1, true, ()))
+          }
+          case (ReadHit, _) => {
+            // A ReadMiss or Reject became a hit, do nothing
+            None
+          }
+          case (Reject, _) => {
+            println(Reject)
+            assert(false)
+            None
+          };
+        }
+      } else {
+        // Only rejected misses, so keep waiting
+        None
+      }
     } else {
       None
     }
