@@ -678,12 +678,12 @@ object Sim {
       })
     }
 
-    for(limit <- Array(500,1000,2000,4000)) {
+    for(limit <- Array(("10k",10000),("25k",25000),("50k",50000),("100k",100000),("200k",200000))) {
       configs +:=(
-        "allTraceContPart"+limit,
+        "allTraceContPart"+limit._1,
         traceFiles.slice(1, 9),
         l1LruDtuCache,
-        () => l2ContPartCache(limit),
+        () => l2ContPartCache(limit._2),
         l1Latency,
         l2Latency,
         memLatency,
