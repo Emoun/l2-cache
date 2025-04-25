@@ -505,6 +505,7 @@ object Sim {
     val accessTimesFile = newResultFile("access_times.csv")
     val coreStatsFile = newResultFile("core_stats.csv")
     val globalStatsFile = newResultFile("global_stats.csv")
+    val contentionLimitFile = newResultFile("contention_limit_stats.csv")
 
     ////////////////////////// Huawei settings /////////////////////////
     //    val l1Latency = 1
@@ -546,7 +547,7 @@ object Sim {
         String, //simId
         Array[String], // TraceFiles
         () => SoftCache, //L1Cache
-        () => (SoftCache, (Int) => Unit), // L2Cache and L2CacheOnDone
+        (()=>Long) => (SoftCache, (Int) => Unit), // L2Cache and L2CacheOnDone
         Int, //l1Latency
         Int, //l2Latency
         Int, //memLatency
@@ -560,7 +561,7 @@ object Sim {
 
     val l1LruDtuCache = () => new LruCache(l1LineSize,l1Ways,l1Sets)
 
-    val l2LruDtuCache = () => {
+    val l2LruDtuCache = (clock: ()=>Long) => {
       (new LruCache(l2LineSize, l2Ways, l2Sets), (_:Int) => {})
     }
 
@@ -610,7 +611,7 @@ object Sim {
       "",
     );
 
-    var l2PartCache = () => {
+    var l2PartCache = (clock: ()=>Long) => {
       var cache = new PartitionedCache(l2LineSize, l2Ways, l2Sets)
       for (i <- 0 until l2Ways / 2) {
         cache.assignWay(0, i)
@@ -638,21 +639,27 @@ object Sim {
       "",
     );
 
-    var l2ContCache = (limit:Int) => {
-      val cache = new ContentionCache(l2LineSize, l2Ways, l2Sets, memLatency)
+    var l2ContCache = (simId: String, limit:Int, clock: () => Long) => {
+      val cache = new ContentionCache(l2LineSize, l2Ways, l2Sets, memLatency,
+        (coreId:Int) => {
+          contentionLimitFile.write(f"$simId,$coreId,${clock()}\n")
+        }
+      )
       cache.setCriticality(0, limit)
       cache.setCriticality(1, limit)
       (cache, (coreId:Int) => {
         cache.unassign(coreId)
+        contentionLimitFile.flush()
       })
     }
 
     for(limit <- Array(("10k",10000),("25k",25000),("50k",50000),("100k",100000),("200k",200000))) {
+      val simId = "allTraceCont" + limit._1
       configs +:=(
-        "allTraceCont"+limit._1,
+        simId,
         traceFiles.slice(1, 9),
         l1LruDtuCache,
-        () => l2ContCache(limit._2),
+        (clock: () => Long) => l2ContCache(simId, limit._2, clock),
         l1Latency,
         l2Latency,
         memLatency,
@@ -683,7 +690,7 @@ object Sim {
         "allTraceContPart"+limit._1,
         traceFiles.slice(1, 9),
         l1LruDtuCache,
-        () => l2ContPartCache(limit._2),
+        (clock: ()=>Long) => l2ContPartCache(limit._2),
         l1Latency,
         l2Latency,
         memLatency,
@@ -712,7 +719,7 @@ object Sim {
         "allTraceTimeout"+limit._1,
         traceFiles.slice(1, 9),
         l1LruDtuCache,
-        () => l2TimeoutCache(limit._2),
+        (clock: ()=>Long) => l2TimeoutCache(limit._2),
         l1Latency,
         l2Latency,
         memLatency,
@@ -730,6 +737,7 @@ object Sim {
       coreStatsFile.write("simId,coreNr,accessCount,l1Hits,l1WriteBacks,l2Accesses,l2Hits\n")
       globalStatsFile.write("simId,l2WriteBack\n")
       simIdDescFile.write("simId,l1Latency,l2Latency,mainMemLatency,l1BurstSize,l2BurstSize,mainMemBurstSize,l1CacheType,l2CacheType,misc\n")
+      contentionLimitFile.write("simId,coreNr,limitClock\n")
 
       for(conf <- configs.reverse) {
         simIdDescFile.write(f"${conf._1},${conf._5},${conf._6},${conf._7},${conf._8},${conf._9},${conf._10},${conf._11},${conf._12},${conf._13},\n")
@@ -753,6 +761,7 @@ object Sim {
       coreStatsFile.close()
       globalStatsFile.close()
       simIdDescFile.close()
+      contentionLimitFile.close()
     }
   }
 
@@ -760,7 +769,7 @@ object Sim {
               simID: String,
               traceFiles: Array[String],
               newL1Cache: () => SoftCache,
-              l2CacheGen: () => (SoftCache, (Int) => Unit),
+              l2CacheGen: (()=>Long) => (SoftCache, (Int) => Unit),
               l1Latency: Int,
               l2Latency: Int,
               memLatency: Int,
@@ -780,7 +789,7 @@ object Sim {
     var l2HitsAfterMiss: Array[Int] = Array.fill(traceFiles.length){0}
     var mainMemAccesses: Int = 0
 
-    val l2CacheGen2 = l2CacheGen()
+    val l2CacheGen2 = l2CacheGen(() => clock)
     val l2Cache = l2CacheGen2._1
     val l2OnDone = l2CacheGen2._2
 

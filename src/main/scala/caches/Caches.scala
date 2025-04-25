@@ -372,7 +372,7 @@ class PartitionedCache(lineLength: Int, ways: Int, sets: Int) extends
   }
 }
 
-class ContentionCache(lineLength: Int, ways: Int, sets: Int, contentionCost: Int)
+class ContentionCache(lineLength: Int, ways: Int, sets: Int, contentionCost: Int, onLimit: (Int) => Unit)
 // T is the ID of the core that loaded the line
   extends TrackingCache[(Int,Int)](lineLength, ways, sets) with LRUReplacement[Int]
 {
@@ -388,6 +388,9 @@ class ContentionCache(lineLength: Int, ways: Int, sets: Int, contentionCost: Int
   def triggerContention(coreId: Int): Unit = {
     assert(_contention.contains(coreId));
     _contention(coreId) -= contentionCost;
+    if(_contention(coreId) < contentionCost) {
+      onLimit(coreId)
+    }
   }
 
   def setCriticality(coreId: Int, contentionLimit: Int): Unit = {
