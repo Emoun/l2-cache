@@ -1,4 +1,4 @@
-package caches
+package caches.sim
 
 import org.scalatest.funsuite.AnyFunSuite
 
@@ -259,10 +259,10 @@ class ContentionCacheTest extends AnyFunSuite with LruTests[ContentionCache] {
   override def className: String = "ContentionCache"
 
   override def createInstance(lineLength: Int, ways: Int, sets: Int): ContentionCache = {
-    new ContentionCache(lineLength, ways, sets, 0)
+    new ContentionCache(lineLength, ways, sets, 0, (_: Int) => { })
   }
   def createInstance(lineLength: Int, ways: Int, sets: Int, contentionCost:Int): ContentionCache = {
-    new ContentionCache(lineLength, ways, sets, contentionCost)
+    new ContentionCache(lineLength, ways, sets, contentionCost, (_: Int) => { })
   }
 
   test("Low criticality cannot evict high criticality at limit") {
@@ -626,7 +626,7 @@ class TimeoutCacheTest extends AnyFunSuite with LruTests[TimeoutCache] {
     cache.performAccess(4,0,true,true) // way 1, with prio
 
 
-    cache.advanceCycle() // Make timout reach 1
+    cache.advanceCycle() // Make timeout reach 1
     cache.advanceCycle()
     cache.advanceCycle()
     cache.advanceCycle()
@@ -1176,7 +1176,7 @@ class ContentionPartCacheTest extends AnyFunSuite with LruTests[ContentionPartCa
 
   }
 
-  test("Non-critical evicts non-critical in uassigned with other limited critical") {
+  test("Non-critical evicts non-critical in unassigned with other limited critical") {
     val cache = createInstance(2,3,2,10);
     cache.setCriticality(0, 0)
     cache.assignWay(0, 0);

@@ -1,4 +1,4 @@
-package caches
+package caches.sim
 
 import org.scalatest.funsuite.AnyFunSuite
 

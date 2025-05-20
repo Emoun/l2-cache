@@ -1,4 +1,31 @@
-.idea
-.bsp
-project
-target
+*.class
+*.log
+
+# vcd files
+*.vcd
+
+# verilog files
+*.v
+
+# misc
+*.lo.fir
+*.zip
+*.anno.json
+*.fir
+
+# vscode
+.metals/metals.lock.db
+.metals/metals.mv.db
+.vscode/settings.json
+
+# intellij
+.idea/*
+.bsp/*
+
+# sbts
+/project/*
+/target/*
+/test_run_dir/*
+
+# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
+hs_err_pid*

@@ -1,10 +1,10 @@
-package caches
+package caches.sim
 
-import scala.io.{BufferedSource, Source}
-import scala.util.matching.Regex
 import java.io.{BufferedWriter, File, FileWriter}
 import java.nio.file.{DirectoryStream, Files, Paths}
+import scala.io.Source
 import scala.jdk.CollectionConverters._
+import scala.util.matching.Regex
 
 // Define case classes for DAW and DAR
 sealed trait LogEntry
