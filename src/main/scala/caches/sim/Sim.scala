@@ -28,7 +28,6 @@ case object Issued extends RequestState
  */
 case class Servicing(latency: Int) extends RequestState
 
-
 class MemAccess (dataType:Int, r:Boolean, addr: Long, t:Long ){
   /**
    * Size of the access in bytes
@@ -208,6 +207,19 @@ class TraceTraffic(s: Int, source: Iterator[MemAccess], reportLatency: (Int) => 
   override def isDone(): Boolean = {
     nextAccess.isEmpty && waitingForServe.isEmpty && !source.hasNext
   }
+}
+
+class NoneTraffic[S](s: Int, done: () => Boolean) extends Traffic[S] {
+
+  override def burstSize: Int = s
+
+  override def serveMemoryAccess(token: S): Boolean = true
+
+  override def requestMemoryAccess(): Option[(Long, Boolean, S)] = None
+
+  override def triggerCycle(): Unit = {}
+
+  override def isDone(): Boolean = done()
 }
 
 class RoundRobinArbiter[C<:Traffic[Unit]](
@@ -842,7 +854,8 @@ object Sim {
           }
           case _ => ()
         }
-      }
+      },
+      true
     )
 
     var MainMemTraffic = new CacheTraffic(
