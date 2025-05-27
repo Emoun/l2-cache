@@ -1,15 +1,14 @@
 package caches.hardware.reppol
 
 import chisel3._
-import chisel3.util._
 
 /**
  * @inheritdoc
  * @param ways number of ways in a single cache set
  * @param sets number of sets in the whole cache
  */
-class TreePlruReplacementPolicy(ways: Int, sets: Int) extends ReplacementPolicyType(ways, sets) {
-  val setPlrus = Array.fill(sets)(Module(new TreePlru(ways)))
+class BitPlruReplacementPolicy(ways: Int, sets: Int) extends ReplacementPolicyType(ways, sets) {
+  val setPlrus = Array.fill(sets)(Module(new BitPlru(ways)))
 
   for (i <- 0 until sets) {
     setPlrus(i).io.update.valid := io.update.valid && (io.setIdx === i.asUInt)
@@ -21,4 +20,3 @@ class TreePlruReplacementPolicy(ways: Int, sets: Int) extends ReplacementPolicyT
   io.replaceWay := setReplaceWays(io.setIdx)
   io.isValid := true.B
 }
-

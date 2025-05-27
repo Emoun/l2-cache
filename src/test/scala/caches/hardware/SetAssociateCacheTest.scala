@@ -145,7 +145,6 @@ class SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     dut.clock.step(1)
 
     val setTags = dut.io.dbg.setTags
-
     for (wayIdx <- setTags.indices) {
       setTags(wayIdx).expect(expectedTags(wayIdx).U)
 
@@ -181,12 +180,14 @@ class SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     test(new SetAssociateCacheTestTop(size, ways, bytesPerBlock, bytesPerWord, repPolicyGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default assignments
       dut.io.higher.req.poke(false.B)
+      dut.io.higher.token.poke(0.U)
       dut.io.higher.addr.poke(0.U)
       dut.io.higher.rw.poke(false.B)
       dut.io.higher.wData.poke(0.U)
       dut.io.higher.wMask.poke(0.U)
       dut.io.lower.rData.poke(0.U)
       dut.io.lower.ack.poke(false.B)
+      dut.io.lower.responseStatus.poke(0.U)
 
       dut.clock.step(1)
 
@@ -230,12 +231,14 @@ class SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     test(new SetAssociateCacheTestTop(size, ways, bytesPerBlock, bytesPerWord, repPolicyGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default assignments
       dut.io.higher.req.poke(false.B)
+      dut.io.higher.token.poke(0.U)
       dut.io.higher.addr.poke(0.U)
       dut.io.higher.rw.poke(false.B)
       dut.io.higher.wData.poke(0.U)
       dut.io.higher.wMask.poke(0.U)
       dut.io.lower.rData.poke(0.U)
       dut.io.lower.ack.poke(false.B)
+      dut.io.lower.responseStatus.poke(0.U)
 
       dut.clock.step(1)
 
@@ -277,12 +280,14 @@ class SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     test(new SetAssociateCacheTestTop(size, ways, bytesPerBlock, bytesPerWord, repPolicyGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default assignments
       dut.io.higher.req.poke(false.B)
+      dut.io.higher.token.poke(0.U)
       dut.io.higher.addr.poke(0.U)
       dut.io.higher.rw.poke(false.B)
       dut.io.higher.wData.poke(0.U)
       dut.io.higher.wMask.poke(0.U)
       dut.io.lower.rData.poke(0.U)
       dut.io.lower.ack.poke(false.B)
+      dut.io.lower.responseStatus.poke(0.U)
 
       dut.clock.step(1)
 
@@ -364,12 +369,14 @@ class SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     test(new SetAssociateCacheTestTop(size, ways, bytesPerBlock, bytesPerWord, repPolicyGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default assignments
       dut.io.higher.req.poke(false.B)
+      dut.io.higher.token.poke(0.U)
       dut.io.higher.addr.poke(0.U)
       dut.io.higher.rw.poke(false.B)
       dut.io.higher.wData.poke(0.U)
       dut.io.higher.wMask.poke(0.U)
       dut.io.lower.rData.poke(0.U)
       dut.io.lower.ack.poke(false.B)
+      dut.io.lower.responseStatus.poke(0.U)
 
       dut.clock.step(1)
 
@@ -390,12 +397,14 @@ class SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     test(new SetAssociateCacheTestTop(size, ways, bytesPerBlock, bytesPerWord, repPolicyGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default assignments
       dut.io.higher.req.poke(false.B)
+      dut.io.higher.token.poke(0.U)
       dut.io.higher.addr.poke(0.U)
       dut.io.higher.rw.poke(false.B)
       dut.io.higher.wData.poke(0.U)
       dut.io.higher.wMask.poke(0.U)
       dut.io.lower.rData.poke(0.U)
       dut.io.lower.ack.poke(false.B)
+      dut.io.lower.responseStatus.poke(0.U)
 
       dut.clock.step(1)
 

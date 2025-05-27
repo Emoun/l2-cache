@@ -24,8 +24,8 @@ class debugCache(size: Int, ways: Int, bytesPerBlock: Int, bytesPerWord: Int) ex
 class SetAssociateCacheTestTop(size: Int, ways: Int, bytesPerBlock: Int, bytesPerWord: Int, repPolicy: () => ReplacementPolicyType) extends Module {
   val io = IO(new Bundle {
     val dbg = new debugCache(size, ways, bytesPerBlock, bytesPerWord)
-    val higher = new CacheIO(ADDRESS_WIDTH, bytesPerWord * 8)
-    val lower = Flipped(new CacheIO(ADDRESS_WIDTH, bytesPerBlock * 8))
+    val higher = new CacheIO(ADDRESS_WIDTH, bytesPerWord * 8, 0)
+    val lower = Flipped(new CacheIO(ADDRESS_WIDTH, bytesPerBlock * 8, 0))
   })
 
   val lruCache = Module(new SetAssociateCache(size, ways, bytesPerBlock, bytesPerWord, repPolicy))

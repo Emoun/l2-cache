@@ -1,22 +1,13 @@
 package caches.hardware.reppol
 
 import chisel3._
-import chisel3.util._
 
 /**
  * Tree based implementation of Pseudo LRU.
  *
- * @param ways number of ways in a single cache set
+ * @param ways number of ways in a set-associate cache
  */
-class TreePlru(ways: Int) extends Module {
-  require(isPow2(ways), "Number of ways must be a power of 2.")
-  private val nBits = log2Up(ways)
-
-  val io = IO(new Bundle {
-    val update = Input(Valid(UInt(log2Up(ways).W)))
-    val replaceWay = Output(UInt(log2Up(ways).W))
-  })
-
+class TreePlru(ways: Int) extends ReplacementAlgorithm(ways) {
   // An array of one-bit registers, each for a node in the tree
   val plruBits = RegInit(VecInit(Seq.fill(ways - 1)(false.B)))
 
@@ -26,13 +17,13 @@ class TreePlru(ways: Int) extends Module {
    * @return the index of the LRU way in the set
    */
   def getLru: UInt = {
-    val lru = VecInit(Seq.fill(nBits)(false.B))
-    val treePath = VecInit(Seq.fill(nBits)(0.U(nBits.W)))
+    val lru = VecInit(Seq.fill(wayIdxBits)(false.B))
+    val treePath = VecInit(Seq.fill(wayIdxBits)(0.U(wayIdxBits.W)))
 
-    for (i <- 0 until nBits) {
+    for (i <- 0 until wayIdxBits) {
       val nodeState = plruBits(treePath(i))
-      lru(nBits - 1 - i) := nodeState // Set the MSB bits first
-      if (i != nBits - 1) {
+      lru(wayIdxBits - 1 - i) := nodeState // Set the MSB bits first
+      if (i != wayIdxBits - 1) {
         val pathOffset = (treePath(i) << 1).asUInt
 
         when(nodeState === true.B) {
@@ -52,13 +43,13 @@ class TreePlru(ways: Int) extends Module {
    * @param way the way that has been accessed
    */
   def updateLru(way: UInt): Unit = {
-    val treePath = VecInit(Seq.fill(nBits)(0.U(nBits.W)))
+    val treePath = VecInit(Seq.fill(wayIdxBits)(0.U(wayIdxBits.W)))
 
-    for (i <- 0 until nBits) {
-      val accessBit = way(nBits - 1 - i)
+    for (i <- 0 until wayIdxBits) {
+      val accessBit = way(wayIdxBits - 1 - i)
       plruBits(treePath(i)) := ~accessBit
 
-      if (i != nBits - 1) {
+      if (i != wayIdxBits - 1) {
         val pathOffset = (treePath(i) << 1).asUInt
 
         when(accessBit === true.B) {
@@ -76,5 +67,9 @@ class TreePlru(ways: Int) extends Module {
     updateLru(io.update.bits)
   }
 
+  val lruOrderedSet = VecInit(Seq.fill(ways)(0.U(wayIdxBits.W)))
+  lruOrderedSet(0) := replaceWay // The first element is the LRU way
+
   io.replaceWay := replaceWay
+  io.replacementSet := lruOrderedSet // TODO: Implement this if needed
 }

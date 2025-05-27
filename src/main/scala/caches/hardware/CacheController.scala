@@ -29,6 +29,7 @@ class CacheController(ways: Int, sets: Int, policyGen: () => ReplacementPolicyTy
   val lowerRw = WireDefault(false.B)
   val lowerReq = WireDefault(false.B)
   val policyUpdate = WireDefault(false.B)
+  val evict = WireDefault(false.B)
 
   val opReg = RegInit(WireDefault(0.U(1.W)))
   val repPolicy = Module(policyGen())
@@ -53,7 +54,10 @@ class CacheController(ways: Int, sets: Int, policyGen: () => ReplacementPolicyTy
         higherAck := true.B
         stateReg := sIdle
       }.otherwise {
-        // We need to return a list of possible eviction candidates and then take the first one to evict
+        // TODO: Need to check if there is a way to evict (io.isValid)
+        //  if not we reject the request and return to the idle state, otherwise we would prevent critical cores
+        //  from getting their data
+        // TODO: Extend the replacement policies to accept ID
         when(io.mem.dirty(repPolicy.io.replaceWay)) {
           stateReg := sWriteBack
         }.otherwise {
@@ -67,6 +71,11 @@ class CacheController(ways: Int, sets: Int, policyGen: () => ReplacementPolicyTy
       writeBack := true.B
       stateReg := sWriteWait
     }
+    is(sWriteWait) {
+      when(io.lower.ack) {
+        stateReg := sMemFetch
+      }
+    }
     is(sMemFetch) {
       lowerRw := false.B
       lowerReq := true.B
@@ -75,19 +84,17 @@ class CacheController(ways: Int, sets: Int, policyGen: () => ReplacementPolicyTy
     is(sFetchWait) {
       when(io.lower.ack) {
         replaceLine := true.B
+        evict := true.B
         stateReg := sCompareTag
-      }
-    }
-    is(sWriteWait) {
-      when(io.lower.ack) {
-        stateReg := sMemFetch
       }
     }
   }
 
-  repPolicy.io.index := io.mem.set
   repPolicy.io.update.valid := policyUpdate
   repPolicy.io.update.bits := io.mem.hitWay
+  repPolicy.io.setIdx := io.mem.set
+  repPolicy.io.reqID := 0.U // TODO: Need to give the requesting core ID
+  repPolicy.io.evict := evict
 
   io.mem.latchReq := latchReq
   io.mem.validReq := stateReg =/= sIdle
