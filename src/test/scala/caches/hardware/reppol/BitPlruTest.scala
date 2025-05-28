@@ -5,7 +5,7 @@ import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
 class BitPlruTest extends AnyFlatSpec with ChiselScalatestTester {
-  def assertPlruSet(dut: BitPlru, expectedSet: Array[Int], printActual: Boolean = false): Unit = {
+  def assertPlruSet(dut: BitPlruReplacementAlgorithm, expectedSet: Array[Int], printActual: Boolean = false): Unit = {
     if (printActual) println("")
 
     val idxs = dut.io.replacementSet
@@ -21,7 +21,7 @@ class BitPlruTest extends AnyFlatSpec with ChiselScalatestTester {
   }
 
   "BitPlru" should "keep track of LRU way" in {
-    test(new BitPlru(4)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+    test(new BitPlruReplacementAlgorithm(4)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default assignments
       dut.io.update.valid.poke(false.B)
       dut.io.update.bits.poke(0.U)
@@ -77,7 +77,7 @@ class BitPlruTest extends AnyFlatSpec with ChiselScalatestTester {
   }
 
   "BitPlru" should "keep track LRU way for two ways only" in {
-    test(new BitPlru(2)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+    test(new BitPlruReplacementAlgorithm(2)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default assignments
       dut.io.update.valid.poke(false.B)
       dut.io.update.bits.poke(0.U)

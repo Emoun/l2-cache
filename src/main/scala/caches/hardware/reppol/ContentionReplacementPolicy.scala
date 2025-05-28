@@ -12,12 +12,11 @@ import chisel3.util._
  * @param nCores number of cores sharing the cache
  * @param basePolicy the base replacement policy module generating function
  */
-class ContentionReplacementPolicy(ways: Int, sets: Int, nCores: Int, missLatency: Int, basePolicy: () => ReplacementAlgorithm) extends SharedCacheReplacementPolicyType(ways, sets) {
+class ContentionReplacementPolicy(ways: Int, sets: Int, nCores: Int, missLatency: Int, basePolicy: () => ReplacementAlgorithm) extends SharedCacheReplacementPolicyType(ways, sets, nCores) {
   // Base policy for each set
   val basePolicies = Array.fill(sets)(Module(basePolicy()))
 
   // Registers for keeping the state of each active core
-//  val coreIds = RegInit(VecInit(Seq.iterate(0.U(CORE_REQUEST_ID_WIDTH.W), nCores)(id => id + 1.U)))
   val contentionLimits = RegInit(VecInit(Seq.fill(nCores)(0.U(CONTENTION_LIMIT_WIDTH.W))))
   val contentionCounts = RegInit(VecInit(Seq.fill(nCores)(0.U(CONTENTION_LIMIT_WIDTH.W))))
   val criticalCores = RegInit(VecInit(Seq.fill(nCores)(false.B)))
@@ -45,20 +44,6 @@ class ContentionReplacementPolicy(ways: Int, sets: Int, nCores: Int, missLatency
   private def isCritical(coreIdx: (UInt, Bool)): Bool = {
     Mux(coreIdx._2, criticalCores(coreIdx._1), false.B)
   }
-
-//  private def findReqCoreIdx(coreId: UInt): (UInt, Bool) = {
-//    val hits = VecInit(Seq.fill(nCores)(false.B))
-//
-//    for (i <- 0 until nCores) {
-//      hits(i) := coreIds(i) === coreId
-//    }
-//
-//    // The assumption here is that no two cores should ever have the same ID
-//    val coreIdx = PriorityEncoder(hits)
-//
-//    // Return the index and the valid bit indicating if the core ID exists
-//    (coreIdx, hits.reduce((a, b) => a || b))
-//  }
 
   def isUnlimitedWay(set: Int, way: UInt): Bool = {
     val coreIdx = getAssignedCoreIdx(set, way)
@@ -92,9 +77,7 @@ class ContentionReplacementPolicy(ways: Int, sets: Int, nCores: Int, missLatency
     val unlimitedWays = filterVec(set, isUnlimitedWay, baseEvictionCands, None)
     val unlimitedWaysCount = PopCount(unlimitedWays)
 
-    // Probably should trow an exception if the requesting core does not exist in the strategy
-    // val (reqCoreIdx, reqCoreExists) = findReqCoreIdx(io.reqID)
-    val reqCoreIdx = io.reqID
+    val reqCoreIdx = io.control.reqId
     val reqCoreCritical = isCritical((reqCoreIdx, true.B))
 
     when(unlimitedWaysCount > 0.U) {
@@ -107,7 +90,7 @@ class ContentionReplacementPolicy(ways: Int, sets: Int, nCores: Int, missLatency
 
       val evictWayCoreIdx = getAssignedCoreIdx(set, evictWay)
 
-      when(io.evict && (io.setIdx === set.U)) {
+      when(io.control.evict && (io.control.setIdx === set.U)) {
         // If we encounter a contention event we need to update the contention count
         when(isCritical(evictWayCoreIdx) && (!reqCoreCritical || nonCriticalWaysCount > 0.U)) { // !io.unsetCritical.valid
           when(evictWayCoreIdx._2) { // Only update contention count if the way we are evicting is assigned to a core
@@ -122,7 +105,7 @@ class ContentionReplacementPolicy(ways: Int, sets: Int, nCores: Int, missLatency
       evictWay := baseEvictionCands(0)
       isValidReplaceWay := true.B
 
-      when(io.evict && (io.setIdx === set.U)) {
+      when(io.control.evict && (io.control.setIdx === set.U)) {
         lineAssignments(set)(evictWay) := reqCoreIdx
         validAssignment(set)(evictWay) := true.B
       }
@@ -134,16 +117,16 @@ class ContentionReplacementPolicy(ways: Int, sets: Int, nCores: Int, missLatency
   }
 
   def updateBase(set: Int): Unit = {
-    basePolicies(set).io.update.valid := io.update.valid && (io.setIdx === set.U)
-    basePolicies(set).io.update.bits := io.update.bits
+    basePolicies(set).io.update.valid := io.control.update.valid && (io.control.setIdx === set.U)
+    basePolicies(set).io.update.bits := io.control.update.bits
   }
 
   // Set and unset cores as critical
   for (core <- 0 until nCores) {
-    when (io.setCritical.valid && (io.setCritical.bits === core.U)) {
+    when (io.scheduler.setCritical.valid && (io.scheduler.setCritical.bits === core.U)) {
       criticalCores(core) := true.B
-      contentionLimits(core) := io.contentionLimit
-    } .elsewhen (io.unsetCritical.valid && (io.unsetCritical.bits === core.U)) {
+      contentionLimits(core) := io.scheduler.contentionLimit
+    } .elsewhen (io.scheduler.unsetCritical.valid && (io.scheduler.unsetCritical.bits === core.U)) {
       criticalCores(core) := false.B
       contentionCounts(core) := 0.U
     }
@@ -158,6 +141,6 @@ class ContentionReplacementPolicy(ways: Int, sets: Int, nCores: Int, missLatency
     updateBase(set)
   }
 
-  io.replaceWay := setReplaceWays(io.setIdx)
-  io.isValid := setValidWays(io.setIdx)
+  io.control.replaceWay := setReplaceWays(io.control.setIdx)
+  io.control.isValid := setValidWays(io.control.setIdx)
 }

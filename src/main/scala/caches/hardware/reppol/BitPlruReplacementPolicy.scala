@@ -7,16 +7,16 @@ import chisel3._
  * @param ways number of ways in a single cache set
  * @param sets number of sets in the whole cache
  */
-class BitPlruReplacementPolicy(ways: Int, sets: Int) extends ReplacementPolicyType(ways, sets) {
-  val setPlrus = Array.fill(sets)(Module(new BitPlru(ways)))
+class BitPlruReplacementPolicy(ways: Int, sets: Int, nCores: Int) extends SharedCacheReplacementPolicyType(ways, sets, nCores) {
+  val setPlrus = Array.fill(sets)(Module(new BitPlruReplacementAlgorithm(ways)))
 
   for (i <- 0 until sets) {
-    setPlrus(i).io.update.valid := io.update.valid && (io.setIdx === i.asUInt)
-    setPlrus(i).io.update.bits := io.update.bits
+    setPlrus(i).io.update.valid := io.control.update.valid && (io.control.setIdx === i.asUInt)
+    setPlrus(i).io.update.bits := io.control.update.bits
 
     setReplaceWays(i) := setPlrus(i).io.replaceWay
   }
 
-  io.replaceWay := setReplaceWays(io.setIdx)
-  io.isValid := true.B
+  io.control.replaceWay := setReplaceWays(io.control.setIdx)
+  io.control.isValid := true.B
 }

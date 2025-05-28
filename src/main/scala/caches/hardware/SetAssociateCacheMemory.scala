@@ -10,7 +10,7 @@ import chisel3.util._
  * @param addrWidth width of the address line in bits
  * @param dataWidth width of the data bus in bits
  */
-class memIO(addrWidth: Int, dataWidth: Int) extends Bundle {
+class MemIO(addrWidth: Int, dataWidth: Int) extends Bundle {
   val addr = Input(UInt(addrWidth.W))
   val wData = Input(UInt(dataWidth.W))
   val wMask = Input(UInt((dataWidth / 8).W)) // Byte mask if needed
@@ -23,7 +23,7 @@ class memIO(addrWidth: Int, dataWidth: Int) extends Bundle {
  * @param ways number of ways in a single set
  * @param sets number of sets in a cache
  */
-class controlMemIO(ways: Int, sets: Int) extends Bundle {
+class ControllerMemIO(ways: Int, sets: Int) extends Bundle {
   val latchReq = Input(Bool())
   val validReq = Input(Bool())
   val updateLine = Input(Bool())
@@ -54,9 +54,9 @@ class SetAssociateCacheMemory(size: Int, ways: Int, sets: Int, bytesPerBlock: In
   private val tagWidth = ADDRESS_WIDTH - indexWidth - blockOffsetWidth - byteOffsetWidth
 
   val io = IO(new Bundle {
-    val controller = new controlMemIO(ways, sets)
-    val higher = new memIO(ADDRESS_WIDTH, bytesPerWord * 8)
-    val lower = Flipped(new memIO(ADDRESS_WIDTH, bytesPerBlock * 8))
+    val controller = new ControllerMemIO(ways, sets)
+    val higher = new MemIO(ADDRESS_WIDTH, bytesPerWord * 8)
+    val lower = Flipped(new MemIO(ADDRESS_WIDTH, bytesPerBlock * 8))
   })
 
   // Address and data holding registers in case of cache misses

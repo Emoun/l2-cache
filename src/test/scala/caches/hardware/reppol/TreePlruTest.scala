@@ -6,7 +6,7 @@ import org.scalatest.flatspec.AnyFlatSpec
 
 class TreePlruTest extends AnyFlatSpec with ChiselScalatestTester {
   "TreePlru" should "keep track of LRU way" in {
-    test(new TreePlru(4)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+    test(new TreePlruReplacementAlgorithm(4)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default assignments
       dut.io.update.valid.poke(false.B)
       dut.io.update.bits.poke(0.U)
