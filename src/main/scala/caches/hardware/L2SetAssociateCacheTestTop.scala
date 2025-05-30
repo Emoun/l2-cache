@@ -21,7 +21,7 @@ class debugCache(size: Int, ways: Int, bytesPerBlock: Int, bytesPerWord: Int) ex
   val controllerState = Output(UInt(3.W))
 }
 
-class L2SetAssociateCacheTestTop(size: Int, ways: Int, bytesPerBlock: Int, bytesPerWord: Int, nCores: Int, repPolicy: () => SharedCacheReplacementPolicyType) extends Module {
+class L2SetAssociateCacheTestTop(size: Int, ways: Int, bytesPerBlock: Int, bytesPerWord: Int, nCores: Int, addressWidth: Int, repPolicy: () => SharedCacheReplacementPolicyType) extends Module {
   val io = IO(new Bundle {
     val dbg = new debugCache(size, ways, bytesPerBlock, bytesPerWord)
     val scheduler = new SchedulerIO(nCores)
@@ -35,6 +35,7 @@ class L2SetAssociateCacheTestTop(size: Int, ways: Int, bytesPerBlock: Int, bytes
       bytesPerBlock = bytesPerBlock,
       bytesPerWord = bytesPerWord,
       nCores = nCores,
+      addressWidth = addressWidth,
       repPolicy = repPolicy
     )
   )

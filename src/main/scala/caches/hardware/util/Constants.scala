@@ -15,5 +15,5 @@ object Constants {
 
   val L2_MISS_LATENCY = 15
 
-  val CONTENTION_LIMIT_WIDTH = 32
+  val CONTENTION_LIMIT_WIDTH = 4
 }

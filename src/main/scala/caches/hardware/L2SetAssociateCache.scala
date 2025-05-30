@@ -1,9 +1,9 @@
 package caches.hardware
 
+import caches.hardware.reppol._
+import caches.hardware.util.Constants._
 import chisel3._
 import chisel3.util._
-import caches.hardware.reppol.{BitPlruReplacementAlgorithm, BitPlruReplacementPolicy, ContentionReplacementPolicy, SchedulerIO, SharedCacheReplacementPolicyType, TreePlruReplacementPolicy}
-import caches.hardware.util.Constants.{ADDRESS_WIDTH, L2_MISS_LATENCY}
 
 class SharedCacheIO(addrWidth: Int, dataWidth: Int, nCores: Int) extends Bundle {
   val req = Input(Bool())
@@ -17,18 +17,18 @@ class SharedCacheIO(addrWidth: Int, dataWidth: Int, nCores: Int) extends Bundle 
   val responseStatus = Output(UInt(1.W)) // 0: OK, 1: REJECT
 }
 
-class L2SetAssociateCache(size: Int, ways: Int, bytesPerBlock: Int, bytesPerWord: Int, nCores: Int, repPolicy: () => SharedCacheReplacementPolicyType) extends Module {
+class L2SetAssociateCache(size: Int, ways: Int, bytesPerBlock: Int, bytesPerWord: Int, nCores: Int, addressWidth: Int, repPolicy: () => SharedCacheReplacementPolicyType) extends Module {
   private val nSets = (size / bytesPerBlock) / ways
 
   val io = IO(new Bundle {
     val scheduler = new SchedulerIO(nCores)
-    val higher = new SharedCacheIO(ADDRESS_WIDTH, bytesPerWord * 8, nCores)
-    val lower = Flipped(new SharedCacheIO(ADDRESS_WIDTH, bytesPerBlock * 8, nCores))
+    val higher = new SharedCacheIO(addressWidth, bytesPerWord * 8, nCores)
+    val lower = Flipped(new SharedCacheIO(addressWidth, bytesPerBlock * 8, 0)) // TODO: Not sure if this is gonna work
   })
 
   val repPol = Module(repPolicy())
   val cacheController = Module(new CacheController(ways, nSets, nCores))
-  val cacheMem = Module(new SetAssociateCacheMemory(size, ways, nSets, bytesPerBlock, bytesPerWord))
+  val cacheMem = Module(new SetAssociateCacheMemory(ways, nSets, bytesPerBlock, bytesPerWord, addressWidth))
 
   // Connection between the controller and the cache memory
   cacheController.io.mem <> cacheMem.io.controller
@@ -70,10 +70,13 @@ object L2SetAssociateCache extends App {
   val bytesPerBlock = 64
   val bytesPerWord = 16
   val nCores = 8
+  val addressWidth = ADDRESS_WIDTH
   val nSets = (size / bytesPerBlock) / ways
   val basePolicy = () => new BitPlruReplacementAlgorithm(ways)
+  val repPolicy = () => new BitPlruReplacementPolicy(ways, nSets, nCores)
+  //  val repPolicy = () => new ContentionReplacementPolicy(ways, nSets, nCores, L2_MISS_LATENCY, basePolicy)
 
-  println(s"Generating hardware for LRU Cache...")
+  println(s"Generating L2 Cache hardware...")
   (new chisel3.stage.ChiselStage).emitVerilog(
     new L2SetAssociateCache(
       size = size,
@@ -81,6 +84,7 @@ object L2SetAssociateCache extends App {
       bytesPerBlock = bytesPerBlock,
       bytesPerWord = bytesPerWord,
       nCores = nCores,
-      repPolicy = () => new ContentionReplacementPolicy(ways, nSets, nCores, L2_MISS_LATENCY, basePolicy)
-    ), Array("--target-dir", "generated", "--no-dedup"))
+      addressWidth = addressWidth,
+      repPolicy = repPolicy
+    ), Array("--target-dir", "generated"))
 }

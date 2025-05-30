@@ -1,6 +1,5 @@
 package caches.hardware
 
-import caches.hardware.util.Constants.ADDRESS_WIDTH
 import chisel3._
 import chisel3.util._
 
@@ -40,27 +39,30 @@ class ControllerMemIO(ways: Int, sets: Int) extends Bundle {
  * Module that holds the cache data. Store cache lines and tags in RAM modules, and stores valid and dirty bits in
  * registers.
  *
- * @param size cache size in bytes, must be a power of 2
- * @param ways number of ways for the set associate cache, must be power of 2
+ * @param nWays number of ways for the set associate cache, must be power of 2
  */
-class SetAssociateCacheMemory(size: Int, ways: Int, sets: Int, bytesPerBlock: Int, bytesPerWord: Int) extends Module {
-  require(isPow2(size), "Cache size must be a power of 2.")
-  require(isPow2(ways), "Number of ways must be a power of 2.")
+class SetAssociateCacheMemory(nWays: Int, nSets: Int, bytesPerBlock: Int, bytesPerWord: Int, addressWidth: Int) extends Module {
+  require(isPow2(nWays), "Number of ways must be a power of 2.")
 
   private val wordsPerBlock = bytesPerBlock / bytesPerWord
   private val byteOffsetWidth = log2Up(bytesPerWord)
   private val blockOffsetWidth = log2Up(wordsPerBlock)
-  private val indexWidth = log2Up(sets)
-  private val tagWidth = ADDRESS_WIDTH - indexWidth - blockOffsetWidth - byteOffsetWidth
+  private val indexWidth = log2Up(nSets)
+  private val tagWidth = addressWidth - indexWidth - blockOffsetWidth - byteOffsetWidth
+
+  private val tagMemSize = (nSets * tagWidth * nWays) / 8
+  private val cacheLineMemSize = nSets * wordsPerBlock * bytesPerWord * nWays
+//  println(s"Tag memory size: $tagMemSize bytes")
+//  println(s"Cache line memory size: $cacheLineMemSize bytes")
 
   val io = IO(new Bundle {
-    val controller = new ControllerMemIO(ways, sets)
-    val higher = new MemIO(ADDRESS_WIDTH, bytesPerWord * 8)
-    val lower = Flipped(new MemIO(ADDRESS_WIDTH, bytesPerBlock * 8))
+    val controller = new ControllerMemIO(nWays, nSets)
+    val higher = new MemIO(addressWidth, bytesPerWord * 8)
+    val lower = Flipped(new MemIO(addressWidth, bytesPerBlock * 8))
   })
 
   // Address and data holding registers in case of cache misses
-  val addrReg = RegInit(WireDefault(0.U(ADDRESS_WIDTH.W)))
+  val addrReg = RegInit(WireDefault(0.U(addressWidth.W))) // TODO: We can assume that master has to keep data valid until controller acknowledges the request. Then for interfaces that doe not require the master to keep the data valid, we can create a wrapper instead.
   val writeDataReg = RegInit(WireDefault(0.U((bytesPerWord * 8).W)))
 
   when(io.controller.latchReq) {
@@ -75,14 +77,14 @@ class SetAssociateCacheMemory(size: Int, ways: Int, sets: Int, bytesPerBlock: In
   val byteOffset = addr(byteOffsetWidth - 1, 0)
   val blockOffset = addr((blockOffsetWidth - 1) + byteOffsetWidth, byteOffsetWidth)
   val index = addr((indexWidth - 1) + blockOffsetWidth + byteOffsetWidth, blockOffsetWidth + byteOffsetWidth)
-  val tag = addr(ADDRESS_WIDTH - 1, indexWidth + blockOffsetWidth + byteOffsetWidth)
+  val tag = addr(addressWidth - 1, indexWidth + blockOffsetWidth + byteOffsetWidth)
 
   // Create state holding elements for cache memory
-  val waysValidBits = Array.fill(ways)(RegInit(VecInit(Seq.fill(sets)(false.B))))
-  val waysDirtyBits = Array.fill(ways)(RegInit(VecInit(Seq.fill(sets)(false.B))))
-  val waysTagMem = Array.fill(ways)(Module(new MemBlock(sets, tagWidth)))
-  val waysCacheLineMem = Array.fill(ways)(
-    Array.fill(wordsPerBlock)(Module(new MemBlock(sets, bytesPerWord * 8)))
+  val waysValidBits = Array.fill(nWays)(RegInit(VecInit(Seq.fill(nSets)(false.B))))
+  val waysDirtyBits = Array.fill(nWays)(RegInit(VecInit(Seq.fill(nSets)(false.B))))
+  val waysTagMem = Array.fill(nWays)(Module(new MemBlock(nSets, tagWidth)))
+  val waysCacheLineMem = Array.fill(nWays)(
+    Array.fill(wordsPerBlock)(Module(new MemBlock(nSets, bytesPerWord * 8)))
   )
 
   // Registers used to delay address fields due to SRAM behaviour
@@ -91,15 +93,15 @@ class SetAssociateCacheMemory(size: Int, ways: Int, sets: Int, bytesPerBlock: In
   val tagDelayReg = RegNext(tag)
 
   // Vectors for storing signals coming out of each way
-  val hits = VecInit(Seq.fill(ways)(false.B))
-  val dirty = VecInit(Seq.fill(ways)(false.B))
-  val hitWay = WireDefault(0.U(log2Up(ways).W))
-  val waysTags = VecInit(Seq.fill(ways)(0.U(tagWidth.W)))
-  val waysData = VecInit(Seq.fill(ways)(
+  val hits = VecInit(Seq.fill(nWays)(false.B))
+  val dirty = VecInit(Seq.fill(nWays)(false.B))
+  val hitWay = WireDefault(0.U(log2Up(nWays).W))
+  val waysTags = VecInit(Seq.fill(nWays)(0.U(tagWidth.W)))
+  val waysData = VecInit(Seq.fill(nWays)(
     VecInit(Seq.fill(wordsPerBlock)(0.U((bytesPerWord * 8).W)))
   ))
 
-  for (wayIdx <- 0 until ways) {
+  for (wayIdx <- 0 until nWays) {
 
     for (wordIdx <- 0 until wordsPerBlock) {
       waysCacheLineMem(wayIdx)(wordIdx).io.readAddr := index

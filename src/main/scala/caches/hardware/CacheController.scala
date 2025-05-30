@@ -4,20 +4,20 @@ import caches.hardware.reppol.ReplacementPolicyIO
 import chisel3._
 import chisel3.util._
 
-class ControllerReqIO(reqIdWidth: Int) extends Bundle {
+class ControllerReqIO(nCores: Int) extends Bundle {
   val rw = Input(Bool())
-  val reqId = Input(UInt(reqIdWidth.W))
+  val reqId = Input(UInt(log2Up(nCores).W))
   val req = Input(Bool())
   val ack = Output(Bool())
   val status = Output(UInt(1.W)) // 0: OK, 1: REJECT
 }
 
-class CacheController(ways: Int, sets: Int, reqIdWidth: Int) extends Module {
+class CacheController(ways: Int, sets: Int, nCores: Int) extends Module {
   val io = IO(new Bundle {
     val mem = Flipped(new ControllerMemIO(ways, sets))
-    val repPol = Flipped(new ReplacementPolicyIO(ways, sets))
-    val higher = new ControllerReqIO(reqIdWidth)
-    val lower = Flipped(new ControllerReqIO(reqIdWidth))
+    val repPol = Flipped(new ReplacementPolicyIO(ways, sets, nCores))
+    val higher = new ControllerReqIO(nCores)
+    val lower = Flipped(new ControllerReqIO(nCores))
   })
 
   val sIdle :: sCompareTag :: sWriteBack :: sMemFetch :: sWriteWait :: sFetchWait :: Nil = Enum(6)
@@ -25,7 +25,7 @@ class CacheController(ways: Int, sets: Int, reqIdWidth: Int) extends Module {
 
   // Registers
   val opReg = RegInit(WireDefault(0.U(1.W)))
-  val reqIdReg = RegInit(WireDefault(0.U(reqIdWidth.W)))
+  val reqIdReg = RegInit(WireDefault(0.U(log2Up(nCores).W)))
 
   // Default signal assignments
   val latchReq = WireDefault(false.B)

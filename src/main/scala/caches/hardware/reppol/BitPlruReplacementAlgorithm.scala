@@ -42,6 +42,7 @@ class BitPlruReplacementAlgorithm(ways: Int) extends ReplacementAlgorithm(ways) 
     }
   }
 
+  // TODO: Test this with 8 ways
   def getLruOrderedSet: Vec[UInt] = {
     val lruOrderedSet = VecInit(Seq.fill(ways)(0.U(wayIdxBits.W)))
     val zeros = VecInit(Seq.fill(ways)(0.U(wayIdxBits.W)))
@@ -79,7 +80,7 @@ class BitPlruReplacementAlgorithm(ways: Int) extends ReplacementAlgorithm(ways) 
   }
 
   val lruOrderedSet = getLruOrderedSet
-  val replaceWay = getLruOrderedSet(0.U) // The first element of the LRU set
+  val replaceWay = getLru
 
   io.replaceWay := replaceWay
   io.replacementSet := lruOrderedSet

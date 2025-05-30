@@ -1,5 +1,6 @@
 package caches.hardware
 
+import caches.hardware.util.Constants.ADDRESS_WIDTH
 import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
@@ -10,9 +11,10 @@ class SetAssociateCacheMemoryTest extends AnyFlatSpec with ChiselScalatestTester
     val ways = 4
     val bytesPerBlock = 8
     val bytesPerWord = 4
+    val addressWidth = ADDRESS_WIDTH
     val nSets = (size / bytesPerBlock) / ways
 
-    test(new SetAssociateCacheMemory(size, ways, nSets, bytesPerBlock, bytesPerWord)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+    test(new SetAssociateCacheMemory(ways, nSets, bytesPerBlock, bytesPerWord, addressWidth)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default assignments
       dut.io.higher.addr.poke(0.U)
       dut.io.higher.wData.poke(0.U)

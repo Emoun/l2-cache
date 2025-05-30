@@ -1,6 +1,6 @@
 package caches.hardware.reppol
 
-import caches.hardware.util.Constants.{CORE_REQUEST_ID_WIDTH, CONTENTION_LIMIT_WIDTH}
+import caches.hardware.util.Constants.CONTENTION_LIMIT_WIDTH
 import chisel3._
 import chisel3.util._
 

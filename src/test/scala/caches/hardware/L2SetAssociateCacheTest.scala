@@ -1,6 +1,7 @@
 package caches.hardware
 
-import caches.hardware.reppol.{BitPlruReplacementAlgorithm, ContentionReplacementPolicy, TreePlruReplacementPolicy}
+import caches.hardware.reppol._
+import caches.hardware.util.Constants._
 import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
@@ -228,9 +229,10 @@ class L2SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     val bytesPerWord = 4
     val nCores = 2
     val nSets = (size / bytesPerBlock) / ways
+    val addressWidth = ADDRESS_WIDTH
     val repPolicyGen = () => new TreePlruReplacementPolicy(ways, nSets, nCores)
 
-    test(new L2SetAssociateCacheTestTop(size, ways, bytesPerBlock, bytesPerWord, nCores, repPolicyGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+    test(new L2SetAssociateCacheTestTop(size, ways, bytesPerBlock, bytesPerWord, nCores, addressWidth, repPolicyGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default assignments
       dut.io.higher.req.poke(false.B)
       dut.io.higher.reqId.poke(0.U)
@@ -284,10 +286,11 @@ class L2SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     val bytesPerBlock = 8
     val bytesPerWord = 4
     val nCores = 2
+    val addressWidth = ADDRESS_WIDTH
     val nSets = (size / bytesPerBlock) / ways
     val repPolicyGen = () => new TreePlruReplacementPolicy(ways, nSets, nCores)
 
-    test(new L2SetAssociateCacheTestTop(size, ways, bytesPerBlock, bytesPerWord, nCores, repPolicyGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+    test(new L2SetAssociateCacheTestTop(size, ways, bytesPerBlock, bytesPerWord, nCores, addressWidth, repPolicyGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default assignments
       dut.io.higher.req.poke(false.B)
       dut.io.higher.reqId.poke(0.U)
@@ -334,10 +337,11 @@ class L2SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     val bytesPerBlock = 8
     val bytesPerWord = 4
     val nCores = 2
+    val addressWidth = ADDRESS_WIDTH
     val nSets = (size / bytesPerBlock) / ways
     val repPolicyGen = () => new TreePlruReplacementPolicy(ways, nSets, nCores)
 
-    test(new L2SetAssociateCacheTestTop(size, ways, bytesPerBlock, bytesPerWord, nCores, repPolicyGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+    test(new L2SetAssociateCacheTestTop(size, ways, bytesPerBlock, bytesPerWord, nCores, addressWidth, repPolicyGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default assignments
       dut.io.higher.req.poke(false.B)
       dut.io.higher.reqId.poke(0.U)
@@ -403,15 +407,16 @@ class L2SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
   }
 
   "L2LruCache" should "evict correct ways over multiple sets" in {
-    val size = 128
-    val ways = 4
-    val bytesPerBlock = 8
+    val size = 256
+    val ways = 8
+    val bytesPerBlock = 16
     val bytesPerWord = 4
-    val nCores = 2
+    val nCores = 8
+    val addressWidth = ADDRESS_WIDTH
     val nSets = (size / bytesPerBlock) / ways
-    val repPolicyGen = () => new TreePlruReplacementPolicy(ways, nSets, nCores)
+    val repPolicyGen = () => new BitPlruReplacementPolicy(ways, nSets, nCores)
 
-    test(new L2SetAssociateCacheTestTop(size, ways, bytesPerBlock, bytesPerWord, nCores, repPolicyGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+    test(new L2SetAssociateCacheTestTop(size, ways, bytesPerBlock, bytesPerWord, nCores, addressWidth, repPolicyGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default assignments
       dut.io.higher.req.poke(false.B)
       dut.io.higher.reqId.poke(0.U)
@@ -425,9 +430,32 @@ class L2SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
 
       dut.clock.step(1)
 
-      // TODO: Write this test
+      // TODO: Finish this test
 
-      pending
+      // Perform a read, expect a compulsory miss
+      performRead(dut, reqId = 0, readAddress = "b001000000", expectedReadData = "hdeadbeef", lowerLevelMissData = Some("hcacebeefbeefcacebeefdeaddeadbeef"))
+
+      dut.clock.step(1)
+
+      // Perform a read, expect a compulsory miss
+      performRead(dut, reqId = 0, readAddress = "b010000100", expectedReadData = "he7230764", lowerLevelMissData = Some("h44b50af47bfb1f2ce72307642386db52"), expectedReplaceWay = 1)
+
+      dut.clock.step(1)
+
+      // Perform a read, expect a compulsory miss
+      performRead(dut, reqId = 0, readAddress = "b011001000", expectedReadData = "h55af25e1", lowerLevelMissData = Some("hb43cb56655af25e1f8a54af33462cdcd"), expectedReplaceWay = 2)
+
+      dut.clock.step(1)
+
+      // Perform a read, expect a compulsory miss
+      performRead(dut, reqId = 0, readAddress = "b100000000", expectedReadData = "h1c2644f1", lowerLevelMissData = Some("h6c181536c3f99c508f84c2aa1c2644f1"), expectedReplaceWay = 3)
+
+      dut.clock.step(1)
+
+      // Perform a read, expect a compulsory miss
+      performRead(dut, reqId = 0, readAddress = "b101000100", expectedReadData = "h6656c5c9", lowerLevelMissData = Some("hdb99f1e7494a6e4a6656c5c976091a99"), expectedReplaceWay = 4)
+
+      dut.clock.step(1)
     }
   }
 
@@ -437,10 +465,11 @@ class L2SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     val bytesPerBlock = 8
     val bytesPerWord = 4
     val nCores = 2
+    val addressWidth = ADDRESS_WIDTH
     val nSets = (size / bytesPerBlock) / ways
     val repPolicyGen = () => new TreePlruReplacementPolicy(ways, nSets, nCores)
 
-    test(new L2SetAssociateCacheTestTop(size, ways, bytesPerBlock, bytesPerWord, nCores, repPolicyGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+    test(new L2SetAssociateCacheTestTop(size, ways, bytesPerBlock, bytesPerWord, nCores, addressWidth, repPolicyGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default assignments
       dut.io.higher.req.poke(false.B)
       dut.io.higher.reqId.poke(0.U)
@@ -455,7 +484,7 @@ class L2SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.clock.step(1)
 
       // Perform a write, expect a miss, this cache block will be set as dirty
-      performWrite(dut, reqId = 0, writeAddress = "b10100000", writeData = "hd00df33d", lowerLevelMissData = Some("hbeefdeaddeadbeef"), expectedReplaceWay = 0)
+      performWrite(dut, reqId = 0, writeAddress = "b10100000", writeData = "hd00df33d", lowerLevelMissData = Some("hbeefdeaddeadbeef"))
 
       dut.clock.step(1)
 
@@ -513,6 +542,7 @@ class L2SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     val bytesPerBlock = 8
     val bytesPerWord = 4
     val nCores = 4
+    val addressWidth = ADDRESS_WIDTH
     val nSets = (size / bytesPerBlock) / ways
     val repPolicyGen = () => new ContentionReplacementPolicy(
       ways = ways,
@@ -522,7 +552,7 @@ class L2SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       basePolicy = () => new BitPlruReplacementAlgorithm(ways)
     )
 
-    test(new L2SetAssociateCacheTestTop(size, ways, bytesPerBlock, bytesPerWord, nCores, repPolicyGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+    test(new L2SetAssociateCacheTestTop(size, ways, bytesPerBlock, bytesPerWord, nCores, addressWidth, repPolicyGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default assignments
       dut.io.higher.req.poke(false.B)
       dut.io.higher.reqId.poke(0.U)
