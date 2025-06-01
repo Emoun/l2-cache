@@ -51,6 +51,9 @@ class ContentionReplacementPolicy(ways: Int, sets: Int, nCores: Int, missLatency
     !critical || (critical && getLimit(coreIdx) > getContention(coreIdx) + getCost)
   }
 
+  // TODO: Add registers to hold the replacement set, as updating the base policy and updating contention
+  // counters never happens in the same cycle
+
   def filterVec(set: Int, filterFunc: (Int, UInt) => Bool, array: Vec[UInt], previousOut: Option[Vec[Bool]]): Vec[Bool] = {
     val filterVec = VecInit(Seq.fill(ways)(false.B))
     val previousFilterVec = VecInit(Seq.fill(ways)(true.B))

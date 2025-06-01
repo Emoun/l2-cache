@@ -15,5 +15,9 @@ class ReplacementAlgorithm(ways: Int) extends Module {
     val replaceWay = Output(UInt(log2Up(ways).W))
     val replacementSet = Output(Vec(ways, UInt(log2Up(ways).W))) // If a replacement policy needs an ordered set of ways, otherwise can be ignored
   })
-  val wayIdxBits = log2Up(ways)
+  var wayIdxBits = log2Up(ways)
+
+  if (wayIdxBits % 2 != 0) {
+    wayIdxBits += 1
+  }
 }

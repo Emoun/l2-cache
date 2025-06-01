@@ -52,8 +52,8 @@ class SetAssociateCacheMemory(nWays: Int, nSets: Int, bytesPerBlock: Int, bytesP
 
   private val tagMemSize = (nSets * tagWidth * nWays) / 8
   private val cacheLineMemSize = nSets * wordsPerBlock * bytesPerWord * nWays
-//  println(s"Tag memory size: $tagMemSize bytes")
-//  println(s"Cache line memory size: $cacheLineMemSize bytes")
+  println(s"Tag memory size: $tagMemSize bytes")
+  println(s"Cache line memory size: $cacheLineMemSize bytes")
 
   val io = IO(new Bundle {
     val controller = new ControllerMemIO(nWays, nSets)
@@ -137,13 +137,12 @@ class SetAssociateCacheMemory(nWays: Int, nSets: Int, bytesPerBlock: Int, bytesP
   }
 
   hitWay := PriorityEncoder(hits)
-  val selectedBlock = waysData(Mux(io.controller.writeBack, io.controller.replaceWay,  hitWay)) // Select between a hit block or an evict block
 
   // Form the address of the dirty block by concatenating dirty block's tag and index
   val writeBackAddr = (waysTags(io.controller.replaceWay) ## indexDelayReg ## 0.U((blockOffsetWidth + byteOffsetWidth).W)).asUInt
 
-  io.higher.rData := selectedBlock(blockOffsetDelayReg).asUInt // A word from the block to the higher level
-  io.lower.wData := selectedBlock.asUInt
+  io.higher.rData := waysData(hitWay)(blockOffsetDelayReg).asUInt // A word from the block to the higher level
+  io.lower.wData := waysData(io.controller.replaceWay).asUInt
   io.lower.addr := Mux(io.controller.writeBack, writeBackAddr, addr) // Select between the dirty or missing cache line address
   io.lower.wMask := 0.U // TODO: Not using any of the write masks for now
 

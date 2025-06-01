@@ -23,7 +23,7 @@ class L2SetAssociateCache(size: Int, ways: Int, bytesPerBlock: Int, bytesPerWord
   val io = IO(new Bundle {
     val scheduler = new SchedulerIO(nCores)
     val higher = new SharedCacheIO(addressWidth, bytesPerWord * 8, nCores)
-    val lower = Flipped(new SharedCacheIO(addressWidth, bytesPerBlock * 8, 0)) // TODO: Not sure if this is gonna work
+    val lower = Flipped(new SharedCacheIO(addressWidth, bytesPerBlock * 8, 0))
   })
 
   val repPol = Module(repPolicy())
@@ -74,7 +74,7 @@ object L2SetAssociateCache extends App {
   val nSets = (size / bytesPerBlock) / ways
   val basePolicy = () => new BitPlruReplacementAlgorithm(ways)
   val repPolicy = () => new BitPlruReplacementPolicy(ways, nSets, nCores)
-  //  val repPolicy = () => new ContentionReplacementPolicy(ways, nSets, nCores, L2_MISS_LATENCY, basePolicy)
+//  val repPolicy = () => new ContentionReplacementPolicy(ways, nSets, nCores, L2_MISS_LATENCY, basePolicy)
 
   println(s"Generating L2 Cache hardware...")
   (new chisel3.stage.ChiselStage).emitVerilog(

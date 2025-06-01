@@ -665,4 +665,34 @@ class L2SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.clock.step(1)
     }
   }
+
+  "L2ContentionTrackingCache" should "evict correct ways over 8 ways" in {
+    val size = 256
+    val ways = 8
+    val bytesPerBlock = 16
+    val bytesPerWord = 4
+    val nCores = 8
+    val addressWidth = ADDRESS_WIDTH
+    val nSets = (size / bytesPerBlock) / ways
+    val repPolicyGen = () => new BitPlruReplacementPolicy(ways, nSets, nCores)
+
+    test(new L2SetAssociateCacheTestTop(size, ways, bytesPerBlock, bytesPerWord, nCores, addressWidth, repPolicyGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+      // Default assignments
+      dut.io.higher.req.poke(false.B)
+      dut.io.higher.reqId.poke(0.U)
+      dut.io.higher.addr.poke(0.U)
+      dut.io.higher.rw.poke(false.B)
+      dut.io.higher.wData.poke(0.U)
+      dut.io.higher.wMask.poke(0.U)
+      dut.io.lower.rData.poke(0.U)
+      dut.io.lower.ack.poke(false.B)
+      dut.io.lower.responseStatus.poke(0.U)
+
+      dut.clock.step(1)
+
+      // TODO: Finish this test
+
+      pending
+    }
+  }
 }

@@ -5,72 +5,79 @@ import caches.hardware.util.Constants._
 import chisel3._
 
 
-class dummyCoreIO(addrWidth: Int, dataWidth: Int, nCores: Int) extends SharedCacheIO(addrWidth, dataWidth, nCores) {
-  override val rData = Output(UInt(1.W))
-  override val wMask = Input(UInt(1.W))
-}
-
-class L2CacheDe2115IO(addressWidth: Int, nCores: Int, bytesPerWord: Int, bytesPerBlock: Int) extends Bundle {
+class L2CacheDe2115IO(addressWidth: Int, coreBytesPerWord: Int, nCores: Int) extends Bundle {
   val scheduler = new SchedulerIO(nCores)
-  val higher = new dummyCoreIO(addressWidth, bytesPerWord * 8, nCores)
+  val higher = new SharedCacheIO(addressWidth, coreBytesPerWord * 8, nCores)
   val lower = new MemoryControllerIO(addressWidth, 16)
 }
 
 class L2SetAssociateCacheDe2115Top(
-                                    size: Int,
-                                    ways: Int,
-                                    bytesPerBlock: Int,
-                                    bytesPerWord: Int,
+                                    l2Size: Int,
+                                    l2Ways: Int,
+                                    l2BytesPerBlock: Int,
+                                    l2BytesPerWord: Int,
+                                    coreBytesPerWord: Int,
                                     nCores: Int,
                                     addressWidth: Int,
-                                    repPolicy: () => SharedCacheReplacementPolicyType
+                                    l2RepPolicy: () => SharedCacheReplacementPolicyType,
+                                    l1Cache: () => L2SetAssociateCache
                                   ) extends Module {
 
-  val io = IO(new L2CacheDe2115IO(addressWidth, nCores, bytesPerWord, bytesPerBlock))
+  val io = IO(new L2CacheDe2115IO(addressWidth, coreBytesPerWord, 1))
 
-  // TODO: Add a smaller cache to act as core
+  val l1 = Module(l1Cache())
 
   val mem = Module(new DummyMemoryController(
     addressWidth = addressWidth,
-    blockSize = bytesPerBlock,
-    burstSize = bytesPerWord
+    blockSize = l2BytesPerBlock,
+    burstSize = l2BytesPerWord
   ))
 
   val l2Cache = Module(new L2SetAssociateCache(
-    size = size,
-    ways = ways,
-    bytesPerBlock = bytesPerBlock,
-    bytesPerWord = bytesPerWord,
+    size = l2Size,
+    ways = l2Ways,
+    bytesPerBlock = l2BytesPerBlock,
+    bytesPerWord = l2BytesPerWord,
     nCores = nCores,
     addressWidth = addressWidth,
-    repPolicy = repPolicy
+    repPolicy = l2RepPolicy
   ))
 
+  l1.io.higher <> io.higher
+
+  // Connection between scheduler and the L2
   io.scheduler <> l2Cache.io.scheduler
 
-  // Connection to a core/arbiter
-  l2Cache.io.higher.req := io.higher.req
-  l2Cache.io.higher.reqId := io.higher.reqId
-  l2Cache.io.higher.addr := io.higher.addr
-  l2Cache.io.higher.rw := io.higher.rw
-  l2Cache.io.higher.wData := io.higher.wData
-  l2Cache.io.higher.wMask := io.higher.wMask.orR
+  // Empty assignments to l1 scheduler
+  l1.io.scheduler.setCritical.valid := false.B
+  l1.io.scheduler.setCritical.bits := 0.U
+  l1.io.scheduler.unsetCritical.valid := false.B
+  l1.io.scheduler.unsetCritical.bits := 0.U
+  l1.io.scheduler.contentionLimit := 0.U
 
-  io.higher.rData := l2Cache.io.higher.rData.orR
-  io.higher.ack := l2Cache.io.higher.ack
-  io.higher.responseStatus := l2Cache.io.higher.responseStatus
+  // Connection between the L1 cache and the L2 cache
+  // TODO: Registers here to isolate the critical path of the l2 cache
+  l2Cache.io.higher.req := RegNext(l1.io.lower.req)
+  l2Cache.io.higher.reqId := RegNext(l1.io.lower.reqId)
+  l2Cache.io.higher.addr := RegNext(l1.io.lower.addr)
+  l2Cache.io.higher.rw := RegNext(l1.io.lower.rw)
+  l2Cache.io.higher.wData := RegNext(l1.io.lower.wData)
+  l2Cache.io.higher.wMask := RegNext(l1.io.lower.wMask)
+  l1.io.lower.ack := RegNext(l2Cache.io.higher.ack)
+  l1.io.lower.responseStatus := RegNext(l2Cache.io.higher.responseStatus)
+  l1.io.lower.rData := RegNext(l2Cache.io.higher.rData)
 
   // Connection between the memory and the cache
-  l2Cache.io.lower.ack := mem.io.cache.ack
-  l2Cache.io.lower.rData := mem.io.cache.rData
-  l2Cache.io.lower.responseStatus := mem.io.cache.responseStatus
+  l2Cache.io.lower.ack := RegNext(mem.io.cache.ack)
+  l2Cache.io.lower.rData := RegNext(mem.io.cache.rData)
+  l2Cache.io.lower.responseStatus := RegNext(mem.io.cache.responseStatus)
 
-  mem.io.cache.req := l2Cache.io.lower.req
-  mem.io.cache.reqId := l2Cache.io.lower.reqId
-  mem.io.cache.addr := l2Cache.io.lower.addr
-  mem.io.cache.rw := l2Cache.io.lower.rw
-  mem.io.cache.wData := l2Cache.io.lower.wData
-  mem.io.cache.wMask := l2Cache.io.lower.wMask
+  mem.io.cache.req := RegNext(l2Cache.io.lower.req)
+  mem.io.cache.reqId := RegNext(l2Cache.io.lower.reqId)
+  mem.io.cache.addr := RegNext(l2Cache.io.lower.addr)
+  mem.io.cache.rw := RegNext(l2Cache.io.lower.rw)
+  mem.io.cache.wData := RegNext(l2Cache.io.lower.wData)
+  mem.io.cache.wMask := RegNext(l2Cache.io.lower.wMask)
 
   // Connection between mem controller and memory
   io.lower <> mem.io.mem
@@ -78,25 +85,38 @@ class L2SetAssociateCacheDe2115Top(
 
 
 object L2SetAssociateCacheDe2115Top extends App {
-  val size = 8192 // in bytes
-  val ways = 8
-  val bytesPerBlock = 64
-  val bytesPerWord = 16
-  val nCores = 8
-  val nSets = (size / bytesPerBlock) / ways
-  val basePolicy = () => new BitPlruReplacementAlgorithm(ways)
-  //  val repPolicy = () => new ContentionReplacementPolicy(ways, nSets, nCores, L2_MISS_LATENCY, basePolicy)
-  val repPolicy = () => new BitPlruReplacementPolicy(ways, nSets, nCores)
+  val l2Size = 8192 // in bytes
+  val l2Ways = 8
+  val l2BytesPerBlock = 64
+  val l2BytesPerWord = 16
+  val l2nCores = 8
+  val l2nSets = (l2Size / l2BytesPerBlock) / l2Ways
+  val l2BasePolicy = () => new BitPlruReplacementAlgorithm(l2Ways)
+  val l2RepPolicy = () => new ContentionReplacementPolicy(l2Ways, l2nSets, l2nCores, L2_MISS_LATENCY, l2BasePolicy)
+//  val l2RepPolicy = () => new BitPlruReplacementPolicy(l2Ways, l2nSets, l2nCores)
+
+  val l1BytesPerWord = 4
+  val l1Cache = () => new L2SetAssociateCache(
+    size = 1024,
+    ways = 4,
+    bytesPerBlock = 16,
+    bytesPerWord = l1BytesPerWord,
+    nCores = 1,
+    addressWidth = ADDRESS_WIDTH,
+    repPolicy = () => new BitPlruReplacementPolicy(4, 16, l2nCores)
+  )
 
   println(s"Generating hardware for L2 Cache and its surrounding environment (DE2-115 board)...")
   (new chisel3.stage.ChiselStage).emitVerilog(
     new L2SetAssociateCacheDe2115Top(
-      size = size,
-      ways = ways,
-      bytesPerBlock = bytesPerBlock,
-      bytesPerWord = bytesPerWord,
-      nCores = nCores,
+      l2Size = l2Size,
+      l2Ways = l2Ways,
+      l2BytesPerBlock = l2BytesPerBlock,
+      l2BytesPerWord = l2BytesPerWord,
+      coreBytesPerWord = l1BytesPerWord,
+      nCores = l2nCores,
       addressWidth = ADDRESS_WIDTH,
-      repPolicy = repPolicy
+      l2RepPolicy = l2RepPolicy,
+      l1Cache = l1Cache
     ), Array("--target-dir", "generated", "--no-dedup"))
 }

@@ -39,6 +39,8 @@ class CacheController(ways: Int, sets: Int, nCores: Int) extends Module {
   val policyUpdate = WireDefault(false.B)
   val evict = WireDefault(false.B)
 
+  // TODO: Add output registers for higher and delay the reading process by one clock cycle
+
   switch(stateReg) {
     is(sIdle) {
       when(io.higher.req) {
