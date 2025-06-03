@@ -92,7 +92,7 @@ object L2SetAssociateCacheDe2115Top extends App {
   val l2nCores = 8
   val l2nSets = (l2Size / l2BytesPerBlock) / l2Ways
   val l2BasePolicy = () => new BitPlruReplacementAlgorithm(l2Ways)
-  val l2RepPolicy = () => new ContentionReplacementPolicy(l2Ways, l2nSets, l2nCores, L2_MISS_LATENCY, l2BasePolicy)
+  val l2RepPolicy = () => new ContentionReplacementPolicy(l2Ways, l2nSets, l2nCores, l2BasePolicy)
 //  val l2RepPolicy = () => new BitPlruReplacementPolicy(l2Ways, l2nSets, l2nCores)
 
   val l1BytesPerWord = 4

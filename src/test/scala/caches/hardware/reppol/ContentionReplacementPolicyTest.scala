@@ -52,8 +52,8 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
   }
 
   "ContentionReplacementPolicy" should "reach contention limit for two cores and two ways" in {
-    val (ways, sets, nCores, missLatency) = (2, 1, 2, 3)
-    test(new ContentionReplacementPolicy(ways, sets, nCores, missLatency, () => new BitPlruReplacementAlgorithm(ways))).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+    val (ways, sets, nCores) = (2, 1, 2)
+    test(new ContentionReplacementPolicy(ways, sets, nCores, () => new BitPlruReplacementAlgorithm(ways))).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default assignments
       dut.io.control.update.valid.poke(false.B)
       dut.io.control.update.bits.poke(0.U)
@@ -73,7 +73,7 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
 
       // Set the first core as critical with a contention limit of 4, given that miss latency is 3 a single
       // contention event will for the core to reach the contention limit
-      setCoreAsCritical(dut, coreID = 1, contentionLimit = 4)
+      setCoreAsCritical(dut, coreID = 1, contentionLimit = 1)
 
       dut.clock.step(1)
 

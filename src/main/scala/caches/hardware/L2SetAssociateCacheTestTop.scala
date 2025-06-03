@@ -18,6 +18,7 @@ class debugCache(size: Int, ways: Int, bytesPerBlock: Int, bytesPerWord: Int) ex
   val replaceWay = Output(UInt(log2Up(ways).W))
   val setTags = Output(Vec(ways, UInt(tagWidth.W)))
   val setData = Output(Vec(ways, Vec(bytesPerBlock / bytesPerWord, UInt((bytesPerBlock * 8).W))))
+  val dirtyTags = Output(UInt(ways.W))
   val controllerState = Output(UInt(3.W))
 }
 
@@ -51,6 +52,7 @@ class L2SetAssociateCacheTestTop(size: Int, ways: Int, bytesPerBlock: Int, bytes
   io.dbg.replaceWay := DontCare
   io.dbg.setTags := DontCare
   io.dbg.setData := DontCare
+  io.dbg.dirtyTags := DontCare
   io.dbg.controllerState := DontCare
   BoringUtils.bore(l2cache.cacheMem.byteOffset, Seq(io.dbg.byteOffset))
   BoringUtils.bore(l2cache.cacheMem.blockOffset, Seq(io.dbg.blockOffset))
@@ -59,5 +61,6 @@ class L2SetAssociateCacheTestTop(size: Int, ways: Int, bytesPerBlock: Int, bytes
   BoringUtils.bore(l2cache.repPol.io.control.replaceWay, Seq(io.dbg.replaceWay))
   BoringUtils.bore(l2cache.cacheMem.waysTags, Seq(io.dbg.setTags))
   BoringUtils.bore(l2cache.cacheMem.waysData, Seq(io.dbg.setData))
+  BoringUtils.bore(l2cache.cacheMem.io.controller.dirty, Seq(io.dbg.dirtyTags))
   BoringUtils.bore(l2cache.cacheController.stateReg, Seq(io.dbg.controllerState))
 }

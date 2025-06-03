@@ -174,17 +174,21 @@ class L2SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       }
     }
 
-    if (printContents) printSetContents(dut)
+    if (printContents) printSetContents(dut, index, indexOffset)
   }
 
-  def printSetContents(dut: L2SetAssociateCacheTestTop): Unit = {
+  def printSetContents(dut: L2SetAssociateCacheTestTop, index: Int, indexOffset: Int): Unit = {
+    dut.io.higher.addr.poke((index << indexOffset).U)
+
+    dut.clock.step(1)
+
     val setTags = dut.io.dbg.setTags
     val setData = dut.io.dbg.setData
     val tags = setTags.map(_.peekInt()).toArray
     val data = setData.map(_.map(_.peekInt().toString(16)).toArray).toArray
 
     for (wayIdx <- tags.indices) {
-      println(s"Tag for way $wayIdx: ${tags(wayIdx)}")
+      println(s"Tag for way $wayIdx: ${tags(wayIdx)}, Dirty: ${dut.io.dbg.dirtyTags.peekInt().testBit(wayIdx)}")
     }
 
     println("~~~~~~~~~~~~~~~~~~~~~~")
@@ -430,30 +434,126 @@ class L2SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
 
       dut.clock.step(1)
 
-      // TODO: Finish this test
-
-      // Perform a read, expect a compulsory miss
-      performRead(dut, reqId = 0, readAddress = "b001000000", expectedReadData = "hdeadbeef", lowerLevelMissData = Some("hcacebeefbeefcacebeefdeaddeadbeef"))
+      // Perform a read, expect a compulsory miss (set = 0, tag = 1, word = 0)
+      performRead(dut, reqId = 0, readAddress = "b000100000", expectedReadData = "hdeadbeef", lowerLevelMissData = Some("hcacebeefbeefcacebeefdeaddeadbeef"))
 
       dut.clock.step(1)
 
-      // Perform a read, expect a compulsory miss
-      performRead(dut, reqId = 0, readAddress = "b010000100", expectedReadData = "he7230764", lowerLevelMissData = Some("h44b50af47bfb1f2ce72307642386db52"), expectedReplaceWay = 1)
+      // Perform a read, expect a compulsory miss (set = 0, tag = 2, word = 1)
+      performRead(dut, reqId = 0, readAddress = "b001000100", expectedReadData = "he7230764", lowerLevelMissData = Some("h44b50af47bfb1f2ce72307642386db52"), expectedReplaceWay = 1)
 
       dut.clock.step(1)
 
-      // Perform a read, expect a compulsory miss
-      performRead(dut, reqId = 0, readAddress = "b011001000", expectedReadData = "h55af25e1", lowerLevelMissData = Some("hb43cb56655af25e1f8a54af33462cdcd"), expectedReplaceWay = 2)
+      // Perform a read, expect a compulsory miss (set = 0, tag = 3, word = 2)
+      performRead(dut, reqId = 0, readAddress = "b001101000", expectedReadData = "h55af25e1", lowerLevelMissData = Some("hb43cb56655af25e1f8a54af33462cdcd"), expectedReplaceWay = 2)
 
       dut.clock.step(1)
 
-      // Perform a read, expect a compulsory miss
-      performRead(dut, reqId = 0, readAddress = "b100000000", expectedReadData = "h1c2644f1", lowerLevelMissData = Some("h6c181536c3f99c508f84c2aa1c2644f1"), expectedReplaceWay = 3)
+      // Perform a read, expect a compulsory miss (set = 0, tag = 4, word = 0)
+      performRead(dut, reqId = 0, readAddress = "b010000000", expectedReadData = "h1c2644f1", lowerLevelMissData = Some("h6c181536c3f99c508f84c2aa1c2644f1"), expectedReplaceWay = 3)
 
       dut.clock.step(1)
 
-      // Perform a read, expect a compulsory miss
-      performRead(dut, reqId = 0, readAddress = "b101000100", expectedReadData = "h6656c5c9", lowerLevelMissData = Some("hdb99f1e7494a6e4a6656c5c976091a99"), expectedReplaceWay = 4)
+      // Perform a read, expect a compulsory miss (set = 0, tag = 5, word = 1)
+      performRead(dut, reqId = 0, readAddress = "b010100100", expectedReadData = "h6656c5c9", lowerLevelMissData = Some("hdb99f1e7494a6e4a6656c5c976091a99"), expectedReplaceWay = 4)
+
+      dut.clock.step(1)
+
+      // Perform a read, expect a compulsory miss (set = 0, tag = 6, word = 3)
+      performRead(dut, reqId = 0, readAddress = "b011001100", expectedReadData = "he44b16e2", lowerLevelMissData = Some("he44b16e237bfd2fcfc521e5a312fc6a9"), expectedReplaceWay = 5)
+
+      dut.clock.step(1)
+
+      // Perform a write, expect a compulsory miss (set = 1, tag = 7, word = 1)
+      performRead(dut, reqId = 0, readAddress = "b011110100", expectedReadData = "hf3cee332", lowerLevelMissData = Some("hdbc760783fe13052f3cee3322610103c"))
+
+      dut.clock.step(1)
+
+      // Perform a read, expect a compulsory miss (set = 0, tag = 8, word = 2)
+      performRead(dut, reqId = 0, readAddress = "b100001000", expectedReadData = "h3686b48f", lowerLevelMissData = Some("h2fa414363686b48fec0386f6309da6b0"), expectedReplaceWay = 6)
+
+      dut.clock.step(1)
+
+      // Perform a read, expect a compulsory miss (set = 1, tag = 9, word = 3)
+      performRead(dut, reqId = 0, readAddress = "b100111100", expectedReadData = "h5f306fdc", lowerLevelMissData = Some("h5f306fdc13ad6d5e2a5e211250af2cda"), expectedReplaceWay = 1)
+
+      dut.clock.step(1)
+
+      // Perform a read, expect a compulsory miss (set = 0, tag = 10, word = 0)
+      performRead(dut, reqId = 0, readAddress = "b101000000", expectedReadData = "hf5e21cb1", lowerLevelMissData = Some("he40e618b705e59ce9620543bf5e21cb1"), expectedReplaceWay = 7)
+
+      dut.clock.step(1)
+
+      // Perform a read, expect a compulsory miss (set = 1, tag = 11, word = 1)
+      performRead(dut, reqId = 0, readAddress = "b101110100", expectedReadData = "h278a23a3", lowerLevelMissData = Some("hdc0876d7cd0a5c8d278a23a3477e3a4b"), expectedReplaceWay = 2)
+
+      dut.clock.step(1)
+
+      // Perform a read, expect a compulsory miss (set = 1, tag = 12, word = 2)
+      performRead(dut, reqId = 0, readAddress = "b110011000", expectedReadData = "hf5e88978", lowerLevelMissData = Some("h7b77dfa7f5e88978e7b8f725be417679"), expectedReplaceWay = 3)
+
+      dut.clock.step(1)
+
+      // Perform a read, expect a compulsory miss (set = 1, tag = 13, word = 3)
+      performRead(dut, reqId = 0, readAddress = "b110111100", expectedReadData = "h85d77b4d", lowerLevelMissData = Some("h85d77b4d652dec71ae90a63835970f54"), expectedReplaceWay = 4)
+
+      dut.clock.step(1)
+
+      // Perform a read, expect a compulsory miss (set = 1, tag = 14, word = 0)
+      performWrite(dut, reqId = 0, writeAddress = "b111010000", writeData = "hdeadbeef", lowerLevelMissData = Some("had74896eec1799466c5506e400bd6af6"), expectedReplaceWay = 5)
+
+      dut.clock.step(1)
+
+      // Perform a read, expect a compulsory miss (set = 0, tag = 15, word = 1)
+      performRead(dut, reqId = 0, readAddress = "b111100100", expectedReadData = "ha75496f2", lowerLevelMissData = Some("hcfff6c214adce522a75496f211222b9d"))
+
+      dut.clock.step(1)
+
+      // Perform a read, expect a compulsory miss (set = 1, tag = 16, word = 1)
+      performRead(dut, reqId = 0, readAddress = "b1000010100", expectedReadData = "hbe99bbda", lowerLevelMissData = Some("h02cd556a811928d5be99bbdad59687ee"), expectedReplaceWay = 6)
+
+      dut.clock.step(1)
+
+      // Perform a read, expect a compulsory miss (set = 1, tag = 17, word = 3)
+      performRead(dut, reqId = 0, readAddress = "b1000111100", expectedReadData = "h5a62c614", lowerLevelMissData = Some("h5a62c61422a49b3ecd2e78160945c927"), expectedReplaceWay = 7)
+
+      dut.clock.step(1)
+
+      // Perform a read (set = 1, tag = 7, word = 3)
+      performRead(dut, reqId = 0, readAddress = "b0011111100", expectedReadData = "hdbc76078")
+
+      dut.clock.step(1)
+
+      // Perform a read (set = 1, tag = 9, word = 1)
+      performRead(dut, reqId = 0, readAddress = "b0100110100", expectedReadData = "h2a5e2112", expectedReplaceWay = 1)
+
+      dut.clock.step(1)
+
+      // Perform a read (set = 1, tag = 11, word = 2)
+      performRead(dut, reqId = 0, readAddress = "b0101111000", expectedReadData = "hcd0a5c8d", expectedReplaceWay = 2)
+
+      dut.clock.step(1)
+
+      // Perform a read (set = 1, tag = 12, word = 0)
+      performRead(dut, reqId = 0, readAddress = "b0110010000", expectedReadData = "hbe417679", expectedReplaceWay = 3)
+
+      dut.clock.step(1)
+
+      // Perform a read (set = 1, tag = 13, word = 1)
+      performRead(dut, reqId = 0, readAddress = "b0110110100", expectedReadData = "hae90a638", expectedReplaceWay = 4)
+
+      dut.clock.step(1)
+
+      // Perform a read, expect a dirty miss (set = 1, tag = 18, word = 1)
+      performRead(dut,
+        reqId = 0,
+        readAddress = "b1001010100",
+        expectedReadData = "h9fccb11c",
+        lowerLevelMissData = Some("h06b3d00d0678987b9fccb11cca5d39d9"),
+        expectedReplaceWay = 5,
+        dirtyData = Some("had74896eec1799466c5506e4deadbeef"),
+        dirtyAddress = Some("b111010000")
+      )
 
       dut.clock.step(1)
     }
@@ -548,7 +648,6 @@ class L2SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       ways = ways,
       sets = nSets,
       nCores = nCores,
-      missLatency = 5,
       basePolicy = () => new BitPlruReplacementAlgorithm(ways)
     )
 
@@ -566,7 +665,7 @@ class L2SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
 
       dut.clock.step(1)
 
-      setCoreAsCritical(dut, coreID = 0, contentionLimit = 12)
+      setCoreAsCritical(dut, coreID = 0, contentionLimit = 2)
 
       dut.clock.step(1)
 
@@ -658,8 +757,7 @@ class L2SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
         index = 0,
         indexOffset = 3,
         expectedTags = Array("b1101", "b1010", "b1110", "b1011"),
-        expectedData = Array(Array("hbbadbeef", "hbeefbbad"), Array("h0d15ea5e", "hea5e0d15"), Array("he0ddf00d", "hbadc0ffe"), Array("hcafed00d", "hd00dcafe")),
-        printContents = true
+        expectedData = Array(Array("hbbadbeef", "hbeefbbad"), Array("h0d15ea5e", "hea5e0d15"), Array("he0ddf00d", "hbadc0ffe"), Array("hcafed00d", "hd00dcafe"))
       )
 
       dut.clock.step(1)

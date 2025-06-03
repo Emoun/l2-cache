@@ -50,10 +50,10 @@ class SetAssociateCacheMemory(nWays: Int, nSets: Int, bytesPerBlock: Int, bytesP
   private val indexWidth = log2Up(nSets)
   private val tagWidth = addressWidth - indexWidth - blockOffsetWidth - byteOffsetWidth
 
-  private val tagMemSize = (nSets * tagWidth * nWays) / 8
-  private val cacheLineMemSize = nSets * wordsPerBlock * bytesPerWord * nWays
-  println(s"Tag memory size: $tagMemSize bytes")
-  println(s"Cache line memory size: $cacheLineMemSize bytes")
+//  private val tagMemSize = (nSets * tagWidth * nWays) / 8
+//  private val cacheLineMemSize = nSets * wordsPerBlock * bytesPerWord * nWays
+//  println(s"Tag memory size: $tagMemSize bytes")
+//  println(s"Cache line memory size: $cacheLineMemSize bytes")
 
   val io = IO(new Bundle {
     val controller = new ControllerMemIO(nWays, nSets)
@@ -95,31 +95,41 @@ class SetAssociateCacheMemory(nWays: Int, nSets: Int, bytesPerBlock: Int, bytesP
   // Vectors for storing signals coming out of each way
   val hits = VecInit(Seq.fill(nWays)(false.B))
   val dirty = VecInit(Seq.fill(nWays)(false.B))
-  val hitWay = WireDefault(0.U(log2Up(nWays).W))
   val waysTags = VecInit(Seq.fill(nWays)(0.U(tagWidth.W)))
   val waysData = VecInit(Seq.fill(nWays)(
     VecInit(Seq.fill(wordsPerBlock)(0.U((bytesPerWord * 8).W)))
   ))
 
+  val hitWay = WireDefault(0.U(log2Up(nWays).W))
+
   for (wayIdx <- 0 until nWays) {
 
+    // Assign the signals for the cache line memories
     for (wordIdx <- 0 until wordsPerBlock) {
+
+      val wordwData = Mux(io.controller.replaceLine, io.lower.rData((bytesPerWord * 8) - 1 + (wordIdx * bytesPerWord * 8), wordIdx * bytesPerWord * 8), writeData)
+      val wordwrEn = (io.controller.replaceLine && io.controller.replaceWay === wayIdx.asUInt) || (io.controller.updateLine && blockOffset === wordIdx.asUInt && hitWay === wayIdx.asUInt)
+
       waysCacheLineMem(wayIdx)(wordIdx).io.readAddr := index
-      waysCacheLineMem(wayIdx)(wordIdx).io.writeData := Mux(io.controller.replaceLine, io.lower.rData((bytesPerWord * 8) - 1 + (wordIdx * bytesPerWord * 8), wordIdx * bytesPerWord * 8), writeData)
+      waysCacheLineMem(wayIdx)(wordIdx).io.writeData := wordwData
       waysCacheLineMem(wayIdx)(wordIdx).io.writeAddr := index
-      waysCacheLineMem(wayIdx)(wordIdx).io.wrEn := (io.controller.replaceLine && io.controller.replaceWay === wayIdx.asUInt) || (io.controller.updateLine && blockOffset === wordIdx.asUInt && hitWay === wayIdx.asUInt)
+      waysCacheLineMem(wayIdx)(wordIdx).io.wrEn := wordwrEn
       // waysCacheLines(wayIdx)(wordIdx).io.wrMask := higherIO.dinMask TODO: If adding support for byte masks
 
       waysData(wayIdx)(wordIdx) := waysCacheLineMem(wayIdx)(wordIdx).io.readData
     }
 
+    // Assign the signals for the tag memories
     waysTagMem(wayIdx).io.readAddr := index
     waysTagMem(wayIdx).io.writeData := tag
     waysTagMem(wayIdx).io.writeAddr := index
     waysTagMem(wayIdx).io.wrEn := io.controller.replaceLine && (io.controller.replaceWay === wayIdx.asUInt)
 
+    val tagReadData = waysTagMem(wayIdx).io.readData
+    waysTags(wayIdx) := tagReadData
+
     // Set the valid bit to true when loading a new cache line in
-    when(io.controller.replaceLine && io.controller.replaceWay === wayIdx.asUInt) { // TODO: Is there a need to set it to true on update too?
+    when(io.controller.replaceLine && io.controller.replaceWay === wayIdx.asUInt) {
       waysValidBits(wayIdx)(index) := true.B
     }
 
@@ -131,9 +141,8 @@ class SetAssociateCacheMemory(nWays: Int, nSets: Int, bytesPerBlock: Int, bytesP
     }
 
     // Check if the block is dirty or valid in a way
-    hits(wayIdx) := waysValidBits(wayIdx)(indexDelayReg) && (tagDelayReg === waysTagMem(wayIdx).io.readData)
+    hits(wayIdx) := waysValidBits(wayIdx)(indexDelayReg) && (tagDelayReg === tagReadData)
     dirty(wayIdx) := waysDirtyBits(wayIdx)(indexDelayReg)
-    waysTags(wayIdx) := waysTagMem(wayIdx).io.readData
   }
 
   hitWay := PriorityEncoder(hits)

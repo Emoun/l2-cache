@@ -12,12 +12,12 @@ import chisel3.util._
  * @param nCores number of cores sharing the cache
  * @param basePolicy the base replacement policy module generating function
  */
-class ContentionReplacementPolicy(ways: Int, sets: Int, nCores: Int, missLatency: Int, basePolicy: () => ReplacementAlgorithm) extends SharedCacheReplacementPolicyType(ways, sets, nCores) {
+class ContentionReplacementPolicy(ways: Int, sets: Int, nCores: Int, basePolicy: () => ReplacementAlgorithm) extends SharedCacheReplacementPolicyType(ways, sets, nCores) {
   // Base policy for each set
   val basePolicies = Array.fill(sets)(Module(basePolicy()))
 
   // Registers for keeping the state of each active core
-  val contentionLimits = RegInit(VecInit(Seq.fill(nCores)(0.U(CONTENTION_LIMIT_WIDTH.W))))
+  val contentionLimits = RegInit(VecInit(Seq.fill(nCores)(0.U(CONTENTION_LIMIT_WIDTH.W)))) // TODO: If all cores have the same contention limit, we need not have this
   val contentionCounts = RegInit(VecInit(Seq.fill(nCores)(0.U(CONTENTION_LIMIT_WIDTH.W))))
   val criticalCores = RegInit(VecInit(Seq.fill(nCores)(false.B)))
 
@@ -25,12 +25,10 @@ class ContentionReplacementPolicy(ways: Int, sets: Int, nCores: Int, missLatency
   val lineAssignments = Array.fill(sets)(RegInit(VecInit(Seq.fill(ways)(0.U(log2Up(nCores).W)))))
   val validAssignment = Array.fill(sets)(RegInit(VecInit(Seq.fill(ways)(false.B))))
 
+  val contentionOverflow = VecInit(Seq.fill(nCores)(0.U(CONTENTION_LIMIT_WIDTH.W)))
+
   private def getAssignedCoreIdx(set: Int, way: UInt): (UInt, Bool) = {
     (lineAssignments(set)(way), validAssignment(set)(way))
-  }
-
-  private def getCost: UInt = {
-    missLatency.U
   }
 
   private def getContention(coreIdx: (UInt, Bool)): UInt = {
@@ -45,10 +43,16 @@ class ContentionReplacementPolicy(ways: Int, sets: Int, nCores: Int, missLatency
     Mux(coreIdx._2, criticalCores(coreIdx._1), false.B)
   }
 
+  private def getOverflow(coreIdx: (UInt, Bool)): UInt = {
+    Mux(coreIdx._2, contentionOverflow(coreIdx._1), 0.U(CONTENTION_LIMIT_WIDTH.W))
+  }
+
   def isUnlimitedWay(set: Int, way: UInt): Bool = {
     val coreIdx = getAssignedCoreIdx(set, way)
     val critical = isCritical(coreIdx)
-    !critical || (critical && getLimit(coreIdx) > getContention(coreIdx) + getCost)
+
+    // TODO: Pre-calculate when a core is set to being critical - the limit minus the cost, then we only need to check if this value is greater than the contention limit
+    !critical || (critical && getLimit(coreIdx) >= getOverflow(coreIdx))
   }
 
   // TODO: Add registers to hold the replacement set, as updating the base policy and updating contention
@@ -97,7 +101,7 @@ class ContentionReplacementPolicy(ways: Int, sets: Int, nCores: Int, missLatency
         // If we encounter a contention event we need to update the contention count
         when(isCritical(evictWayCoreIdx) && (!reqCoreCritical || nonCriticalWaysCount > 0.U)) { // !io.unsetCritical.valid
           when(evictWayCoreIdx._2) { // Only update contention count if the way we are evicting is assigned to a core
-            contentionCounts(evictWayCoreIdx._1) := contentionCounts(evictWayCoreIdx._1) + getCost
+            contentionCounts(evictWayCoreIdx._1) := contentionCounts(evictWayCoreIdx._1) + 1.U
           }
         }
 
@@ -133,6 +137,8 @@ class ContentionReplacementPolicy(ways: Int, sets: Int, nCores: Int, missLatency
       criticalCores(core) := false.B
       contentionCounts(core) := 0.U
     }
+
+    contentionOverflow(core) := getContention((core.asUInt, true.B)) + 1.U
   }
 
   // For each set, get the candidate and update the policy (in this case we only update base policy)

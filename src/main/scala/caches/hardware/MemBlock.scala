@@ -3,7 +3,6 @@ package caches.hardware
 import chisel3._
 import chisel3.util._
 import chisel3.util.experimental.loadMemoryFromFileInline
-import java.io.File
 
 class MemBlockIO(depth: Int, width: Int) extends Bundle {
   private val addrLen = log2Up(depth)
@@ -17,6 +16,7 @@ class MemBlockIO(depth: Int, width: Int) extends Bundle {
 
 /**
  * General purpose synchronous memory block.
+ *
  * @param depth Number of memory entries
  * @param width Memory entry width in bits
  */
@@ -27,8 +27,8 @@ class MemBlock(depth: Int, width: Int, dataFile: Option[String] = None) extends 
   //  NOTE: There is no need for this as we are never requesting a read and write to the same address in the same cycle
   val mem = SyncReadMem(depth, UInt(width.W))
   val readData = WireDefault(0.U(width.W))
-  val writeDataReg = RegNext(io.writeData)
-  val forwardSelReg = RegNext((io.writeAddr === io.readAddr) && io.wrEn)
+  //  val writeDataReg = RegNext(io.writeData)
+  //  val forwardSelReg = RegNext((io.writeAddr === io.readAddr) && io.wrEn)
 
   // Initialize memory block from a file
   if (dataFile.isDefined) {
@@ -47,5 +47,5 @@ class MemBlock(depth: Int, width: Int, dataFile: Option[String] = None) extends 
     mem.write(io.writeAddr, io.writeData)
   }
 
-  io.readData := Mux(forwardSelReg, writeDataReg, readData)
+  io.readData := readData //Mux(forwardSelReg, writeDataReg, readData)
 }
