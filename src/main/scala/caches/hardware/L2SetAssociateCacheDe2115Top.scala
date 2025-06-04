@@ -22,7 +22,9 @@ class L2SetAssociateCacheDe2115Top(
                                     l2RepPolicy: () => SharedCacheReplacementPolicyType,
                                     l1Cache: () => L2SetAssociateCache
                                   ) extends Module {
-
+  // TODO: Create and instantiate an actual memory (more like a dummy memory) that can be initialized from a hex file
+  //  no need to have 32 bit address width for a byte addressable memory since this will only impact
+  //  the index field size which in turn only reduce the number of memory bits needed for the tags
   val io = IO(new L2CacheDe2115IO(addressWidth, coreBytesPerWord, 1))
 
   val l1 = Module(l1Cache())
@@ -85,21 +87,21 @@ class L2SetAssociateCacheDe2115Top(
 
 
 object L2SetAssociateCacheDe2115Top extends App {
-  val l2Size = 8192 // in bytes
+  val l2Size = 16384 // in bytes
   val l2Ways = 8
-  val l2BytesPerBlock = 64
-  val l2BytesPerWord = 16
+  val l2BytesPerBlock = 32
+  val l2BytesPerWord = 8
   val l2nCores = 8
   val l2nSets = (l2Size / l2BytesPerBlock) / l2Ways
   val l2BasePolicy = () => new BitPlruReplacementAlgorithm(l2Ways)
-  val l2RepPolicy = () => new ContentionReplacementPolicy(l2Ways, l2nSets, l2nCores, l2BasePolicy)
-//  val l2RepPolicy = () => new BitPlruReplacementPolicy(l2Ways, l2nSets, l2nCores)
+//  val l2RepPolicy = () => new ContentionReplacementPolicy(l2Ways, l2nSets, l2nCores, l2BasePolicy)
+  val l2RepPolicy = () => new BitPlruReplacementPolicy(l2Ways, l2nSets, l2nCores)
 
   val l1BytesPerWord = 4
   val l1Cache = () => new L2SetAssociateCache(
     size = 1024,
     ways = 4,
-    bytesPerBlock = 16,
+    bytesPerBlock = l2BytesPerWord,
     bytesPerWord = l1BytesPerWord,
     nCores = 1,
     addressWidth = ADDRESS_WIDTH,

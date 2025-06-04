@@ -25,7 +25,7 @@ class ContentionReplacementPolicy(ways: Int, sets: Int, nCores: Int, basePolicy:
   val lineAssignments = Array.fill(sets)(RegInit(VecInit(Seq.fill(ways)(0.U(log2Up(nCores).W)))))
   val validAssignment = Array.fill(sets)(RegInit(VecInit(Seq.fill(ways)(false.B))))
 
-  val contentionOverflow = VecInit(Seq.fill(nCores)(0.U(CONTENTION_LIMIT_WIDTH.W)))
+  val contentionOverflow = VecInit(Seq.fill(nCores)(0.U(CONTENTION_LIMIT_WIDTH.W))) // TODO: Turn this into registers and compute it when a core is set or unset
 
   private def getAssignedCoreIdx(set: Int, way: UInt): (UInt, Bool) = {
     (lineAssignments(set)(way), validAssignment(set)(way))
@@ -51,7 +51,6 @@ class ContentionReplacementPolicy(ways: Int, sets: Int, nCores: Int, basePolicy:
     val coreIdx = getAssignedCoreIdx(set, way)
     val critical = isCritical(coreIdx)
 
-    // TODO: Pre-calculate when a core is set to being critical - the limit minus the cost, then we only need to check if this value is greater than the contention limit
     !critical || (critical && getLimit(coreIdx) >= getOverflow(coreIdx))
   }
 
@@ -82,14 +81,12 @@ class ContentionReplacementPolicy(ways: Int, sets: Int, nCores: Int, basePolicy:
 
     // Filter out base candidates based on which way is critical and which way is not
     val unlimitedWays = filterVec(set, isUnlimitedWay, baseEvictionCands, None)
-    val unlimitedWaysCount = PopCount(unlimitedWays)
 
     val reqCoreIdx = io.control.reqId
     val reqCoreCritical = isCritical((reqCoreIdx, true.B))
 
-    when(unlimitedWaysCount > 0.U) {
+    when(unlimitedWays.reduce((x, y) => x || y)) {
       val nonCriticalWays = filterVec(set, (set, way: UInt) => { !isCritical(getAssignedCoreIdx(set, way)) }, baseEvictionCands, Some(unlimitedWays))
-      val nonCriticalWaysCount = PopCount(nonCriticalWays)
 
       // Use the priority encoder to get the index of the first way that is unlimited
       evictWay := baseEvictionCands(PriorityEncoder(unlimitedWays))
@@ -99,7 +96,7 @@ class ContentionReplacementPolicy(ways: Int, sets: Int, nCores: Int, basePolicy:
 
       when(io.control.evict && (io.control.setIdx === set.U)) {
         // If we encounter a contention event we need to update the contention count
-        when(isCritical(evictWayCoreIdx) && (!reqCoreCritical || nonCriticalWaysCount > 0.U)) { // !io.unsetCritical.valid
+        when(isCritical(evictWayCoreIdx) && (!reqCoreCritical || nonCriticalWays.reduce((x, y) => x || y))) { // !io.unsetCritical.valid
           when(evictWayCoreIdx._2) { // Only update contention count if the way we are evicting is assigned to a core
             contentionCounts(evictWayCoreIdx._1) := contentionCounts(evictWayCoreIdx._1) + 1.U
           }

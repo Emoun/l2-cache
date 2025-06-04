@@ -4,12 +4,12 @@ import caches.hardware.util.Constants.CONTENTION_LIMIT_WIDTH
 import chisel3._
 import chisel3.util._
 
-class ReplacementPolicyIO(ways: Int, sets: Int, nCores: Int) extends Bundle {
-  val update = Input(Valid(UInt(log2Up(ways).W)))
+class ReplacementPolicyIO(nWays: Int, nSets: Int, nCores: Int) extends Bundle {
+  val update = Input(Valid(UInt(log2Up(nWays).W)))
   val evict = Input(Bool()) // Some policies may need to know if when the line is being evicted
-  val setIdx = Input(UInt(log2Up(sets).W))
+  val setIdx = Input(UInt(log2Up(nSets).W))
   val reqId = Input(UInt(log2Up(nCores).W)) // ID of the requesting core
-  val replaceWay = Output(UInt(log2Up(ways).W))
+  val replaceWay = Output(UInt(log2Up(nWays).W))
   val isValid = Output(Bool()) // To signal if there are no valid ways to replace
 }
 

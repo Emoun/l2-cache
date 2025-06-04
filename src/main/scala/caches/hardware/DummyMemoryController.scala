@@ -3,20 +3,20 @@ package caches.hardware
 import chisel3._
 import chisel3.util._
 
-class MemoryControllerIO(addrWidth: Int, burstSize: Int) extends Bundle {
+class MemoryControllerIO(addrWidth: Int, burstWidth: Int) extends Bundle {
   val ack = Input(Bool())
   val respStatus = Input(UInt(1.W))
-  val rData = Input(UInt(burstSize.W))
+  val rData = Input(UInt(burstWidth.W))
   val req = Output(Bool())
   val rw = Output(Bool())
   val addr = Output(UInt(addrWidth.W))
-  val wData = Output(UInt(burstSize.W))
+  val wData = Output(UInt(burstWidth.W))
 }
 
 class DummyMemoryController(addressWidth: Int, blockSize: Int, burstSize: Int) extends Module {
   val io = IO(new Bundle {
     val cache = new SharedCacheIO(addressWidth, blockSize * 8, 0)
-    val mem = new MemoryControllerIO(addressWidth, burstSize)
+    val mem = new MemoryControllerIO(addressWidth, burstSize * 8)
   })
 
   val nBursts = blockSize / burstSize

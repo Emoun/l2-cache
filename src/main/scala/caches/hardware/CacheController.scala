@@ -12,6 +12,7 @@ class ControllerReqIO(nCores: Int) extends Bundle {
   val status = Output(UInt(1.W)) // 0: OK, 1: REJECT
 }
 
+// TODO: Add burst capability to lower and higher level ( we can maintain the same functionality as original implementation if we set the burst size to 1)
 class CacheController(ways: Int, sets: Int, nCores: Int) extends Module {
   val io = IO(new Bundle {
     val mem = Flipped(new ControllerMemIO(ways, sets))
@@ -59,6 +60,7 @@ class CacheController(ways: Int, sets: Int, nCores: Int) extends Module {
           updateLine := true.B
         }
 
+        // TODO: Break this state into two different states, one that checks if it's a hit and another that handles the miss
         higherAck := true.B
         higherStatus := 0.U // OK response
         stateReg := sIdle
