@@ -2576,4 +2576,244 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
     assert(reportCount == 3)
     assert(missCount == 3)
   }
+
+  test("Miss During Miss Contention") {
+    var contCache = new ContentionCache(2, 2, 2, 10, _ => Unit)
+    contCache.setCriticality(1, 20)
+
+    var traf1 = new TriggerTraffic;
+    var traf2 = new TriggerTraffic;
+    var cache = new BufferedCacheTraffic(8,
+      new RoundRobinArbiter(2,1,
+        Array(traf1,traf2),
+        (_) => None,
+        true
+      ),
+      contCache,
+      (_, _) => {}
+    )
+
+    traf1.nextRequest = Some(80,true,())
+    traf2.nextRequest = Some(120,true,())
+
+    assert(cache.requestMemoryAccess().contains((80,true,()))) // traf1 begins its miss
+    cache.triggerCycle() // One cycle for request
+    // Simulate high latency
+    for(_ <- 0 until 3) {
+      assert(cache.requestMemoryAccess().isEmpty)
+      cache.triggerCycle()
+    }
+    // traf2 must have been put in the miss queue and triggered contention with traf1's miss
+    assert(contCache.getLimit(1) == 10)
+  }
+
+  test("No Miss During Miss Contention") {
+    var contCache = new ContentionCache(2, 2, 2, 10, _ => Unit)
+    contCache.setCriticality(0, 20)
+    contCache.setCriticality(1, 20)
+
+    var traf1 = new TriggerTraffic;
+    var traf2 = new TriggerTraffic;
+    var cache = new BufferedCacheTraffic(8,
+      new RoundRobinArbiter(2,1,
+        Array(traf1,traf2),
+        (_) => None,
+        true
+      ),
+      contCache,
+      (_, _) => {}
+    )
+
+    traf1.nextRequest = Some(80,true,())
+    traf2.nextRequest = Some(120,true,())
+
+    assert(cache.requestMemoryAccess().contains((80,true,()))) // traf1 begins its miss
+    cache.triggerCycle() // One cycle for request
+    // Simulate high latency
+    for(_ <- 0 until 3) {
+      assert(cache.requestMemoryAccess().isEmpty)
+      cache.triggerCycle()
+    }
+    // traf2 missed but should not have triggered contention
+    assert(contCache.getLimit(1) == 20)
+  }
+
+  test("Miss Queue Contention") {
+    var contCache = new ContentionCache(2, 2, 2, 10, _ => Unit)
+    contCache.setCriticality(0, 20)
+    contCache.setCriticality(2, 20)
+
+    var traf1 = new TriggerTraffic;
+    var traf2 = new TriggerTraffic;
+    var traf3 = new TriggerTraffic;
+    var cache = new BufferedCacheTraffic(8,
+      new RoundRobinArbiter(2,1,
+        Array(traf1,traf2, traf3),
+        (_) => None,
+        true
+      ),
+      contCache,
+      (_, _) => {}
+    )
+
+    traf1.nextRequest = Some(80,true,())
+    traf2.nextRequest = Some(120,true,())
+    traf3.nextRequest = Some(160,true,())
+
+    assert(cache.requestMemoryAccess().contains((80,true,()))) // traf1 begins its miss
+    cache.triggerCycle() // One cycle for request
+    // Simulate high latency
+    for(_ <- 0 until 3) {
+      assert(cache.requestMemoryAccess().isEmpty)
+      cache.triggerCycle()
+    }
+    assert(cache.serveMemoryAccess(()))
+
+    assert(cache.requestMemoryAccess().contains((120,true,()))) // traf2 begins its miss
+    cache.triggerCycle() // One cycle for request
+    // Simulate high latency
+    for(_ <- 0 until 3) {
+      assert(cache.requestMemoryAccess().isEmpty)
+      cache.triggerCycle()
+    }
+    // traf3 missed and should trigger contention with traf2, which got to go first
+    assert(contCache.getLimit(2) == 10)
+  }
+
+  test("Miss Queue Write Contention") {
+    var contCache = new ContentionCache(2, 2, 2, 10, _ => Unit)
+    contCache.performAccess(0,0,false,true) // Allow traf1 to not need write-back, but traf2 does
+    contCache.setCriticality(0, 20)
+    contCache.setCriticality(2, 30)
+
+    var traf1 = new TriggerTraffic;
+    var traf2 = new TriggerTraffic;
+    var traf3 = new TriggerTraffic;
+    var cache = new BufferedCacheTraffic(8,
+      new RoundRobinArbiter(2,1,
+        Array(traf1,traf2, traf3),
+        (_) => None,
+        true
+      ),
+      contCache,
+      (_, _) => {},
+      true
+    )
+
+    traf1.nextRequest = Some(80,true,())
+    traf2.nextRequest = Some(120,false,())
+    traf3.nextRequest = Some(160,true,())
+
+    assert(cache.requestMemoryAccess().contains((80,true,()))) // traf1 begins its miss
+    cache.triggerCycle() // One cycle for request
+    // Simulate high latency
+    for(_ <- 0 until 3) {
+      assert(cache.requestMemoryAccess().isEmpty)
+      cache.triggerCycle()
+    }
+    assert(cache.serveMemoryAccess(()))
+
+    assert(cache.requestMemoryAccess().contains((0,false,()))) // traf2 begins its write back
+    cache.triggerCycle() // One cycle for request
+    // Simulate high latency
+    for(_ <- 0 until 3) {
+      assert(cache.requestMemoryAccess().isEmpty)
+      cache.triggerCycle()
+    }
+    // traf3 missed and should trigger contention with traf2, which got to go first
+    assert(contCache.getLimit(2) == 20)
+    assert(cache.serveMemoryAccess(()))
+
+    assert(cache.requestMemoryAccess().contains((120,true,()))) // traf2 begins its miss
+    cache.triggerCycle() // One cycle for request
+    // Simulate high latency
+    for(_ <- 0 until 3) {
+      assert(cache.requestMemoryAccess().isEmpty)
+      cache.triggerCycle()
+    }
+    // Queue contention again
+    assert(contCache.getLimit(2) == 10)
+    assert(cache.serveMemoryAccess(()))
+  }
+
+  test("Miss Queue Write Contention limit") {
+    var contCache = new ContentionCache(2, 2, 2, 10, _ => Unit)
+    contCache.performAccess(0,0,false,true) // Allow traf1 to not need write-back, but traf2 does
+    contCache.setCriticality(0, 20)
+    contCache.setCriticality(2, 10)
+
+    var traf1 = new TriggerTraffic;
+    var traf2 = new TriggerTraffic;
+    var traf3 = new TriggerTraffic;
+    var cache = new BufferedCacheTraffic(8,
+      new RoundRobinArbiter(2,1,
+        Array(traf1,traf2, traf3),
+        (_) => None,
+        true
+      ),
+      contCache,
+      (_, _) => {},
+      true
+    )
+
+    traf1.nextRequest = Some(80,true,())
+    traf2.nextRequest = Some(120,false,())
+    traf3.nextRequest = Some(160,true,())
+
+    assert(cache.requestMemoryAccess().contains((80,true,()))) // traf1 begins its miss
+    cache.triggerCycle() // One cycle for request
+    // Simulate high latency
+    for(_ <- 0 until 3) {
+      assert(cache.requestMemoryAccess().isEmpty)
+      cache.triggerCycle()
+    }
+    assert(cache.serveMemoryAccess(()))
+
+    assert(cache.requestMemoryAccess().contains((0,false,()))) // traf2 begins its write back
+    cache.triggerCycle() // One cycle for request
+    // Simulate high latency
+    for(_ <- 0 until 3) {
+      assert(cache.requestMemoryAccess().isEmpty)
+      cache.triggerCycle()
+    }
+    // traf3 missed and should trigger contention with traf2, which got to go first
+    assert(contCache.getLimit(2) == 0)
+    assert(cache.serveMemoryAccess(()))
+
+    assert(cache.requestMemoryAccess().contains((160,true,()))) // traf1 begins its miss ahead of traf2 because of limit
+  }
+
+  test("Miss Queue Contention Limit") {
+    var contCache = new ContentionCache(2, 2, 2, 10, _ => Unit)
+    contCache.setCriticality(0, 20)
+    contCache.setCriticality(2, 0)
+
+    var traf1 = new TriggerTraffic;
+    var traf2 = new TriggerTraffic;
+    var traf3 = new TriggerTraffic;
+    var cache = new BufferedCacheTraffic(8,
+      new RoundRobinArbiter(2,1,
+        Array(traf1,traf2, traf3),
+        (_) => None,
+        true
+      ),
+      contCache,
+      (_, _) => {}
+    )
+
+    traf1.nextRequest = Some(80,true,())
+    traf2.nextRequest = Some(120,true,())
+    traf3.nextRequest = Some(160,true,())
+
+    assert(cache.requestMemoryAccess().contains((80,true,()))) // traf1 begins its miss
+    cache.triggerCycle() // One cycle for request
+    // Simulate high latency
+    for(_ <- 0 until 3) {
+      assert(cache.requestMemoryAccess().isEmpty)
+      cache.triggerCycle()
+    }
+    assert(cache.serveMemoryAccess(()))
+
+    assert(cache.requestMemoryAccess().contains((160,true,()))) // traf3 begins its miss because its at the limit
+  }
 }

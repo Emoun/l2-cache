@@ -384,11 +384,36 @@ class ContentionCache(lineLength: Int, ways: Int, sets: Int, contentionCost: Int
    */
   private var _contention: mutable.Map[Int, Int] = mutable.Map.empty;
 
+  /**
+   * Returns whether the given core is assigned as critical
+   * @param coreId
+   * @return
+   */
+  def isCritical(coreId: Int): Boolean = {
+    _contention.contains(coreId)
+  }
+
+  def getLimit(coreId: Int): Int = {
+    assert(isCritical(coreId))
+    _contention(coreId)
+  }
+
+  /**
+   * Returns whether the given core has reached its contention limit
+   * @param coreId
+   * @return
+   */
+  def isLimited(coreId:Int): Boolean = {
+    isCritical(coreId) && _contention(coreId) < contentionCost
+  }
+
+  val getContentionCost = contentionCost
+
   // Reduces the contention count for the given core (assuming it is high-criticality)
   def triggerContention(coreId: Int): Unit = {
     assert(_contention.contains(coreId));
     _contention(coreId) -= contentionCost;
-    if(_contention(coreId) < contentionCost) {
+    if(isLimited(coreId)) {
       onLimit(coreId)
     }
   }
@@ -408,7 +433,7 @@ class ContentionCache(lineLength: Int, ways: Int, sets: Int, contentionCost: Int
   override def getValidWays(coreId: Int, setIdx: Int): Array[Int] = {
     val notLimited = Array.range(0, ways).filter(wayIdx => {
       _setArr(setIdx)(wayIdx) match {
-        case Some((_, (_, cId),_)) => !_contention.contains(cId) || (_contention(cId) >=contentionCost);
+        case Some((_, (_, cId),_)) => !_contention.contains(cId) || !isLimited(cId);
         case None => true
       }
     });
@@ -735,6 +760,12 @@ sealed trait HitType{
   def isHitAfterMiss(): Boolean = {
     this == HitAfterMiss
   }
+  def isMissDuringMiss(): Boolean = {
+    this == MissDuringMiss
+  }
+  def isQueueMiss(): Boolean = {
+    this == QueueMiss
+  }
 }
 object HitType {
   def fromBool(isHit: Boolean): HitType = {
@@ -747,6 +778,12 @@ case object Miss extends HitType
 case object Hit extends HitType
 // Initially it missed, but before the external was prompted for the address, it was loaded by another request
 case object HitAfterMiss extends HitType
+// A miss happening while a previous miss (from another core) is being serviced
+case object MissDuringMiss extends HitType
+// A miss happening while a previous miss (from another core) is being serviced and this core is limited
+case object MissDuringMissLimited extends HitType
+// A miss waiting in the miss queue does not get serviced because someone else gets serviced instead
+case object QueueMiss extends HitType
 
 class CacheTraffic(
   burst: Int,
@@ -972,6 +1009,33 @@ class BufferedCacheTraffic(
     }
   }
 
+  /**
+   * Check whether the miss currently being serviced contents with a miss from the given core.
+   * If so, trigger contention.
+   * @param coreId critical core
+   */
+  def checkContMissDuringMiss(coreId: Int, isMissDuringMiss: Boolean): Unit = {
+    if(cache.isInstanceOf[ContentionCache]){
+      val cont = cache.asInstanceOf[ContentionCache]
+      if(externStatus != Waiting && cont.isCritical(coreId)&& !cont.isCritical(externQueue(0)._2)) {
+        // A low-criticality miss is being serviced to the detriment of a high-criticality miss
+        if(isMissDuringMiss) {
+          if(cont.isLimited(coreId)) {
+            reportHits(coreId, MissDuringMissLimited)
+          } else {
+            reportHits(coreId, MissDuringMiss)
+          }
+        } else {
+          reportHits(coreId, QueueMiss)
+        }
+
+        if(!cont.isLimited(coreId)){
+          cont.triggerContention(coreId)
+        }
+      }
+    }
+  }
+
   def checkReq(): Unit = {
     if(!internRequested && interPrio.isEmpty) {
       traf.requestMemoryAccess() match {
@@ -984,6 +1048,7 @@ class BufferedCacheTraffic(
             }
             case _ => {
               externQueue = externQueue :+ (addr, coreId, Some(isRead))
+              checkContMissDuringMiss(coreId, true)
               false
             }
           }
@@ -1017,7 +1082,18 @@ class BufferedCacheTraffic(
       val firstNonReject = externQueue.zipWithIndex.find(entry => {
         val idx = entry._2
         val elem = entry._1
-        cache.performAccess(
+        var contentionLimited = false
+        if(cache.isInstanceOf[ContentionCache]) {
+          val cont = cache.asInstanceOf[ContentionCache]
+          if( !cont.isCritical(elem._2) ) {
+            for(i <- idx until externQueue.length) {
+              if(cont.isCritical(externQueue(i)._2) && (cont.getLimit(externQueue(i)._2) < cont.getContentionCost )) {
+                contentionLimited = true
+              }
+            }
+          }
+        }
+        !contentionLimited && cache.performAccess(
           elem._1, elem._2, elem._3.isDefined, false
         ) != Reject
       } )
@@ -1037,10 +1113,16 @@ class BufferedCacheTraffic(
             externStatus = Issued
             // This external read has not evicted yet, evict first
             externQueue = Array((writeAddr, externQueue(0)._2, None)) ++ externQueue
+            for( q <- 1 until externQueue.length) {
+              checkContMissDuringMiss(externQueue(q)._2, false)
+            }
             Some((writeAddr, false, ()))
           }
           case (ReadMiss, _) | (WriteBack(_), false) => {
             externStatus = Issued
+            for( q <- 1 until externQueue.length) {
+              checkContMissDuringMiss(externQueue(q)._2, false)
+            }
             Some((externQueue(0)._1, true, ()))
           }
           case (ReadHit, _) => {
