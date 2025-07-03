@@ -15,17 +15,15 @@ class CacheRequestIO(addrWidth: Int, dataWidth: Int, reqIdWidth: Int) extends Bu
 class CacheResponseIO(dataWidth: Int, reqIdWidth: Int) extends Bundle {
   val reqId = Decoupled(UInt(reqIdWidth.W))
   val rData = Output(UInt(dataWidth.W))
-  val responseStatus = Output(UInt(1.W))
+  val responseStatus = Output(UInt(1.W)) // 1 - OK, 0 - Rejected
 }
 
-class CacheIO(nWays: Int, nSets: Int, nCores: Int, addrWidth: Int, dataWidth: Int) extends Bundle {
+class CacheIO(nCores: Int, addrWidth: Int, dataWidth: Int) extends Bundle {
   val coreReqs = Vec(nCores, new CacheRequestIO(addrWidth, dataWidth, log2Up(nCores)))
   val coreResps = Vec(nCores, new CacheResponseIO(dataWidth, log2Up(nCores)))
-  val repPol = Flipped(new ReplacementPolicyIO(nWays, nSets, nCores))
-  val memController = new MemoryControllerIO(addrWidth, dataWidth)
 }
 
-class PipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, addressWidth: Int, bytesPerBlock: Int, bytesPerSubBlock: Int, bytesPerBurst: Int) extends Module {
+class SharedPipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, addressWidth: Int, bytesPerBlock: Int, bytesPerSubBlock: Int, bytesPerBurst: Int) extends Module {
   private val nSets = sizeInBytes / (nWays * bytesPerBlock)
   private val wordsPerBlock = bytesPerBlock / bytesPerSubBlock
   private val byteOffsetWidth = log2Up(bytesPerSubBlock)
@@ -34,7 +32,11 @@ class PipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, addressWidth: In
   private val tagWidth = addressWidth - indexWidth - blockOffsetWidth - byteOffsetWidth
   private val nMshrs = nWays // nMshrs = nWays for now
 
-  val io = IO(new CacheIO(nWays, nSets, nCores, addressWidth, bytesPerSubBlock * 8))
+  val io = IO(new Bundle{
+    val cache = new CacheIO(nCores, addressWidth, bytesPerSubBlock * 8)
+    val repPol = Flipped(new ReplacementPolicyIO(nWays, nSets, nCores))
+    val memController = new MemoryControllerIO(addressWidth, bytesPerBurst * 8)
+  })
 
   def pipelineReg[T <: Data](next: T, init: T, en: Bool): T = {
     val pipelineReg = RegInit(init)
@@ -56,10 +58,10 @@ class PipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, addressWidth: In
   arbiter.io.out.reqId.ready := reqAccept
 
   for (coreIdx <- 0 until nCores) {
-    arbiter.io.ports(coreIdx).reqId <> io.coreReqs(coreIdx).reqId
-    arbiter.io.ports(coreIdx).addr := io.coreReqs(coreIdx).addr
-    arbiter.io.ports(coreIdx).rw := io.coreReqs(coreIdx).rw
-    arbiter.io.ports(coreIdx).wData := io.coreReqs(coreIdx).wData
+    arbiter.io.ports(coreIdx).reqId <> io.cache.coreReqs(coreIdx).reqId
+    arbiter.io.ports(coreIdx).addr := io.cache.coreReqs(coreIdx).addr
+    arbiter.io.ports(coreIdx).rw := io.cache.coreReqs(coreIdx).rw
+    arbiter.io.ports(coreIdx).wData := io.cache.coreReqs(coreIdx).wData
   }
 
   // val byteOffset = io.addr(byteOffsetWidth - 1, 0)
@@ -169,11 +171,12 @@ class PipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, addressWidth: In
 
   val isPreviousMiss = previousMissesCheck.reduce((x, y) => x || y)
   val evict = WireDefault(false.B)
+  val isValidRep = io.repPol.isValid
 
   // NOTE: We could allow a previous miss hit to access the cache line if it is only a read request, and the line has not yet been evicted
 
   // If the reqeust is trying to access a line of a previous miss or if it is just a miss we push to the queue
-  when(isPreviousMiss || !hitRepReg && reqValidRepReg) {
+  when(isPreviousMiss || !hitRepReg && reqValidRepReg && isValidRep) {
     missQueuePush := true.B
     evict := true.B // For some policies it is necessary to know if we are evicting a line
   }
@@ -198,6 +201,7 @@ class PipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, addressWidth: In
   dataMem.io.wrEn := updateLogic.io.cacheUpdateControl.wrEn
   dataMem.io.wrData := updateLogic.io.cacheUpdateControl.memWriteData
 
+  val repValidReadReg = pipelineReg(isValidRep, true.B, !pipeStall)
   val reqValidReadReg = pipelineReg(reqValidRepReg, false.B, !pipeStall)
   val reqIdReadReg = pipelineReg(reqIdRepReg, 0.U, !pipeStall)
   val reqRwReadReg = pipelineReg(reqRwRepReg, false.B, !pipeStall)
@@ -260,10 +264,10 @@ class PipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, addressWidth: In
 
   // TODO: We should make use of the reqId.ready
   for (coreIdx <- 0 until nCores) {
-    io.coreResps(coreIdx).reqId.valid := (updateLogic.io.coreResp.reqId.bits === coreIdx.U) && updateLogic.io.coreResp.reqId.valid
-    io.coreResps(coreIdx).reqId.bits := updateLogic.io.coreResp.reqId.bits
-    updateLogic.io.coreResp.reqId.ready := io.coreResps(coreIdx).reqId.ready
-    io.coreResps(coreIdx).rData := updateLogic.io.coreResp.rData
-    io.coreResps(coreIdx).responseStatus := updateLogic.io.coreResp.responseStatus
+    io.cache.coreResps(coreIdx).reqId.valid := (updateLogic.io.coreResp.reqId.bits === coreIdx.U) && updateLogic.io.coreResp.reqId.valid
+    io.cache.coreResps(coreIdx).reqId.bits := updateLogic.io.coreResp.reqId.bits
+    updateLogic.io.coreResp.reqId.ready := io.cache.coreResps(coreIdx).reqId.ready // TODO: This is wrong, assigning each cores ready line to a single input
+    io.cache.coreResps(coreIdx).rData := updateLogic.io.coreResp.rData
+    io.cache.coreResps(coreIdx).responseStatus := repValidReadReg // TODO: Move this to the update unit instead
   }
 }
