@@ -3,7 +3,6 @@ package caches.hardware.pipelined.cache
 import chisel3._
 import chisel3.util._
 
-// TODO: Mimic the AXI interface here
 class ReadChannel(addrWidth: Int, burstWidth: Int) extends Bundle {
   val rAddr = new DecoupledIO(UInt(addrWidth.W))
   val rData = Flipped(new DecoupledIO(UInt(burstWidth.W)))
@@ -34,7 +33,7 @@ class MemoryInterface(nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: In
       val pop = Output(Bool())
     }
     val wbFifo = new Bundle {
-      val popEntry = new WbFifoEntryIO(tagWidth, indexWidth, blockOffsetWidth, blockWidth)
+      val popEntry = new WbFifoEntryIO(tagWidth, indexWidth, blockWidth)
       val empty = Input(Bool())
       val pop = Output(Bool())
     }
@@ -66,10 +65,12 @@ class MemoryInterface(nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: In
   val wbFifoPop = WireDefault(false.B)
   val missFifoPop = WireDefault(false.B)
   val updateLogicValid = WireDefault(false.B)
-  val cacheRData = WireDefault(0.U((blockWidth).W))
+  val cacheRData = WireDefault(0.U(blockWidth.W))
   val cacheRespStatus = WireDefault(0.U(1.W))
   val memRwDataRegAsUint = memRwDataReg.asUInt
+  val responseStatus = WireDefault(0.U(1.W))
 
+  // TODO: If there are two separate lines, we could perform a read and a write simultaneously
   switch(stateReg) {
     is(sIdle) {
 
@@ -82,7 +83,7 @@ class MemoryInterface(nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: In
         reqRwReg := true.B
         reqWDataReg := 0.U
         reqWayReg := 0.U
-        reqBlockOffsetReg := io.wbFifo.popEntry.blockOffset
+        reqBlockOffsetReg := 0.U
         reqIndexReg := io.wbFifo.popEntry.index
         reqTagReg := io.wbFifo.popEntry.tag
 
@@ -111,7 +112,7 @@ class MemoryInterface(nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: In
     is(sWrite) {
       memWAddrValid := true.B
       when(io.memController.wChannel.wAddr.ready) {
-        stateReg := sReadBurst
+        stateReg := sWriteBurst
       }
     }
 
@@ -131,10 +132,10 @@ class MemoryInterface(nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: In
 
     is(sWriteBurst) {
       memWDataValid := true.B
-      when(io.memController.wChannel.wAddr.ready) {
-        burstCounter := burstCounter + 1.U
+      memWData := memRwDataReg(burstCounter)
 
-        memWData := memRwDataReg(burstCounter)
+      when(io.memController.wChannel.wData.ready) {
+        burstCounter := burstCounter + 1.U
 
         when(burstCounter === (nBursts - 1).U) {
           memWLast := true.B
@@ -146,7 +147,8 @@ class MemoryInterface(nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: In
 
     is(sDoneFill) {
       missFifoPop := true.B
-      updateLogicValid := true.B
+      updateLogicValid := true.B // NOTE: Response status can be different if for example memory was unable to perform a read
+      responseStatus := 1.U
       stateReg := sIdle
     }
 
@@ -163,12 +165,13 @@ class MemoryInterface(nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: In
   io.updateLogic.rw := reqRwReg
   io.updateLogic.wData := reqWDataReg
   io.updateLogic.wWay := reqWayReg
+  io.updateLogic.responseStatus := responseStatus
   io.updateLogic.blockOffset := reqBlockOffsetReg
   io.updateLogic.index := reqIndexReg
   io.updateLogic.tag := reqTagReg
   io.updateLogic.reqId := reqIdReg
 
-  val outAddr = Cat(reqTagReg, reqIndexReg, reqBlockOffsetReg) << byteOffsetWidth.U
+  val outAddr = Cat(reqTagReg, reqIndexReg) << (blockOffsetWidth + byteOffsetWidth).U
 
   for (i <- 0 until nSubBlocks) {
     io.updateLogic.memReadData(i) := memRwDataRegAsUint((subBlockWidth - 1) + (i * subBlockWidth), i * subBlockWidth)

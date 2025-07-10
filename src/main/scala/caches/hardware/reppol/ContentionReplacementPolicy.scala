@@ -7,146 +7,91 @@ import chisel3.util._
 /**
  * On a hit we update only the base policy, on an eviction we update the contention policy.
  *
- * @param ways number of ways in a cache set
- * @param sets number of sets in a cache
+ * @param nWays number of ways in a cache set
+ * @param nSets number of sets in a cache
  * @param nCores number of cores sharing the cache
  * @param basePolicy the base replacement policy module generating function
  */
-class ContentionReplacementPolicy(ways: Int, sets: Int, nCores: Int, basePolicy: () => ReplacementAlgorithm) extends SharedCacheReplacementPolicyType(ways, sets, nCores) {
-  // Base policy for each set
-  val basePolicies = Array.fill(sets)(Module(basePolicy()))
+class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolicy: () => ReplacementAlgorithmType) extends SharedCacheReplacementPolicyType(nWays, nSets, nCores) {
+  // TODO: Think if this should be pipelined too
+  def lineAssignmentsArray(set: UInt, update: Bool, way: UInt): (Vec[UInt], Vec[Bool]) = {
+    // Registers for keeping track of which cache line is assigned to which core and whether the assignment is valid
+    val lineAssignments = Array.fill(nSets)(RegInit(VecInit(Seq.fill(nWays)(0.U(log2Up(nCores).W)))))
+    val validLineAssignments = Array.fill(nSets)(RegInit(VecInit(Seq.fill(nWays)(false.B))))
 
-  // Registers for keeping the state of each active core
-  val contentionLimits = RegInit(VecInit(Seq.fill(nCores)(0.U(CONTENTION_LIMIT_WIDTH.W)))) // TODO: If all cores have the same contention limit, we need not have this
-  val contentionCounts = RegInit(VecInit(Seq.fill(nCores)(0.U(CONTENTION_LIMIT_WIDTH.W))))
-  val criticalCores = RegInit(VecInit(Seq.fill(nCores)(false.B)))
+    val selLineAssign = VecInit(Seq.fill(nWays)(0.U(log2Up(nCores).W)))
+    val selineValidAssign = VecInit(Seq.fill(nWays)(false.B))
 
-  // Registers for keeping track of which cache line is assigned to which core and whether the assignment is valid
-  val lineAssignments = Array.fill(sets)(RegInit(VecInit(Seq.fill(ways)(0.U(log2Up(nCores).W)))))
-  val validAssignment = Array.fill(sets)(RegInit(VecInit(Seq.fill(ways)(false.B))))
+    for (setIdx <- 0 until nSets) {
+      when(setIdx.U === set) {
+        selLineAssign := lineAssignments(setIdx)
+        selineValidAssign := validLineAssignments(setIdx)
 
-  val contentionOverflow = VecInit(Seq.fill(nCores)(0.U(CONTENTION_LIMIT_WIDTH.W))) // TODO: Turn this into registers and compute it when a core is set or unset
-
-  private def getAssignedCoreIdx(set: Int, way: UInt): (UInt, Bool) = {
-    (lineAssignments(set)(way), validAssignment(set)(way))
-  }
-
-  private def getContention(coreIdx: (UInt, Bool)): UInt = {
-    Mux(coreIdx._2, contentionCounts(coreIdx._1), 0.U(CONTENTION_LIMIT_WIDTH.W))
-  }
-
-  private def getLimit(coreIdx: (UInt, Bool)): UInt = {
-    Mux(coreIdx._2, contentionLimits(coreIdx._1), 0.U(CONTENTION_LIMIT_WIDTH.W))
-  }
-
-  private def isCritical(coreIdx: (UInt, Bool)): Bool = {
-    Mux(coreIdx._2, criticalCores(coreIdx._1), false.B)
-  }
-
-  private def getOverflow(coreIdx: (UInt, Bool)): UInt = {
-    Mux(coreIdx._2, contentionOverflow(coreIdx._1), 0.U(CONTENTION_LIMIT_WIDTH.W))
-  }
-
-  def isUnlimitedWay(set: Int, way: UInt): Bool = {
-    val coreIdx = getAssignedCoreIdx(set, way)
-    val critical = isCritical(coreIdx)
-
-    !critical || (critical && getLimit(coreIdx) >= getOverflow(coreIdx))
-  }
-
-  // TODO: Add registers to hold the replacement set, as updating the base policy and updating contention
-  // counters never happens in the same cycle
-
-  def filterVec(set: Int, filterFunc: (Int, UInt) => Bool, array: Vec[UInt], previousOut: Option[Vec[Bool]]): Vec[Bool] = {
-    val filterVec = VecInit(Seq.fill(ways)(false.B))
-    val previousFilterVec = VecInit(Seq.fill(ways)(true.B))
-
-    // If we want filter a Vec based on the output of the previous filter
-    if (previousOut.isDefined) {
-      previousFilterVec := previousOut.get
-    }
-
-    for (i <- 0 until ways) {
-      filterVec(i) := filterFunc(set, array(i)) && previousFilterVec(i)
-    }
-
-    filterVec
-  }
-
-  def getEvictCand(set: Int): (UInt, Bool) = {
-    val evictWay = WireDefault(0.U(log2Up(ways).W))
-    val isValidReplaceWay = WireDefault(false.B)
-
-    val baseEvictionCands = basePolicies(set).io.replacementSet
-
-    // Filter out base candidates based on which way is critical and which way is not
-    val unlimitedWays = filterVec(set, isUnlimitedWay, baseEvictionCands, None)
-
-    val reqCoreIdx = io.control.reqId
-    val reqCoreCritical = isCritical((reqCoreIdx, true.B))
-
-    when(unlimitedWays.reduce((x, y) => x || y)) {
-      val nonCriticalWays = filterVec(set, (set, way: UInt) => { !isCritical(getAssignedCoreIdx(set, way)) }, baseEvictionCands, Some(unlimitedWays))
-
-      // Use the priority encoder to get the index of the first way that is unlimited
-      evictWay := baseEvictionCands(PriorityEncoder(unlimitedWays))
-      isValidReplaceWay := true.B
-
-      val evictWayCoreIdx = getAssignedCoreIdx(set, evictWay)
-
-      when(io.control.evict && (io.control.setIdx === set.U)) {
-        // If we encounter a contention event we need to update the contention count
-        when(isCritical(evictWayCoreIdx) && (!reqCoreCritical || nonCriticalWays.reduce((x, y) => x || y))) { // !io.unsetCritical.valid
-          when(evictWayCoreIdx._2) { // Only update contention count if the way we are evicting is assigned to a core
-            contentionCounts(evictWayCoreIdx._1) := contentionCounts(evictWayCoreIdx._1) + 1.U
-          }
+        when(update) {
+          lineAssignments(setIdx)(way) := io.control.reqId
+          validLineAssignments(setIdx)(way) := true.B
         }
-
-        lineAssignments(set)(evictWay) := reqCoreIdx
-        validAssignment(set)(evictWay) := true.B
       }
-    } .elsewhen(reqCoreCritical) {
-      evictWay := baseEvictionCands(0)
-      isValidReplaceWay := true.B
-
-      when(io.control.evict && (io.control.setIdx === set.U)) {
-        lineAssignments(set)(evictWay) := reqCoreIdx
-        validAssignment(set)(evictWay) := true.B
-      }
-    } .otherwise {
-      isValidReplaceWay := false.B
     }
 
-    (evictWay, isValidReplaceWay)
+    (selLineAssign, selineValidAssign)
   }
 
-  def updateBase(set: Int): Unit = {
+  def coreContentionTable(updateContention: Bool, updateCoreIdx: UInt): (Vec[UInt], Vec[Bool]) = {
+    // Registers for keeping the state of each active core
+    val contentionLimits = RegInit(VecInit(Seq.fill(nCores)(0.U(CONTENTION_LIMIT_WIDTH.W))))
+    val criticalCores = RegInit(VecInit(Seq.fill(nCores)(false.B)))
+
+    // Set and unset cores as critical
+    for (coreTableIdx <- 0 until nCores) {
+      when (io.scheduler.setCritical && (io.scheduler.coreId.valid && io.scheduler.coreId.bits === coreTableIdx.U)) {
+        criticalCores(coreTableIdx) := true.B
+        contentionLimits(coreTableIdx) := io.scheduler.contentionLimit
+      } .elsewhen (io.scheduler.unsetCritical && (io.scheduler.coreId.valid && io.scheduler.coreId.bits === coreTableIdx.U)) {
+        criticalCores(coreTableIdx) := false.B
+        contentionLimits(coreTableIdx) := 0.U
+      }
+
+      when(updateContention && updateCoreIdx === coreTableIdx.U) {
+        contentionLimits(coreTableIdx) := contentionLimits(coreTableIdx) - 1.U
+      }
+    }
+
+    (contentionLimits, criticalCores)
+  }
+
+  // Base policies for each set and a single contention policy
+  val basePolicies = Array.fill(nSets)(Module(basePolicy())) // TODO: Add pipeline register here
+  val contentionPolicy = Module(new ContentionReplacementAlgorithm(nWays, nCores))
+
+  val assignmentsArray = lineAssignmentsArray(io.control.setIdx, io.control.evict, contentionPolicy.io.replacementWay.bits)
+  val coreTable = coreContentionTable(contentionPolicy.io.updateCore.valid, contentionPolicy.io.updateCore.bits)
+
+  val lineAssignments = assignmentsArray._1
+  val validAssignments = assignmentsArray._2
+  val coreLimits = coreTable._1
+  val criticalCores = coreTable._2
+
+  val isReqCoreCritical = criticalCores(io.control.reqId)
+  val setBaseReplaceWays = VecInit(Seq.fill(nSets)(VecInit(Seq.fill(nWays)(0.U(log2Up(nWays).W)))))
+
+  for (set <- 0 until nSets) {
+    // Update base policy
     basePolicies(set).io.update.valid := io.control.update.valid && (io.control.setIdx === set.U)
     basePolicies(set).io.update.bits := io.control.update.bits
+
+    setBaseReplaceWays(set) := basePolicies(set).io.replacementSet
   }
 
-  // Set and unset cores as critical
-  for (core <- 0 until nCores) {
-    when (io.scheduler.setCritical.valid && (io.scheduler.setCritical.bits === core.U)) {
-      criticalCores(core) := true.B
-      contentionLimits(core) := io.scheduler.contentionLimit
-    } .elsewhen (io.scheduler.unsetCritical.valid && (io.scheduler.unsetCritical.bits === core.U)) {
-      criticalCores(core) := false.B
-      contentionCounts(core) := 0.U
-    }
+  // Compute the eviction for each set
+  contentionPolicy.io.evict := io.control.evict
+  contentionPolicy.io.isReqCoreCritical := isReqCoreCritical
+  contentionPolicy.io.baseCandidates := setBaseReplaceWays(io.control.setIdx)
+  contentionPolicy.io.lineAssignments := lineAssignments
+  contentionPolicy.io.validLineAssignments := validAssignments
+  contentionPolicy.io.coreLimits := coreLimits
+  contentionPolicy.io.criticalCores := criticalCores
 
-    contentionOverflow(core) := getContention((core.asUInt, true.B)) + 1.U
-  }
-
-  // For each set, get the candidate and update the policy (in this case we only update base policy)
-  for (set <- 0 until sets) {
-    val (repWay, isValid) = getEvictCand(set)
-    setValidWays(set) := isValid
-    setReplaceWays(set) := repWay
-
-    updateBase(set)
-  }
-
-  io.control.replaceWay := setReplaceWays(io.control.setIdx)
-  io.control.isValid := setValidWays(io.control.setIdx)
+  io.control.replaceWay := contentionPolicy.io.replacementWay.bits
+  io.control.isValid := contentionPolicy.io.replacementWay.valid
 }

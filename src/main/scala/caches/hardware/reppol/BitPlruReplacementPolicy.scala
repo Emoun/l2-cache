@@ -10,11 +10,11 @@ import chisel3._
 class BitPlruReplacementPolicy(ways: Int, sets: Int, nCores: Int) extends SharedCacheReplacementPolicyType(ways, sets, nCores) {
   val setPlrus = Array.fill(sets)(Module(new BitPlruReplacementAlgorithm(ways)))
 
-  for (i <- 0 until sets) {
-    setPlrus(i).io.update.valid := io.control.update.valid && (io.control.setIdx === i.asUInt)
-    setPlrus(i).io.update.bits := io.control.update.bits
+  for (set <- 0 until sets) {
+    setPlrus(set).io.update.valid := io.control.update.valid && (io.control.setIdx === set.asUInt)
+    setPlrus(set).io.update.bits := io.control.update.bits
 
-    setReplaceWays(i) := setPlrus(i).io.replaceWay
+    setReplaceWays(set) := setPlrus(set).io.replaceWay
   }
 
   io.control.replaceWay := setReplaceWays(io.control.setIdx)

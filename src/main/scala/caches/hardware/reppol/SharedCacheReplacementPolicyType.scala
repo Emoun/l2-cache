@@ -14,30 +14,33 @@ class ReplacementPolicyIO(nWays: Int, nSets: Int, nCores: Int) extends Bundle {
 }
 
 class SchedulerIO(nCores: Int) extends Bundle {
-  val setCritical = Input(Valid(UInt(log2Up(nCores).W)))
-  val unsetCritical = Input(Valid(UInt(log2Up(nCores).W)))
+  val coreId = Input(Valid(UInt(log2Up(nCores).W)))
+  val setCritical = Input(Bool())
+  val unsetCritical = Input(Bool())
   val contentionLimit = Input(UInt(CONTENTION_LIMIT_WIDTH.W))
+}
+
+class SharedCacheReplacementIO(nWays: Int, nSets: Int, nCores: Int) extends Bundle {
+  val control = new ReplacementPolicyIO(nWays, nSets, nCores)
+  val scheduler = new SchedulerIO(nCores)
 }
 
 /**
  * A replacement policy for a shared set associate cache.
  *
- * @param ways number of ways in a single cache set
- * @param sets number of sets in the whole cache
+ * @param nWays number of ways in a single cache set
+ * @param nSets number of sets in the whole cache
  */
-class SharedCacheReplacementPolicyType(ways: Int, sets: Int, nCores: Int) extends Module {
-  val io = IO(new Bundle {
-    val control = new ReplacementPolicyIO(ways, sets, nCores)
-    val scheduler = new SchedulerIO(nCores)
-  })
+class SharedCacheReplacementPolicyType(nWays: Int, nSets: Int, nCores: Int) extends Module {
+  val io = IO(new SharedCacheReplacementIO(nWays, nSets, nCores))
 
   /**
    * Store the way to replace for each set
    */
-  val setReplaceWays = VecInit(Seq.fill(sets)(0.U(log2Up(ways).W)))
+  val setReplaceWays = VecInit(Seq.fill(nSets)(0.U(log2Up(nWays).W)))
 
   /**
    * Indicates if there are any valid ways to evict, i.e. empty set or not
    */
-  val setValidWays = VecInit(Seq.fill(sets)(false.B))
+  val setValidWays = VecInit(Seq.fill(nSets)(false.B))
 }

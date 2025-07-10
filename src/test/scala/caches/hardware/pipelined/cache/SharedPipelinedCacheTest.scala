@@ -2,16 +2,45 @@ package caches.hardware.pipelined.cache
 
 import chisel3._
 import chiseltest._
+import caches.hardware.reppol._
 import org.scalatest.flatspec.AnyFlatSpec
 
 class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
-  def performCacheRequest(dut: SharedPipelinedCache, coreId: Int, addr: String, rw: Boolean, wData: Option[String] = None): Unit = {
+  def setCoreAsCritical(dut: SharedPipelinedCacheTop, coreID: Int, contentionLimit: Int): Unit = {
+    dut.io.scheduler.coreId.valid.poke(true.B)
+    dut.io.scheduler.coreId.bits.poke(coreID.U)
+    dut.io.scheduler.setCritical.poke(true.B)
+    dut.io.scheduler.contentionLimit.poke(contentionLimit.U)
+
+    dut.clock.step(1)
+
+    // Reset the signals
+    dut.io.scheduler.coreId.valid.poke(false.B)
+    dut.io.scheduler.coreId.bits.poke(0.U)
+    dut.io.scheduler.setCritical.poke(false.B)
+    dut.io.scheduler.contentionLimit.poke(0.U)
+  }
+
+  def unsetCoreAsCritical(dut: SharedPipelinedCacheTop, coreID: Int): Unit = {
+    dut.io.scheduler.coreId.valid.poke(true.B)
+    dut.io.scheduler.coreId.bits.poke(coreID.U)
+    dut.io.scheduler.unsetCritical.poke(true.B)
+
+    dut.clock.step(1)
+
+    // Reset the signals
+    dut.io.scheduler.coreId.valid.poke(false.B)
+    dut.io.scheduler.coreId.bits.poke(0.U)
+    dut.io.scheduler.unsetCritical.poke(false.B)
+  }
+
+  def performCacheRequest(dut: SharedPipelinedCacheTop, coreId: Int, reqId: Int, addr: String, rw: Boolean, wData: Option[String] = None): Unit = {
     // Expect the cache to be ready to accept a request
     dut.io.cache.coreReqs(coreId).reqId.ready.expect(true.B)
 
     // Make request on behalf of the second core
     dut.io.cache.coreReqs(coreId).reqId.valid.poke(true.B)
-    dut.io.cache.coreReqs(coreId).reqId.bits.poke(coreId.U)
+    dut.io.cache.coreReqs(coreId).reqId.bits.poke(reqId.U)
     dut.io.cache.coreReqs(coreId).addr.poke(addr.U)
     dut.io.cache.coreReqs(coreId).rw.poke(rw.B)
 
@@ -32,129 +61,209 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     dut.io.cache.coreReqs(coreId).wData.poke(0.U)
   }
 
-  def expectCacheResponse(dut: SharedPipelinedCache, coreId: Int, reqId: Int, expectedData: String): Unit = {
-    dut.io.cache.coreResps(coreId).reqId.ready.poke(true.B)
+  def expectCacheResponse(dut: SharedPipelinedCacheTop, coreId: Int, reqId: Int, expectedData: String, okResponse: Boolean = true): Unit = {
     dut.io.cache.coreResps(coreId).reqId.valid.expect(true.B)
     dut.io.cache.coreResps(coreId).reqId.bits.expect(reqId.U)
     dut.io.cache.coreResps(coreId).rData.expect(expectedData.U)
-    dut.io.cache.coreResps(coreId).responseStatus.expect(1.U)
-  }
+    dut.io.cache.coreResps(coreId).responseStatus.expect(okResponse.asBool)
 
-  def performMemRead(dut: SharedPipelinedCache, expectedAddr: String, nBurst: Int, readData: Array[String]): Unit = {
-    dut.io.memController.rChannel.rAddr.ready.poke(true.B)
-    dut.io.memController.rChannel.rData.valid.poke(false.B)
-    dut.io.memController.rChannel.rData.bits.poke(0.U)
-
-    dut.io.memController.rChannel.rAddr.valid.expect(true.B)
-    dut.io.memController.rChannel.rAddr.bits.expect(expectedAddr.U)
+    dut.io.cache.coreResps(coreId).reqId.ready.poke(true.B)
 
     dut.clock.step(1)
 
-    dut.io.memController.rChannel.rAddr.ready.poke(false.B)
-    dut.io.memController.rChannel.rLast.poke(false.B)
-
-    for (i <- 0 until nBurst) {
-      dut.io.memController.rChannel.rData.valid.poke(true.B)
-      dut.io.memController.rChannel.rData.bits.poke(readData(i).U)
-      dut.io.memController.rChannel.rData.ready.expect(true.B)
-
-      if (i === nBurst - 1) {
-        dut.io.memController.rChannel.rLast.poke(true.B)
-      }
-
-      dut.clock.step(1)
-    }
-
-    dut.io.memController.rChannel.rAddr.ready.poke(true.B)
-    dut.io.memController.rChannel.rData.valid.poke(false.B)
-    dut.io.memController.rChannel.rData.bits.poke(0.U)
-    dut.io.memController.rChannel.rLast.poke(false.B)
+    dut.io.cache.coreResps(coreId).reqId.ready.poke(false.B)
   }
 
-  def performMemWrite(dut: SharedPipelinedCache, expectedAddr: String, nBurst: Int, writeData: Array[String]): Unit = {
-    // TODO: Implement this
-  }
-
-  "PipelinedCache" should "work" in  {
+  "SharedPipelinedCacheTop" should "work with lru replacement policy and 8 ways" in  {
+    val sizeInBytes = 512
     val nCores = 4
-    test(new SharedPipelinedCache(
-      sizeInBytes = 512, nWays = 8, nCores = nCores, addressWidth = 16, bytesPerBlock = 16, bytesPerSubBlock = 8, bytesPerBurst = 8
+    val nWays = 8
+    val addressWidth = 16
+    val bytesPerBlock = 16
+    val bytesPerSubBlock = 4
+    val nSets = sizeInBytes / (nWays * bytesPerBlock)
+    val l2RepPolicy = () => new BitPlruReplacementPolicy(nWays, nSets, nCores)
+    val memFile = "./hex/test_mem_32w.hex"
+
+    test(new SharedPipelinedCacheTop(
+      sizeInBytes = sizeInBytes,
+      nWays = nWays,
+      nCores = nCores,
+      addressWidth = addressWidth,
+      bytesPerBlock = bytesPerBlock,
+      bytesPerSubBlock = bytesPerSubBlock,
+      bytesPerBurst = bytesPerSubBlock,
+      l2RepPolicy,
+      Some(memFile)
     )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default inputs
-
       for(i <- 0 until nCores) {
         dut.io.cache.coreReqs(i).reqId.valid.poke(false.B)
         dut.io.cache.coreReqs(i).reqId.bits.poke(0.U)
         dut.io.cache.coreReqs(i).addr.poke(0.U)
         dut.io.cache.coreReqs(i).rw.poke(false.B)
         dut.io.cache.coreReqs(i).wData.poke(0.U)
+        dut.io.cache.coreResps(i).reqId.ready.poke(false.B)
       }
 
-      dut.io.repPol.replaceWay.poke(0.U)
-      dut.io.repPol.isValid.poke(true.B)
-
-      dut.io.memController.rChannel.rAddr.ready.poke(true.B)
-      dut.io.memController.rChannel.rData.valid.poke(false.B)
-      dut.io.memController.rChannel.rData.bits.poke(0.U)
-      dut.io.memController.rChannel.rLast.poke(false.B)
-      dut.io.memController.wChannel.wAddr.ready.poke(true.B)
-      dut.io.memController.wChannel.wData.ready.poke(true.B)
+      dut.io.scheduler.coreId.valid.poke(false.B)
+      dut.io.scheduler.coreId.bits.poke(0.U)
+      dut.io.scheduler.setCritical.poke(false.B)
+      dut.io.scheduler.unsetCritical.poke(false.B)
+      dut.io.scheduler.contentionLimit.poke(0.U)
 
       dut.clock.step(5)
 
-      // Access data that is not yet in the cache
-      performCacheRequest(dut, 1, "b101101000", false)
+      // NOTE:
+      //  addr is assumed to be byte addressable
+      //  first two bits in addr are for byte offset
+      //  second two bits in addr are for block offset
+      //  third two bits in addr are for index
+      //  remaining bits are for the tag
 
-      dut.clock.step(3)
-
-      performMemRead(dut, "b101101000", 2, Array("hbeefdeaddeadbeef", "hbabecafecafebabe"))
-
-      expectCacheResponse(dut, 1, 1, "hbabecafecafebabe")
-
-      dut.clock.step(1)
-
-      dut.io.cache.coreResps(1).reqId.ready.poke(false.B)
+      // Access data that is not yet in the cache (put in way: 0)
+      performCacheRequest(dut, coreId = 1, reqId = 1, addr = "b000000000", rw = false)
+      dut.clock.step(8) // Pipeline delay due to cache miss
+      expectCacheResponse(dut, coreId = 1, reqId = 1, expectedData = "hbeefdead")
 
       // Access data that is already in the cache
-      performCacheRequest(dut, 1, "b101100000", false)
-
+      performCacheRequest(dut, coreId = 1, reqId = 1, addr = "b000000100", rw = false)
       dut.clock.step(2)
+      expectCacheResponse(dut, coreId = 1, reqId = 1, expectedData = "hdeadbeef")
 
-      dut.io.cache.coreResps(1).reqId.ready.poke(true.B)
-      dut.io.cache.coreResps(1).reqId.valid.expect(true.B)
-      dut.io.cache.coreResps(1).reqId.bits.expect(1.U)
-      dut.io.cache.coreResps(1).rData.expect("hbeefdeaddeadbeef".U)
-      dut.io.cache.coreResps(1).responseStatus.expect(1.U)
+      // Write to an existing line in the cache
+      performCacheRequest(dut, coreId = 1, reqId = 1, addr = "b000001000", rw = true, wData = Some("hd00dfeed"))
+      dut.clock.step(2)
+      expectCacheResponse(dut, coreId = 1, reqId = 1, expectedData = "hbabecafe")
+
+      // Bring in another line into the cache (put in way: 1)
+      performCacheRequest(dut, coreId = 3, reqId = 3, addr = "b001001100", rw = false)
+      dut.clock.step(8)
+      expectCacheResponse(dut, coreId = 3, reqId = 3, expectedData = "hbbadbeef")
+
+      // Bring in another line into the cache (put in way: 2)
+      performCacheRequest(dut, coreId = 2, reqId = 2, addr = "b010000000", rw = false)
+      dut.clock.step(8)
+      expectCacheResponse(dut, coreId = 2, reqId = 2, expectedData = "hfacefeed")
+
+      // Bring in another line into the cache (put in way: 3) and write some data to it too
+      performCacheRequest(dut, coreId = 3, reqId = 3, addr = "b011001100", rw = true, wData = Some("hbeefdead"))
+      dut.clock.step(8)
+      expectCacheResponse(dut, coreId = 3, reqId = 3, expectedData = "hbd42f9c3")
+
+      // Bring in another line into the cache (put in way: 4)
+      performCacheRequest(dut, coreId = 0, reqId = 0, addr = "b100000000", rw = false)
+      dut.clock.step(8)
+      expectCacheResponse(dut, coreId = 0, reqId = 0, expectedData = "h40cbde98")
+
+      // Bring in another line into the cache (put in way: 5)
+      performCacheRequest(dut, coreId = 1, reqId = 1, addr = "b101000100", rw = false)
+      dut.clock.step(8)
+      expectCacheResponse(dut, coreId = 1, reqId = 1, expectedData = "haf10c5be")
+
+      // Bring in another line into the cache (put in way: 6)
+      performCacheRequest(dut, coreId = 2, reqId = 2, addr = "b110001000", rw = false)
+      dut.clock.step(8)
+      expectCacheResponse(dut, coreId = 2, reqId = 2, expectedData = "hace04f29")
+
+      // Bring in another line into the cache (put in way: 7)
+      performCacheRequest(dut, coreId = 3, reqId = 3, addr = "b111001100", rw = false)
+      dut.clock.step(8)
+      expectCacheResponse(dut, coreId = 3, reqId = 3, expectedData = "hf01c27ae")
+
+      // Bring in the first cache line that will result in eviction of way 0 (put in way: 0)
+      performCacheRequest(dut, coreId = 0, reqId = 0, addr = "b1000000100", rw = false)
+      dut.clock.step(8)
+      expectCacheResponse(dut, coreId = 0, reqId = 0, expectedData = "h49e1af73")
+
+      // Try to refetch the evicted cache and check if the written data was written to main memory
+      // (put in way: 1)
+      performCacheRequest(dut, coreId = 1, reqId = 1, addr = "b000001000", rw = false)
+      dut.clock.step(12) // Since a write back starts at the same time as the request we have to wait for a wb before we can fetch the line back
+      expectCacheResponse(dut, coreId = 1, reqId = 1, expectedData = "hd00dfeed")
+    }
+  }
+
+  "SharedPipelinedCacheTop" should "work with contention replacement policy and 8 ways" in  {
+    val sizeInBytes = 512
+    val nCores = 4
+    val nWays = 8
+    val addressWidth = 16
+    val bytesPerBlock = 16
+    val bytesPerSubBlock = 4
+    val nSets = sizeInBytes / (nWays * bytesPerBlock)
+    val basePolicy = () => new BitPlruReplacementAlgorithm(nWays)
+    val l2RepPolicy = () => new ContentionReplacementPolicy(nWays, nSets, nCores, basePolicy)
+    val memFile = "./hex/test_mem_32w.hex"
+
+    test(new SharedPipelinedCacheTop(
+      sizeInBytes = sizeInBytes,
+      nWays = nWays,
+      nCores = nCores,
+      addressWidth = addressWidth,
+      bytesPerBlock = bytesPerBlock,
+      bytesPerSubBlock = bytesPerSubBlock,
+      bytesPerBurst = bytesPerSubBlock,
+      l2RepPolicy,
+      Some(memFile)
+    )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+      // Default inputs
+      for(i <- 0 until nCores) {
+        dut.io.cache.coreReqs(i).reqId.valid.poke(false.B)
+        dut.io.cache.coreReqs(i).reqId.bits.poke(0.U)
+        dut.io.cache.coreReqs(i).addr.poke(0.U)
+        dut.io.cache.coreReqs(i).rw.poke(false.B)
+        dut.io.cache.coreReqs(i).wData.poke(0.U)
+        dut.io.cache.coreResps(i).reqId.ready.poke(true.B)
+      }
+
+      dut.io.scheduler.coreId.valid.poke(false.B)
+      dut.io.scheduler.coreId.bits.poke(0.U)
+      dut.io.scheduler.setCritical.poke(false.B)
+      dut.io.scheduler.unsetCritical.poke(false.B)
+      dut.io.scheduler.contentionLimit.poke(0.U)
+
+      dut.clock.step(5)
+
+      setCoreAsCritical(dut, coreID = 1, contentionLimit = 2)
 
       dut.clock.step(1)
 
-      dut.io.cache.coreResps(1).reqId.ready.poke(false.B)
-
-      // Write over the data that is in the cache (making the line dirty)
-      performCacheRequest(dut, 2, "b101100000", true, Some("hd00dfeedfeedd00d"))
-
-      dut.clock.step(2)
-
-      dut.io.cache.coreResps(2).reqId.ready.poke(true.B)
-      dut.io.cache.coreResps(2).reqId.valid.expect(true.B)
-      dut.io.cache.coreResps(2).reqId.bits.expect(2.U)
-      dut.io.cache.coreResps(1).rData.expect("hbeefdeaddeadbeef".U)
-      dut.io.cache.coreResps(2).responseStatus.expect(1.U)
+      setCoreAsCritical(dut, coreID = 3, contentionLimit = 2)
 
       dut.clock.step(1)
 
-      dut.io.cache.coreResps(1).reqId.ready.poke(false.B)
+      // NOTE:
+      //  addr is assumed to be byte addressable
+      //  first two bits in addr are for byte offset
+      //  second two bits in addr are for block offset
+      //  third two bits in addr are for index
+      //  remaining bits are for the tag
 
-      // Evict the dirty line
-      performCacheRequest(dut, 3, "b111100000", false)
+      // Access data that is not yet in the cache (put in way: 0)
+      performCacheRequest(dut, coreId = 1, reqId = 1, addr = "b00000000", rw = false)
+      dut.clock.step(8) // Pipeline delay due to cache miss
+      expectCacheResponse(dut, coreId = 1, reqId = 1, expectedData = "hbeefdead")
 
-      dut.clock.step(3)
-
-      performMemRead(dut, "b111100000", 2, Array("hbeefdeaddeadbeef", "hd00dfeedfeedd00d"))
-
+      // Access data that is already in the cache
+      performCacheRequest(dut, coreId = 1, reqId = 1, addr = "b00000100", rw = false)
       dut.clock.step(2)
+      expectCacheResponse(dut, coreId = 1, reqId = 1, expectedData = "hdeadbeef")
 
-      // TODO: Perform a write request
+      // Write to an existing line in the cache
+      performCacheRequest(dut, coreId = 1, reqId = 1, addr = "b00001000", rw = true, wData = Some("hd00dfeed"))
+      dut.clock.step(2)
+      expectCacheResponse(dut, coreId = 1, reqId = 1, expectedData = "hbabecafe")
+
+      // Bring in another line into the cache (put in way: 1)
+      performCacheRequest(dut, coreId = 2, reqId = 2, addr = "b01000000", rw = false)
+      dut.clock.step(8)
+      expectCacheResponse(dut, coreId = 2, reqId = 2, expectedData = "hbadc0ffe")
+
+      // Bring in another line into the cache (put in way: 2)
+      performCacheRequest(dut, coreId = 2, reqId = 2, addr = "b10000000", rw = false)
+      dut.clock.step(8)
+      expectCacheResponse(dut, coreId = 2, reqId = 2, expectedData = "hfacefeed")
     }
   }
 }

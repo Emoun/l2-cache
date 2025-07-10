@@ -7,7 +7,7 @@ import chisel3._
  *
  * @param ways number of ways in a set-associate cache
  */
-class TreePlruReplacementAlgorithm(ways: Int) extends ReplacementAlgorithm(ways) {
+class TreePlruReplacementAlgorithm(ways: Int) extends ReplacementAlgorithmType(ways) {
   // An array of one-bit registers, each for a node in the tree
   val plruBits = RegInit(VecInit(Seq.fill(ways - 1)(false.B)))
 

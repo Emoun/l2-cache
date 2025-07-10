@@ -51,10 +51,10 @@ class L2SetAssociateCacheDe2115Top(
   io.scheduler <> l2Cache.io.scheduler
 
   // Empty assignments to l1 scheduler
-  l1.io.scheduler.setCritical.valid := false.B
-  l1.io.scheduler.setCritical.bits := 0.U
-  l1.io.scheduler.unsetCritical.valid := false.B
-  l1.io.scheduler.unsetCritical.bits := 0.U
+  l1.io.scheduler.coreId.bits := 0.U
+  l1.io.scheduler.coreId.valid := false.B
+  l1.io.scheduler.setCritical := false.B
+  l1.io.scheduler.unsetCritical := false.B
   l1.io.scheduler.contentionLimit := 0.U
 
   // Connection between the L1 cache and the L2 cache

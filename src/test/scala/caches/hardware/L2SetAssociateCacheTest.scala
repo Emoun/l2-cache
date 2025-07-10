@@ -203,27 +203,31 @@ class L2SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
   }
 
   def setCoreAsCritical(dut: L2SetAssociateCacheTestTop, coreID: Int, contentionLimit: Int): Unit = {
-    dut.io.scheduler.setCritical.valid.poke(true.B)
-    dut.io.scheduler.setCritical.bits.poke(coreID.U)
+    dut.io.scheduler.coreId.valid.poke(true.B)
+    dut.io.scheduler.coreId.bits.poke(coreID.U)
+    dut.io.scheduler.setCritical.poke(true.B)
     dut.io.scheduler.contentionLimit.poke(contentionLimit.U)
 
     dut.clock.step(1)
 
     // Reset the signals
-    dut.io.scheduler.setCritical.valid.poke(false.B)
-    dut.io.scheduler.setCritical.bits.poke(0.U)
+    dut.io.scheduler.coreId.bits.poke(0.U)
+    dut.io.scheduler.coreId.valid.poke(false.B)
+    dut.io.scheduler.setCritical.poke(false.B)
     dut.io.scheduler.contentionLimit.poke(0.U)
   }
 
   def unsetCoreAsCritical(dut: L2SetAssociateCacheTestTop, coreID: Int): Unit = {
-    dut.io.scheduler.unsetCritical.valid.poke(true.B)
-    dut.io.scheduler.unsetCritical.bits.poke(coreID.U)
+    dut.io.scheduler.coreId.bits.poke(coreID.U)
+    dut.io.scheduler.coreId.valid.poke(true.B)
+    dut.io.scheduler.unsetCritical.poke(true.B)
 
     dut.clock.step(1)
 
     // Reset the signals
-    dut.io.scheduler.unsetCritical.valid.poke(false.B)
-    dut.io.scheduler.unsetCritical.bits.poke(0.U)
+    dut.io.scheduler.coreId.bits.poke(0.U)
+    dut.io.scheduler.coreId.valid.poke(true.B)
+    dut.io.scheduler.unsetCritical.poke(false.B)
   }
 
   "L2SetAssociateCache" should "decode correct address fields" in {
@@ -247,11 +251,11 @@ class L2SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.io.lower.rData.poke(0.U)
       dut.io.lower.ack.poke(false.B)
       dut.io.lower.responseStatus.poke(0.U)
-      dut.io.scheduler.setCritical.valid.poke(false.B)
-      dut.io.scheduler.setCritical.bits.poke(0.U)
+      dut.io.scheduler.coreId.valid.poke(false.B)
+      dut.io.scheduler.coreId.bits.poke(0.U)
+      dut.io.scheduler.setCritical.poke(false.B)
+      dut.io.scheduler.unsetCritical.poke(false.B)
       dut.io.scheduler.contentionLimit.poke(0.U)
-      dut.io.scheduler.unsetCritical.valid.poke(false.B)
-      dut.io.scheduler.unsetCritical.bits.poke(0.U)
 
       dut.clock.step(1)
 
@@ -645,8 +649,8 @@ class L2SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     val addressWidth = ADDRESS_WIDTH
     val nSets = (size / bytesPerBlock) / ways
     val repPolicyGen = () => new ContentionReplacementPolicy(
-      ways = ways,
-      sets = nSets,
+      nWays = ways,
+      nSets = nSets,
       nCores = nCores,
       basePolicy = () => new BitPlruReplacementAlgorithm(ways)
     )

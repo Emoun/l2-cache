@@ -4,8 +4,8 @@
 # vcd files
 *.vcd
 
-# verilog files
-*.v
+# generated verilog files
+/generated/*
 
 # misc
 *.lo.fir

@@ -9,7 +9,7 @@ import chisel3.util.PriorityEncoder
  *
  * @param ways number of ways in a set-associate cache
  */
-class BitPlruReplacementAlgorithm(ways: Int) extends ReplacementAlgorithm(ways) {
+class BitPlruReplacementAlgorithm(ways: Int) extends ReplacementAlgorithmType(ways) {
   // An array of one-bit MRU registers, each for a way
   val mruBits = RegInit(VecInit(Seq.fill(ways)(false.B)))
 
