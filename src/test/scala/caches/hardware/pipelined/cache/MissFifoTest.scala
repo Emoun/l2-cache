@@ -19,6 +19,7 @@ class MissFifoTest extends AnyFlatSpec with ChiselScalatestTester {
 
   "MissFifo" should "push and pop entries correctly" in {
     test(new MissFifo(
+      nCores = 4,
       nMSHRs = 4,
       nWays = 16,
       reqIdWidth = 2,

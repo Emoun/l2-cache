@@ -1,7 +1,7 @@
 package caches.hardware.pipelined.cache
 
 import chisel3._
-import chisel.lib.fifo.{MemFifo, RegFifo}
+import chisel.lib.fifo._
 
 class WbFifoEntryIO(tagWidth: Int, indexWidth: Int, blockWidth: Int) extends Bundle {
   val tag = Input(UInt(tagWidth.W))
@@ -19,7 +19,7 @@ class WriteBackFifo(queueDepth: Int, tagWidth: Int, indexWidth: Int, blockWidth:
     val empty = Output(Bool())
   })
 
-  val wbDataFifo = Module(new MemFifo(UInt(blockWidth.W), queueDepth)) // TODO: Synthesis cannot synthesize this to memory due to incorrect memory size
+  val wbDataFifo = Module(new RegFifo(UInt(blockWidth.W), queueDepth))
   val tagFifo = Module(new RegFifo(UInt(tagWidth.W), queueDepth))
   val indexFifo = Module(new RegFifo(UInt(indexWidth.W), queueDepth))
 
@@ -37,8 +37,8 @@ class WriteBackFifo(queueDepth: Int, tagWidth: Int, indexWidth: Int, blockWidth:
   wbDataFifo.io.deq.ready := io.pop
   tagFifo.io.deq.ready := io.pop
   indexFifo.io.deq.ready := io.pop
-  io.popEntry.tag := RegNext(tagFifo.io.deq.bits, 0.U)
-  io.popEntry.index := RegNext(indexFifo.io.deq.bits, 0.U)
+  io.popEntry.tag := tagFifo.io.deq.bits
+  io.popEntry.index := indexFifo.io.deq.bits
   io.popEntry.wbData := wbDataFifo.io.deq.bits
 
   io.full := queueFull

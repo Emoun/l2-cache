@@ -5,9 +5,10 @@ import chisel3.util._
 import chisel.lib.fifo._
 import chisel3.util.experimental.BoringUtils
 
-class MissFifoEntryIO(nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, subBlockWidth: Int) extends Bundle {
+class MissFifoEntryIO(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, subBlockWidth: Int) extends Bundle {
   val rw = Input(Bool())
   val reqId = Input(UInt(reqIdWidth.W))
+  val coreId = Input(UInt(log2Up(nCores).W))
   val wData = Input(UInt(subBlockWidth.W))
   val replaceWay = Input(UInt(log2Up(nWays).W))
   val tag = Input(UInt(tagWidth.W))
@@ -52,12 +53,12 @@ class MshrQueue[T <: Data](gen: T, depth: Int) extends Module {
   io.enq <> fifo.io.enq
 }
 
-class MissFifo(nMSHRs: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, subBlockWidth: Int) extends Module {
+class MissFifo(nCores: Int, nMSHRs: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, subBlockWidth: Int) extends Module {
   val io = IO(new Bundle {
     val push = Input(Bool())
-    val pushEntry = new MissFifoEntryIO(nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, subBlockWidth)
+    val pushEntry = new MissFifoEntryIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, subBlockWidth)
     val pop = Input(Bool())
-    val popEntry = Flipped(new MissFifoEntryIO(nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, subBlockWidth))
+    val popEntry = Flipped(new MissFifoEntryIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, subBlockWidth))
     val currentIndexes = Output(Vec(nMSHRs, UInt(indexWidth.W)))
     val currentWays = Output(Vec(nMSHRs, UInt(log2Up(nWays).W)))
     val validMSHRs = Output(Vec(nMSHRs, Bool()))
@@ -67,6 +68,7 @@ class MissFifo(nMSHRs: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWid
 
   val rwQueue = Module(new RegFifo(Bool(), nMSHRs))
   val reqIdQueue = Module(new RegFifo(UInt(reqIdWidth.W), nMSHRs))
+  val coreIdQueue = Module(new RegFifo(UInt(log2Up(nCores).W), nMSHRs))
   val wDataQueue = Module(new RegFifo(UInt(subBlockWidth.W), nMSHRs))
   val wayQueue = Module(new MshrQueue(UInt(log2Up(nWays).W), nMSHRs))
   val tagQueue = Module(new RegFifo(UInt(tagWidth.W), nMSHRs))
@@ -75,6 +77,7 @@ class MissFifo(nMSHRs: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWid
 
   val full = !rwQueue.io.enq.ready ||
              !reqIdQueue.io.enq.ready ||
+             !coreIdQueue.io.enq.ready ||
              !wDataQueue.io.enq.ready ||
              !wayQueue.io.enq.ready ||
              !tagQueue.io.enq.ready ||
@@ -83,6 +86,7 @@ class MissFifo(nMSHRs: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWid
 
   val empty = !rwQueue.io.deq.valid ||
               !reqIdQueue.io.deq.valid ||
+              !coreIdQueue.io.deq.valid ||
               !wDataQueue.io.deq.valid ||
               !wayQueue.io.deq.valid ||
               !tagQueue.io.deq.valid ||
@@ -94,6 +98,8 @@ class MissFifo(nMSHRs: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWid
   rwQueue.io.enq.bits := io.pushEntry.rw
   reqIdQueue.io.enq.valid := io.push
   reqIdQueue.io.enq.bits := io.pushEntry.reqId
+  coreIdQueue.io.enq.valid := io.push
+  coreIdQueue.io.enq.bits := io.pushEntry.coreId
   wDataQueue.io.enq.valid := io.push
   wDataQueue.io.enq.bits := io.pushEntry.wData
   wayQueue.io.enq.valid := io.push
@@ -108,6 +114,7 @@ class MissFifo(nMSHRs: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWid
   // Connections for popping data
   rwQueue.io.deq.ready := io.pop
   reqIdQueue.io.deq.ready := io.pop
+  coreIdQueue.io.deq.ready := io.pop
   wDataQueue.io.deq.ready := io.pop
   wayQueue.io.deq.ready := io.pop
   tagQueue.io.deq.ready := io.pop
@@ -125,6 +132,7 @@ class MissFifo(nMSHRs: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWid
   io.validMSHRs := wayQueue.io.validRegs
   io.popEntry.rw := rwQueue.io.deq.bits
   io.popEntry.reqId := reqIdQueue.io.deq.bits
+  io.popEntry.coreId := coreIdQueue.io.deq.bits
   io.popEntry.wData := wDataQueue.io.deq.bits
   io.popEntry.replaceWay := wayQueue.io.deq.bits
   io.popEntry.tag := tagQueue.io.deq.bits

@@ -7,6 +7,7 @@ class RequestArbiter(nReqs: Int, addrWidth: Int, dataWidth: Int, reqIdWidth: Int
   val io = IO(new Bundle {
     val ports = Vec(nReqs, new CacheRequestIO(addrWidth, dataWidth, reqIdWidth))
     val out = Flipped(new CacheRequestIO(addrWidth, dataWidth, reqIdWidth))
+    val chosen = Output(UInt(log2Up(nReqs).W))
   })
 
   val arbiter = Module(new RRArbiter(UInt(reqIdWidth.W), nReqs))
@@ -21,4 +22,5 @@ class RequestArbiter(nReqs: Int, addrWidth: Int, dataWidth: Int, reqIdWidth: Int
   io.out.rw := io.ports(chosen).rw
   io.out.wData := io.ports(chosen).wData
   io.out.addr := io.ports(chosen).addr
+  io.chosen := chosen
 }

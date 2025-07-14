@@ -6,9 +6,10 @@ import chisel3.util._
 
 class ReplacementPolicyIO(nWays: Int, nSets: Int, nCores: Int) extends Bundle {
   val update = Input(Valid(UInt(log2Up(nWays).W)))
+  val stall = Input(Bool())
   val evict = Input(Bool()) // Some policies may need to know if when the line is being evicted
   val setIdx = Input(UInt(log2Up(nSets).W))
-  val reqId = Input(UInt(log2Up(nCores).W)) // ID of the requesting core
+  val coreId = Input(UInt(log2Up(nCores).W)) // ID of the requesting core
   val replaceWay = Output(UInt(log2Up(nWays).W))
   val isValid = Output(Bool()) // To signal if there are no valid ways to replace
 }
@@ -33,6 +34,14 @@ class SharedCacheReplacementIO(nWays: Int, nSets: Int, nCores: Int) extends Bund
  */
 class SharedCacheReplacementPolicyType(nWays: Int, nSets: Int, nCores: Int) extends Module {
   val io = IO(new SharedCacheReplacementIO(nWays, nSets, nCores))
+
+  def pipelineReg[T <: Data](next: T, init: T, en: Bool): T = {
+    val pipelineReg = RegInit(init)
+    when(en) {
+      pipelineReg := next
+    }
+    pipelineReg
+  }
 
   /**
    * Store the way to replace for each set

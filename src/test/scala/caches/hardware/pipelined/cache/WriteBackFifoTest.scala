@@ -27,8 +27,6 @@ class WriteBackFifoTest extends AnyFlatSpec with ChiselScalatestTester {
 
       dut.io.push.poke(false.B)
 
-      dut.clock.step(1)
-
       // Pop an entry
       dut.io.pop.poke(true.B)
       dut.io.popEntry.tag.expect("h1234".U)
@@ -39,8 +37,6 @@ class WriteBackFifoTest extends AnyFlatSpec with ChiselScalatestTester {
 
       dut.io.pop.poke(false.B)
       dut.io.empty.expect(true.B)
-
-      dut.clock.step(1)
 
       // Push an entry
       dut.io.push.poke(true.B)
@@ -66,9 +62,6 @@ class WriteBackFifoTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.io.popEntry.index.expect("h17".U)
       dut.io.popEntry.wbData.expect("hcafebabe".U)
 
-      dut.clock.step(1)
-
-      // Need to advance by one CC due to 2cc delay of the memory fifo updating its pointers
       dut.clock.step(1)
 
       dut.io.pop.poke(true.B)

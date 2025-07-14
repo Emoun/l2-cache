@@ -108,7 +108,7 @@ class CacheController(ways: Int, sets: Int, nCores: Int) extends Module {
   io.repPol.update.valid := policyUpdate
   io.repPol.update.bits := io.mem.hitWay
   io.repPol.setIdx := io.mem.set
-  io.repPol.reqId := reqIdReg
+  io.repPol.coreId := reqIdReg
   io.repPol.evict := evict
 
   io.mem.latchReq := latchReq

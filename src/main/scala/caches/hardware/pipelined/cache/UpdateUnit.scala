@@ -3,9 +3,10 @@ package caches.hardware.pipelined.cache
 import chisel3._
 import chisel3.util._
 
-class CacheUpdateEntryIO(nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockWidth: Int, subBlockWidth: Int) extends Bundle {
+class CacheUpdateEntryIO(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockWidth: Int, subBlockWidth: Int) extends Bundle {
   val valid = Input(Bool())
   val reqId = Input(UInt(reqIdWidth.W))
+  val coreId = Input(UInt(log2Up(nCores).W))
   val rw = Input(Bool())
   val wData = Input(UInt(subBlockWidth.W))
   val wWay = Input(UInt(log2Up(nWays).W))
@@ -16,9 +17,10 @@ class CacheUpdateEntryIO(nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth:
   val memReadData = Input(Vec(blockWidth / subBlockWidth, UInt(subBlockWidth.W)))
 }
 
-class CacheUpdateControlIO(nWays: Int, tagWidth: Int, nSubBlocks: Int, subBlockWidth: Int) extends Bundle {
+class CacheUpdateControlIO(nCores: Int, nWays: Int, tagWidth: Int, nSubBlocks: Int, subBlockWidth: Int) extends Bundle {
   val tag = Output(UInt(tagWidth.W))
   val index = Output(UInt(log2Up(nWays).W))
+  val coreId = Output(UInt(log2Up(nCores).W))
   val way = Output(UInt(log2Up(nWays).W))
   val refill = Output(Bool())
   val update = Output(Bool())
@@ -27,13 +29,13 @@ class CacheUpdateControlIO(nWays: Int, tagWidth: Int, nSubBlocks: Int, subBlockW
   val wrEn = Output(Bool())
 }
 
-class UpdateUnit(nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockWidth: Int, subBlockWidth: Int) extends Module {
+class UpdateUnit(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockWidth: Int, subBlockWidth: Int) extends Module {
   private val nSubBlocks = blockWidth / subBlockWidth
 
   val io = IO(new Bundle {
-    val readStage = new CacheUpdateEntryIO(nWays, reqIdWidth, tagWidth, indexWidth, blockWidth, subBlockWidth)
-    val memoryInterface = new CacheUpdateEntryIO(nWays, reqIdWidth, tagWidth, indexWidth, blockWidth, subBlockWidth)
-    val cacheUpdateControl = new CacheUpdateControlIO(nWays, tagWidth, nSubBlocks, subBlockWidth)
+    val readStage = new CacheUpdateEntryIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockWidth, subBlockWidth)
+    val memoryInterface = new CacheUpdateEntryIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockWidth, subBlockWidth)
+    val cacheUpdateControl = new CacheUpdateControlIO(nCores, nWays, tagWidth, nSubBlocks, subBlockWidth)
     val coreResp = new CacheResponseIO(subBlockWidth, reqIdWidth)
   })
 
@@ -103,6 +105,7 @@ class UpdateUnit(nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, bl
   io.cacheUpdateControl.update := update
   io.cacheUpdateControl.memWriteData := cacheWriteData
   io.cacheUpdateControl.wrEn := wrEn
+  io.cacheUpdateControl.coreId := 0.U // TODO: Fix this
 
   io.coreResp.reqId.valid := io.readStage.valid || io.memoryInterface.valid
   io.coreResp.reqId.bits := respReqId

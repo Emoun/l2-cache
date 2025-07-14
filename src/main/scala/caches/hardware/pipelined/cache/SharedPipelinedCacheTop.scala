@@ -12,18 +12,18 @@ class SharedPipelinedCacheTop(
                          bytesPerBlock: Int,
                          bytesPerSubBlock: Int,
                          bytesPerBurst: Int,
-                         l2RepPolicy: () => SharedCacheReplacementPolicyType,
-                         dataFile: Option[String] = None
+                         l2RepPolicy: () => SharedCacheReplacementPolicyType
                        ) extends Module {
   require(isPow2(bytesPerBurst), "Bytes per burst need to be a power of 2.")
 
   val io = IO(new Bundle {
     val scheduler = new SchedulerIO(nCores)
     val cache = new CacheIO(nCores, addressWidth, bytesPerSubBlock * 8)
+    val mem = new MemoryControllerIO(addressWidth, bytesPerBurst * 8)
   })
 
   // TODO: Add some sort of queue for rejected responses, to retry them at a later time
-  //  or expect the core re-attempt at a later time
+  //  or expect the core to re-attempt at a later time
   val l2Cache = Module(new SharedPipelinedCache(
     sizeInBytes = sizeInBytes,
     nWays = nWays,
@@ -34,27 +34,12 @@ class SharedPipelinedCacheTop(
     bytesPerBurst = bytesPerBurst
   ))
 
-  val replacementPolicy = Module(l2RepPolicy())
+  val repPol = Module(l2RepPolicy())
 
-  // The dummy memory is sub-block addressable
-  val memory = Module(new DummyMemory(addressWidth - log2Ceil(bytesPerBurst), bytesPerBlock * 8, bytesPerBurst * 8, dataFile))
-
-  l2Cache.io.repPol <> replacementPolicy.io.control
+  repPol.io.scheduler <> io.scheduler
+  l2Cache.io.repPol <> repPol.io.control
   l2Cache.io.cache <> io.cache
-  replacementPolicy.io.scheduler := io.scheduler
-
-  memory.io.rChannel.rAddr.valid := l2Cache.io.mem.rChannel.rAddr.valid
-  memory.io.rChannel.rAddr.bits := l2Cache.io.mem.rChannel.rAddr.bits(addressWidth - 1, log2Ceil(bytesPerBurst)) // Dummy memory accepts the address bits for bursts addresses only
-  l2Cache.io.mem.rChannel.rAddr.ready := memory.io.rChannel.rAddr.ready
-
-  memory.io.wChannel.wAddr.valid := l2Cache.io.mem.wChannel.wAddr.valid
-  memory.io.wChannel.wAddr.bits := l2Cache.io.mem.wChannel.wAddr.bits(addressWidth - 1, log2Ceil(bytesPerBurst)) // Dummy memory accepts the address bits for bursts addresses only
-  l2Cache.io.mem.wChannel.wAddr.ready := memory.io.wChannel.wAddr.ready
-
-  memory.io.rChannel.rData <> l2Cache.io.mem.rChannel.rData
-  memory.io.rChannel.rLast <> l2Cache.io.mem.rChannel.rLast
-  memory.io.wChannel.wData <> l2Cache.io.mem.wChannel.wData
-  memory.io.wChannel.wLast <> l2Cache.io.mem.wChannel.wLast
+  l2Cache.io.mem <> io.mem
 }
 
 object SharedPipelinedCacheTop extends App {

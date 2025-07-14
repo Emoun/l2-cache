@@ -20,7 +20,7 @@ class MemoryControllerIO(addrWidth: Int, burstWidth: Int) extends Bundle {
   val wChannel = new WriteChannel(addrWidth, burstWidth)
 }
 
-class MemoryInterface(nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, blockWidth: Int, subBlockWidth: Int, burstWidth: Int) extends Module {
+class MemoryInterface(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, blockWidth: Int, subBlockWidth: Int, burstWidth: Int) extends Module {
   private val byteOffsetWidth = log2Up(subBlockWidth / 8)
   private val addressWidth = tagWidth + indexWidth + blockOffsetWidth + byteOffsetWidth
   private val nSubBlocks = blockWidth / subBlockWidth
@@ -28,7 +28,7 @@ class MemoryInterface(nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: In
 
   val io = IO(new Bundle {
     val missFifo = new Bundle {
-      val popEntry = new MissFifoEntryIO(nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, subBlockWidth)
+      val popEntry = new MissFifoEntryIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, subBlockWidth)
       val empty = Input(Bool())
       val pop = Output(Bool())
     }
@@ -37,7 +37,7 @@ class MemoryInterface(nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: In
       val empty = Input(Bool())
       val pop = Output(Bool())
     }
-    val updateLogic = Flipped(new CacheUpdateEntryIO(nWays, reqIdWidth, tagWidth, indexWidth, blockWidth, subBlockWidth))
+    val updateLogic = Flipped(new CacheUpdateEntryIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockWidth, subBlockWidth))
     val memController = new MemoryControllerIO(addressWidth, burstWidth)
   })
 
@@ -170,6 +170,7 @@ class MemoryInterface(nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: In
   io.updateLogic.index := reqIndexReg
   io.updateLogic.tag := reqTagReg
   io.updateLogic.reqId := reqIdReg
+  io.updateLogic.coreId := 0.U // TODO: Fix this
 
   val outAddr = Cat(reqTagReg, reqIndexReg) << (blockOffsetWidth + byteOffsetWidth).U
 

@@ -1,0 +1,73 @@
+# Makefile for L2 Cache Project
+# Generates Verilog from SharedPipelinedCacheTopDe2115.scala and copies to Quartus project
+
+# Variables
+SCALA_MAIN_CLASS = caches.hardware.pipelined.cache.SharedPipelinedCacheTopDe2115
+GENERATED_DIR = generated
+QUARTUS_PROJECT_DIR = quartus/SharedPipelinedCacheTopDe2115
+VERILOG_FILE = SharedPipelinedCacheTopDe2115.v
+
+# Default target
+all: generate-verilog copy-to-quartus
+
+# Generate Verilog from Scala
+generate-verilog:
+	@echo "Generating Verilog from $(SCALA_MAIN_CLASS)..."
+	@mkdir -p $(GENERATED_DIR)
+	sbt "runMain $(SCALA_MAIN_CLASS)"
+
+# Copy generated Verilog to Quartus project
+copy-to-quartus: generate-verilog
+	@echo "Copying $(VERILOG_FILE) to Quartus project..."
+	@if [ -f "$(GENERATED_DIR)/$(VERILOG_FILE)" ]; then \
+		cp "$(GENERATED_DIR)/$(VERILOG_FILE)" "$(QUARTUS_PROJECT_DIR)/$(VERILOG_FILE)"; \
+		echo "Successfully copied $(VERILOG_FILE) to $(QUARTUS_PROJECT_DIR)"; \
+	else \
+		echo "Error: $(GENERATED_DIR)/$(VERILOG_FILE) not found!"; \
+		exit 1; \
+	fi
+
+# Clean generated files
+clean:
+	@echo "Cleaning generated files..."
+	rm -rf $(GENERATED_DIR)
+	rm -rf target
+
+# Clean Quartus project files (be careful with this)
+clean-quartus:
+	@echo "Cleaning Quartus project files..."
+	rm -rf $(QUARTUS_PROJECT_DIR)/db
+	rm -rf $(QUARTUS_PROJECT_DIR)/incremental_db
+	rm -rf $(QUARTUS_PROJECT_DIR)/output_files
+	rm -f $(QUARTUS_PROJECT_DIR)/*.rpt
+	rm -f $(QUARTUS_PROJECT_DIR)/*.summary
+
+# Generate Verilog only (without copying)
+verilog-only:
+	@echo "Generating Verilog only..."
+	@mkdir -p $(GENERATED_DIR)
+	sbt "runMain $(SCALA_MAIN_CLASS)"
+
+# Check if generated Verilog exists
+check-verilog:
+	@if [ -f "$(GENERATED_DIR)/$(VERILOG_FILE)" ]; then \
+		echo "$(VERILOG_FILE) exists in $(GENERATED_DIR)"; \
+		ls -la "$(GENERATED_DIR)/$(VERILOG_FILE)"; \
+	else \
+		echo "$(VERILOG_FILE) not found in $(GENERATED_DIR)"; \
+	fi
+
+# Show help
+help:
+	@echo "Available targets:"
+	@echo "  all              - Generate Verilog and copy to Quartus project (default)"
+	@echo "  generate-verilog - Generate Verilog from Scala source"
+	@echo "  copy-to-quartus  - Copy generated Verilog to Quartus project"
+	@echo "  verilog-only     - Generate Verilog without copying"
+	@echo "  check-verilog    - Check if generated Verilog file exists"
+	@echo "  clean            - Clean generated files and build artifacts"
+	@echo "  clean-quartus    - Clean Quartus project files (use with caution)"
+	@echo "  help             - Show this help message"
+
+# Phony targets
+.PHONY: all generate-verilog copy-to-quartus clean clean-quartus verilog-only check-verilog help

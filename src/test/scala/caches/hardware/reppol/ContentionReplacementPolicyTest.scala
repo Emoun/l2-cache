@@ -48,15 +48,18 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
 
     // Make a request on behalf of the requesting core
     dut.io.control.setIdx.poke(setIdx.U)
+
+    dut.clock.step(1) // Need one clock cycle delay here since the base policy is separated from contention logic by a pipeline stage
+
     dut.io.control.evict.poke(true.B)
-    dut.io.control.reqId.poke(coreId.U)
+    dut.io.control.coreId.poke(coreId.U)
 
     dut.io.control.replaceWay.expect(expectedCandidate)
     dut.io.control.isValid.expect(evictionSetEmpty)
 
     dut.clock.step(1)
 
-    dut.io.control.reqId.poke(0.U)
+    dut.io.control.coreId.poke(0.U)
     dut.io.control.evict.poke(false.B)
     dut.io.control.setIdx.poke(0.U)
   }
@@ -65,11 +68,11 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
     dut.io.control.setIdx.poke(setIdx.U)
     dut.io.control.update.valid.poke(true.B)
     dut.io.control.update.bits.poke(hitWay.U)
-    dut.io.control.reqId.poke(coreId.U)
+    dut.io.control.coreId.poke(coreId.U)
 
     dut.clock.step(1)
 
-    dut.io.control.reqId.poke(0.U)
+    dut.io.control.coreId.poke(0.U)
     dut.io.control.update.valid.poke(false.B)
     dut.io.control.update.bits.poke(0.U)
     dut.io.control.setIdx.poke(0.U)
@@ -82,7 +85,7 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
       dut.io.control.update.valid.poke(false.B)
       dut.io.control.update.bits.poke(0.U)
       dut.io.control.setIdx.poke(0.U)
-      dut.io.control.reqId.poke(0.U)
+      dut.io.control.coreId.poke(0.U)
       dut.io.scheduler.coreId.valid.poke(false.B)
       dut.io.scheduler.coreId.bits.poke(0.U)
       dut.io.scheduler.setCritical.poke(false.B)
@@ -186,7 +189,7 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
     }
   }
 
-  "ContentionReplacementPolicy" should "reach contention limit for 4 cores and 8 ways" in {
+  "ContentionReplacementPolicy" should "reach contention limit for 4 cores and 8 ways, over 512 sets" in {
     val (ways, sets, nCores) = (8, 512, 4)
     test(new ContentionReplacementPolicy(ways, sets, nCores, () => new BitPlruReplacementAlgorithm(ways)))
       .withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
@@ -194,7 +197,7 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
       dut.io.control.update.valid.poke(false.B)
       dut.io.control.update.bits.poke(0.U)
       dut.io.control.setIdx.poke(0.U)
-      dut.io.control.reqId.poke(0.U)
+      dut.io.control.coreId.poke(0.U)
       dut.io.scheduler.coreId.valid.poke(false.B)
       dut.io.scheduler.coreId.bits.poke(0.U)
       dut.io.scheduler.setCritical.poke(false.B)

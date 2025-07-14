@@ -6,7 +6,7 @@ import caches.hardware.reppol._
 import org.scalatest.flatspec.AnyFlatSpec
 
 class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
-  def setCoreAsCritical(dut: SharedPipelinedCacheTop, coreID: Int, contentionLimit: Int): Unit = {
+  def setCoreAsCritical(dut: SharedPipelinedCacheTestTop, coreID: Int, contentionLimit: Int): Unit = {
     dut.io.scheduler.coreId.valid.poke(true.B)
     dut.io.scheduler.coreId.bits.poke(coreID.U)
     dut.io.scheduler.setCritical.poke(true.B)
@@ -21,7 +21,7 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     dut.io.scheduler.contentionLimit.poke(0.U)
   }
 
-  def unsetCoreAsCritical(dut: SharedPipelinedCacheTop, coreID: Int): Unit = {
+  def unsetCoreAsCritical(dut: SharedPipelinedCacheTestTop, coreID: Int): Unit = {
     dut.io.scheduler.coreId.valid.poke(true.B)
     dut.io.scheduler.coreId.bits.poke(coreID.U)
     dut.io.scheduler.unsetCritical.poke(true.B)
@@ -34,7 +34,7 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     dut.io.scheduler.unsetCritical.poke(false.B)
   }
 
-  def performCacheRequest(dut: SharedPipelinedCacheTop, coreId: Int, reqId: Int, addr: String, rw: Boolean, wData: Option[String] = None): Unit = {
+  def performCacheRequest(dut: SharedPipelinedCacheTestTop, coreId: Int, reqId: Int, addr: String, rw: Boolean, wData: Option[String] = None): Unit = {
     // Expect the cache to be ready to accept a request
     dut.io.cache.coreReqs(coreId).reqId.ready.expect(true.B)
 
@@ -61,7 +61,7 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     dut.io.cache.coreReqs(coreId).wData.poke(0.U)
   }
 
-  def expectCacheResponse(dut: SharedPipelinedCacheTop, coreId: Int, reqId: Int, expectedData: String, okResponse: Boolean = true): Unit = {
+  def expectCacheResponse(dut: SharedPipelinedCacheTestTop, coreId: Int, reqId: Int, expectedData: String, okResponse: Boolean = true): Unit = {
     dut.io.cache.coreResps(coreId).reqId.valid.expect(true.B)
     dut.io.cache.coreResps(coreId).reqId.bits.expect(reqId.U)
     dut.io.cache.coreResps(coreId).rData.expect(expectedData.U)
@@ -74,7 +74,7 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     dut.io.cache.coreResps(coreId).reqId.ready.poke(false.B)
   }
 
-  "SharedPipelinedCacheTop" should "work with lru replacement policy and 8 ways" in  {
+  "SharedPipelinedCache" should "work with lru replacement policy and 8 ways" in  {
     val sizeInBytes = 512
     val nCores = 4
     val nWays = 8
@@ -85,7 +85,7 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     val l2RepPolicy = () => new BitPlruReplacementPolicy(nWays, nSets, nCores)
     val memFile = "./hex/test_mem_32w.hex"
 
-    test(new SharedPipelinedCacheTop(
+    test(new SharedPipelinedCacheTestTop(
       sizeInBytes = sizeInBytes,
       nWays = nWays,
       nCores = nCores,
@@ -184,7 +184,7 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     }
   }
 
-  "SharedPipelinedCacheTop" should "work with contention replacement policy and 8 ways" in  {
+  "SharedPipelinedCache" should "work with contention replacement policy and 8 ways" in  {
     val sizeInBytes = 512
     val nCores = 4
     val nWays = 8
@@ -196,7 +196,7 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     val l2RepPolicy = () => new ContentionReplacementPolicy(nWays, nSets, nCores, basePolicy)
     val memFile = "./hex/test_mem_32w.hex"
 
-    test(new SharedPipelinedCacheTop(
+    test(new SharedPipelinedCacheTestTop(
       sizeInBytes = sizeInBytes,
       nWays = nWays,
       nCores = nCores,

@@ -46,8 +46,8 @@ class SharedPipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, addressWid
     pipelineReg
   }
 
-  val missQueue = Module(new MissFifo(nMshrs, nWays, log2Up(nCores), tagWidth, indexWidth, blockOffsetWidth, bytesPerSubBlock * 8))
-  val updateLogic = Module(new UpdateUnit(nWays, log2Up(nCores), tagWidth, indexWidth, bytesPerBlock * 8, bytesPerSubBlock * 8))
+  val missQueue = Module(new MissFifo(nCores, nMshrs, nWays, log2Up(nCores), tagWidth, indexWidth, blockOffsetWidth, bytesPerSubBlock * 8))
+  val updateLogic = Module(new UpdateUnit(nCores, nWays, log2Up(nCores), tagWidth, indexWidth, bytesPerBlock * 8, bytesPerSubBlock * 8))
 
   val pipeStall = updateLogic.io.cacheUpdateControl.stall
 
@@ -84,6 +84,7 @@ class SharedPipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, addressWid
     readTags(wayIdx) := tagMem(wayIdx).io.readData
   }
 
+  val coreIdTagReg = pipelineReg(arbiter.io.chosen, 0.U, !pipeStall)
   val reqValidTagReg = pipelineReg(arbiter.io.out.reqId.valid && reqAccept, false.B, !pipeStall)
   val reqIdTagReg = pipelineReg(arbiter.io.out.reqId.bits, 0.U, !pipeStall)
   val reqRwTagReg = pipelineReg(arbiter.io.out.rw, false.B, !pipeStall)
@@ -130,18 +131,15 @@ class SharedPipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, addressWid
   io.repPol.update.valid := reqValidTagReg // We update the replacement policy even on a miss, since this miss later turn into a hit anyway
   io.repPol.update.bits := Mux(hit, hitWay, io.repPol.replaceWay)
   io.repPol.setIdx := indexTagReg
-  io.repPol.reqId := reqIdTagReg
+  io.repPol.stall := pipeStall
 
-  val isValidRep = io.repPol.isValid
-
-  val repValidRepReg = pipelineReg(isValidRep, true.B, !pipeStall)
+  val coreIdRepReg = pipelineReg(coreIdTagReg, 0.U, !pipeStall)
   val reqValidRepReg = pipelineReg(reqValidTagReg, false.B, !pipeStall)
   val reqIdRepReg = pipelineReg(reqIdTagReg, 0.U, !pipeStall)
   val reqRwRepReg = pipelineReg(reqRwTagReg, false.B, !pipeStall)
   val wDataRepReg = pipelineReg(wDataTagReg, 0.U, !pipeStall)
   val hitRepReg = pipelineReg(hit, false.B, !pipeStall)
   val hitWayRepReg = pipelineReg(hitWay, 0.U, !pipeStall)
-  val repWayRepReg = pipelineReg(io.repPol.replaceWay, 0.U, !pipeStall)
   val dirtyRepReg = pipelineReg(dirty, VecInit(Seq.fill(nWays)(false.B)), !pipeStall)
   val readTagsRepReg = pipelineReg(readTags, VecInit(Seq.fill(nWays)(0.U(tagWidth.W))), !pipeStall)
   val blockRepReg = pipelineReg(blockTagReg, 0.U, !pipeStall)
@@ -153,9 +151,12 @@ class SharedPipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, addressWid
 
   // ---------------- Replacement ----------------
 
-  val missQueuePush = WireDefault(false.B)
-  val isRepDirty = dirtyRepReg(repWayRepReg)
-  val dirtyTag = readTagsRepReg(repWayRepReg)
+  io.repPol.coreId := coreIdRepReg
+
+  val isValidRep = io.repPol.isValid
+  val repWay = io.repPol.replaceWay
+  val isRepDirty = dirtyRepReg(repWay)
+  val dirtyTag = readTagsRepReg(repWay)
 
   // Signal for checking if a current request is accessing a line that is currently an outstanding miss
   val previousMissesCheck = Wire(Vec(nMshrs, Bool()))
@@ -165,7 +166,7 @@ class SharedPipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, addressWid
     val mshrWay = missQueue.io.currentWays(mshr)
     val validMshr = missQueue.io.validMSHRs(mshr)
 
-    previousMissesCheck(mshr) := mshrIndex === indexRepReg && mshrWay === repWayRepReg && validMshr
+    previousMissesCheck(mshr) := mshrIndex === indexRepReg && mshrWay === repWay && validMshr
   }
 
   val isPreviousMiss = previousMissesCheck.reduce((x, y) => x || y)
@@ -173,8 +174,10 @@ class SharedPipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, addressWid
 
   // NOTE: We could allow a previous miss hit to access the cache line if it is only a read request, and the line has not yet been evicted
 
+  val missQueuePush = WireDefault(false.B)
+
   // If the reqeust is trying to access a line of a previous miss or if it is just a miss we push to the queue
-  when(isPreviousMiss || !hitRepReg && reqValidRepReg && repValidRepReg) {
+  when(isPreviousMiss || !hitRepReg && reqValidRepReg && isValidRep) {
     missQueuePush := true.B
     evict := true.B // For some policies it is necessary to know if we are evicting a line
   }
@@ -184,22 +187,24 @@ class SharedPipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, addressWid
   missQueue.io.push := missQueuePush
   missQueue.io.pushEntry.rw := reqRwRepReg
   missQueue.io.pushEntry.wData := wDataRepReg
-  missQueue.io.pushEntry.replaceWay := repWayRepReg
+  missQueue.io.pushEntry.replaceWay := repWay
   missQueue.io.pushEntry.tag := tagRepReg
   missQueue.io.pushEntry.index := indexRepReg
   missQueue.io.pushEntry.blockOffset := blockRepReg
   missQueue.io.pushEntry.reqId := reqIdRepReg
+  missQueue.io.pushEntry.coreId := coreIdRepReg
 
   val dataMem = Module(new CacheMemory(sizeInBytes, nWays, bytesPerBlock, bytesPerSubBlock))
 
   dataMem.io.rIndex := indexRepReg
-  dataMem.io.rWayIdx := Mux(hitRepReg, hitWayRepReg, repWayRepReg)
+  dataMem.io.rWayIdx := Mux(hitRepReg, hitWayRepReg, repWay)
   dataMem.io.wrIndex := updateLogic.io.cacheUpdateControl.index
   dataMem.io.wrWayIdx := updateLogic.io.cacheUpdateControl.way
   dataMem.io.wrEn := updateLogic.io.cacheUpdateControl.wrEn
   dataMem.io.wrData := updateLogic.io.cacheUpdateControl.memWriteData
 
-  val repValidReadReg = pipelineReg(repValidRepReg, true.B, !pipeStall)
+  val coreIdReadReg = pipelineReg(coreIdRepReg, 0.U, !pipeStall)
+  val repValidReadReg = pipelineReg(isValidRep, true.B, !pipeStall)
   val reqValidReadReg = pipelineReg(reqValidRepReg, false.B, !pipeStall)
   val reqIdReadReg = pipelineReg(reqIdRepReg, 0.U, !pipeStall)
   val reqRwReadReg = pipelineReg(reqRwRepReg, false.B, !pipeStall)
@@ -234,7 +239,7 @@ class SharedPipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, addressWid
 
   // ---------------- Update ----------------
 
-  val memInterface = Module(new MemoryInterface(nWays, log2Up(nCores), tagWidth, indexWidth, blockOffsetWidth, bytesPerBlock * 8, bytesPerSubBlock * 8, bytesPerBurst * 8))
+  val memInterface = Module(new MemoryInterface(nCores, nWays, log2Up(nCores), tagWidth, indexWidth, blockOffsetWidth, bytesPerBlock * 8, bytesPerSubBlock * 8, bytesPerBurst * 8))
 
   // Connections between memory interface and the miss and write-back FIFOs
   memInterface.io.missFifo.popEntry <> missQueue.io.popEntry
@@ -249,6 +254,7 @@ class SharedPipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, addressWid
 
   updateLogic.io.readStage.valid := reqValidReadReg && hitReadReg
   updateLogic.io.readStage.rw := reqRwReadReg
+  updateLogic.io.readStage.coreId := coreIdReadReg
   updateLogic.io.readStage.reqId := reqIdReadReg
   updateLogic.io.readStage.wData := wDataReadReg
   updateLogic.io.readStage.wWay := hitWayReadReg
@@ -262,7 +268,7 @@ class SharedPipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, addressWid
 
   // TODO: We should make use of the reqId.ready
   for (coreIdx <- 0 until nCores) {
-    io.cache.coreResps(coreIdx).reqId.valid := (updateLogic.io.coreResp.reqId.bits === coreIdx.U) && updateLogic.io.coreResp.reqId.valid
+    io.cache.coreResps(coreIdx).reqId.valid := (updateLogic.io.coreResp.reqId.bits === coreIdx.U) && updateLogic.io.coreResp.reqId.valid // TODO: Fix this to use core Id instead of reqID
     io.cache.coreResps(coreIdx).reqId.bits := updateLogic.io.coreResp.reqId.bits
     io.cache.coreResps(coreIdx).rData := updateLogic.io.coreResp.rData
     io.cache.coreResps(coreIdx).responseStatus :=  updateLogic.io.coreResp.responseStatus
