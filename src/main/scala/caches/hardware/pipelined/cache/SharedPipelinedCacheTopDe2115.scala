@@ -31,11 +31,6 @@ class SharedPipelinedCacheTopDe2115 (
   val debSetCrit = Module(new DebounceSw(1, freq))
   val debUnsetCrit = Module(new DebounceSw(1, freq))
 
-  debSchCoreId.io.sw := io.scheduler.coreId.bits
-  debSchContLimit.io.sw := io.scheduler.contentionLimit
-  debSetCrit.io.sw := io.scheduler.setCritical.asUInt
-  debUnsetCrit.io.sw := io.scheduler.unsetCritical.asUInt
-
   val cacheReqCtrl = Module(new CacheRequestController(nCores, addressWidth, reqIdWidth, bytesPerSubBlock, freq, uartBaud))
 
   val l2Cache = Module(new SharedPipelinedCacheTop(
@@ -49,6 +44,11 @@ class SharedPipelinedCacheTopDe2115 (
     bytesPerBurst = bytesPerBurst,
     l2RepPolicy = l2RepPolicy
   ))
+
+  debSchCoreId.io.sw := io.scheduler.coreId.bits
+  debSchContLimit.io.sw := io.scheduler.contentionLimit
+  debSetCrit.io.sw := io.scheduler.setCritical.asUInt
+  debUnsetCrit.io.sw := io.scheduler.unsetCritical.asUInt
 
   l2Cache.io.scheduler.coreId.valid := negEdge(!io.scheduler.coreId.valid)
   l2Cache.io.scheduler.coreId.bits := debSchCoreId.io.swDb
