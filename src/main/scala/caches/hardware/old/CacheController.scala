@@ -1,4 +1,4 @@
-package caches.hardware
+package caches.hardware.old
 
 import caches.hardware.reppol.ReplacementPolicyIO
 import chisel3._
@@ -12,7 +12,10 @@ class ControllerReqIO(nCores: Int) extends Bundle {
   val status = Output(UInt(1.W)) // 0: OK, 1: REJECT
 }
 
-// TODO: Add burst capability to lower and higher level ( we can maintain the same functionality as original implementation if we set the burst size to 1)
+/**
+ *
+ * @deprecated
+ */
 class CacheController(ways: Int, sets: Int, nCores: Int) extends Module {
   val io = IO(new Bundle {
     val mem = Flipped(new ControllerMemIO(ways, sets))
@@ -40,8 +43,6 @@ class CacheController(ways: Int, sets: Int, nCores: Int) extends Module {
   val policyUpdate = WireDefault(false.B)
   val evict = WireDefault(false.B)
 
-  // TODO: Add output registers for higher and delay the reading process by one clock cycle
-
   switch(stateReg) {
     is(sIdle) {
       when(io.higher.req) {
@@ -60,7 +61,6 @@ class CacheController(ways: Int, sets: Int, nCores: Int) extends Module {
           updateLine := true.B
         }
 
-        // TODO: Break this state into two different states, one that checks if it's a hit and another that handles the miss
         higherAck := true.B
         higherStatus := 0.U // OK response
         stateReg := sIdle
@@ -110,6 +110,7 @@ class CacheController(ways: Int, sets: Int, nCores: Int) extends Module {
   io.repPol.setIdx := io.mem.set
   io.repPol.coreId := reqIdReg
   io.repPol.evict := evict
+  io.repPol.stall := false.B
 
   io.mem.latchReq := latchReq
   io.mem.validReq := stateReg =/= sIdle
@@ -124,5 +125,4 @@ class CacheController(ways: Int, sets: Int, nCores: Int) extends Module {
   io.lower.rw := lowerRw
   io.lower.req := lowerReq
   io.lower.reqId := reqIdReg
-  // TODO: What to do if the lower rejects a request?
 }

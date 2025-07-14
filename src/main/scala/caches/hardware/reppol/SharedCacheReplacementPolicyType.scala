@@ -11,6 +11,7 @@ class ReplacementPolicyIO(nWays: Int, nSets: Int, nCores: Int) extends Bundle {
   val setIdx = Input(UInt(log2Up(nSets).W))
   val coreId = Input(UInt(log2Up(nCores).W)) // ID of the requesting core
   val replaceWay = Output(UInt(log2Up(nWays).W))
+  val replacementSet = Output(Vec(nWays, UInt(log2Up(nWays).W))) // If a replacement policy needs an ordered set of ways, otherwise can be ignored
   val isValid = Output(Bool()) // To signal if there are no valid ways to replace
 }
 

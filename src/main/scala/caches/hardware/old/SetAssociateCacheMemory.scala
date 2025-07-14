@@ -1,4 +1,4 @@
-package caches.hardware
+package caches.hardware.old
 
 import chisel3._
 import chisel3.util._
@@ -62,7 +62,7 @@ class SetAssociateCacheMemory(nWays: Int, nSets: Int, bytesPerBlock: Int, bytesP
   })
 
   // Address and data holding registers in case of cache misses
-  val addrReg = RegInit(WireDefault(0.U(addressWidth.W))) // TODO: We can assume that master has to keep data valid until controller acknowledges the request. Then for interfaces that doe not require the master to keep the data valid, we can create a wrapper instead.
+  val addrReg = RegInit(WireDefault(0.U(addressWidth.W))) // We can assume that master has to keep data valid until controller acknowledges the request. Then for interfaces that doe not require the master to keep the data valid, we can create a wrapper instead.
   val writeDataReg = RegInit(WireDefault(0.U((bytesPerWord * 8).W)))
 
   when(io.controller.latchReq) {
@@ -114,7 +114,7 @@ class SetAssociateCacheMemory(nWays: Int, nSets: Int, bytesPerBlock: Int, bytesP
       waysCacheLineMem(wayIdx)(wordIdx).io.writeData := wordwData
       waysCacheLineMem(wayIdx)(wordIdx).io.writeAddr := index
       waysCacheLineMem(wayIdx)(wordIdx).io.wrEn := wordwrEn
-      // waysCacheLines(wayIdx)(wordIdx).io.wrMask := higherIO.dinMask TODO: If adding support for byte masks
+      // waysCacheLines(wayIdx)(wordIdx).io.wrMask := higherIO.dinMask // If adding support for byte masks
 
       waysData(wayIdx)(wordIdx) := waysCacheLineMem(wayIdx)(wordIdx).io.readData
     }
@@ -153,7 +153,7 @@ class SetAssociateCacheMemory(nWays: Int, nSets: Int, bytesPerBlock: Int, bytesP
   io.higher.rData := waysData(hitWay)(blockOffsetDelayReg).asUInt // A word from the block to the higher level
   io.lower.wData := waysData(io.controller.replaceWay).asUInt
   io.lower.addr := Mux(io.controller.writeBack, writeBackAddr, addr) // Select between the dirty or missing cache line address
-  io.lower.wMask := 0.U // TODO: Not using any of the write masks for now
+  io.lower.wMask := 0.U // Not using any of the write masks for now
 
   io.controller.hit := hits.reduce((x, y) => x || y)
   io.controller.dirty := dirty.asUInt

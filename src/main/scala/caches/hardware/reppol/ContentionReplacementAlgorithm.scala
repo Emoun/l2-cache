@@ -20,12 +20,12 @@ class ContentionReplacementAlgorithm(nWays: Int, nCores: Int) extends Module {
   val replaceWay = WireDefault(0.U(log2Up(nWays).W))
   val isValidReplaceWay = WireDefault(false.B)
 
-  val coreAssignments = VecInit(Seq.fill(nWays)(0.U(log2Up(nCores))))
+  val coreAssignments = VecInit(Seq.fill(nWays)(0.U(log2Up(nCores).W)))
   val criticalWays = VecInit(Seq.fill(nWays)(false.B))
   val unlimitedWays = VecInit(Seq.fill(nWays)(false.B))
 
   val updateCore = WireDefault(false.B)
-  val updateCoreId = WireDefault(0.U(log2Up(nCores)))
+  val updateCoreId = WireDefault(0.U(log2Up(nCores).W))
 
   // Determine critical and unlimited ways
   for (i <- 0 until nWays) {

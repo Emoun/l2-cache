@@ -8,6 +8,7 @@ class SharedPipelinedCacheTestTop(
                                     sizeInBytes: Int,
                                     nWays: Int,
                                     nCores: Int,
+                                    reqIdWidth: Int,
                                     addressWidth: Int,
                                     bytesPerBlock: Int,
                                     bytesPerSubBlock: Int,
@@ -19,13 +20,14 @@ class SharedPipelinedCacheTestTop(
 
   val io = IO(new Bundle {
     val scheduler = new SchedulerIO(nCores)
-    val cache = new CacheIO(nCores, addressWidth, bytesPerSubBlock * 8)
+    val cache = new CacheIO(nCores, reqIdWidth: Int, addressWidth, bytesPerSubBlock * 8)
   })
 
   val l2Cache = Module(new SharedPipelinedCacheTop(
     sizeInBytes = sizeInBytes,
     nWays = nWays,
     nCores = nCores,
+    reqIdWidth = reqIdWidth,
     addressWidth = addressWidth,
     bytesPerBlock = bytesPerBlock,
     bytesPerSubBlock = bytesPerSubBlock,

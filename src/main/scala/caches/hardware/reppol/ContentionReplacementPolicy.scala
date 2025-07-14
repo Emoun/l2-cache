@@ -12,7 +12,7 @@ import chisel3.util._
  * @param nCores number of cores sharing the cache
  * @param basePolicy the base replacement policy module generating function
  */
-class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolicy: () => ReplacementAlgorithmType) extends SharedCacheReplacementPolicyType(nWays, nSets, nCores) {
+class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolicy: () => SharedCacheReplacementPolicyType) extends SharedCacheReplacementPolicyType(nWays, nSets, nCores) {
   def lineAssignmentsArray(set: UInt, update: Bool, way: UInt): (Vec[UInt], Vec[Bool]) = {
     // Registers for keeping track of which cache line is assigned to which core and whether the assignment is valid
     val lineAssignments = Array.fill(nSets)(RegInit(VecInit(Seq.fill(nWays)(0.U(log2Up(nCores).W)))))
@@ -61,20 +61,19 @@ class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolic
 
   // ---------------- Base policy stage ----------------
 
-  // Base policies for each set and a single contention policy
-  val basePolicies = Array.fill(nSets)(Module(basePolicy()))
-  val setBaseReplaceWays = VecInit(Seq.fill(nSets)(VecInit(Seq.fill(nWays)(0.U(log2Up(nWays).W)))))
+  // Base policy instantiation
+  val basePolicyInst = Module(basePolicy())
 
-  for (set <- 0 until nSets) {
-    // Update base policy
-    basePolicies(set).io.update.valid := io.control.update.valid && (io.control.setIdx === set.U)
-    basePolicies(set).io.update.bits := io.control.update.bits
-
-    setBaseReplaceWays(set) := basePolicies(set).io.replacementSet
-  }
+  // Update base policy
+  basePolicyInst.io.control.setIdx := io.control.setIdx
+  basePolicyInst.io.control.coreId := io.control.coreId
+  basePolicyInst.io.control.evict := io.control.evict
+  basePolicyInst.io.control.update.valid := io.control.update.valid
+  basePolicyInst.io.control.update.bits := io.control.update.bits
+  basePolicyInst.io.control.stall := io.control.stall
+  basePolicyInst.io.scheduler <> io.scheduler
 
   val setIdxPipeReg = pipelineReg(io.control.setIdx, 0.U, !io.control.stall)
-  val selEvictionCands = pipelineReg(setBaseReplaceWays(io.control.setIdx), VecInit(Seq.fill(nWays)(0.U(log2Up(nWays).W))), !io.control.stall)
 
   // ---------------- Eviction stage ----------------
   val contentionPolicy = Module(new ContentionReplacementAlgorithm(nWays, nCores))
@@ -92,7 +91,7 @@ class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolic
   // Compute the eviction for each set
   contentionPolicy.io.evict := io.control.evict
   contentionPolicy.io.isReqCoreCritical := isReqCoreCritical
-  contentionPolicy.io.baseCandidates := selEvictionCands
+  contentionPolicy.io.baseCandidates := basePolicyInst.io.control.replacementSet
   contentionPolicy.io.lineAssignments := lineAssignments
   contentionPolicy.io.validLineAssignments := validAssignments
   contentionPolicy.io.coreLimits := coreLimits
@@ -100,6 +99,7 @@ class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolic
 
   io.control.replaceWay := contentionPolicy.io.replacementWay.bits
   io.control.isValid := contentionPolicy.io.replacementWay.valid
+  io.control.replacementSet := VecInit(Seq.fill(nWays)(0.U(log2Up(nWays).W)))
 }
 
 object ContentionReplacementPolicy extends App {
@@ -107,21 +107,17 @@ object ContentionReplacementPolicy extends App {
   //  val l2Size = 16384 // 16 KiB
   val l2Ways = 8
   val nCores = 4
-
   val l2BytesPerBlock = 64
-
   val l2nSets = l2Size / (l2Ways * l2BytesPerBlock)
-  val l2BasePolicy = () => new BitPlruReplacementAlgorithm(l2Ways)
 
   val plruL2RepPolicy = () => new BitPlruReplacementPolicy(l2Ways, l2nSets, nCores)
-  val contL2RepPolicy = () => new ContentionReplacementPolicy(l2Ways, l2nSets, nCores, l2BasePolicy)
 
   (new chisel3.stage.ChiselStage).emitVerilog(
     new ContentionReplacementPolicy(
       l2Ways,
       l2nSets,
       nCores,
-      l2BasePolicy
+      plruL2RepPolicy
     ),
     Array("--target-dir", "generated")
   )

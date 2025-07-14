@@ -5,19 +5,20 @@ import chisel3.util._
 
 /**
  * @inheritdoc
- * @param ways number of ways in a single cache set
- * @param sets number of sets in the whole cache
+ * @param nWays number of ways in a single cache set
+ * @param nSets number of sets in the whole cache
  */
-class TreePlruReplacementPolicy(ways: Int, sets: Int, nCores: Int) extends SharedCacheReplacementPolicyType(ways, sets, nCores) {
-  val setPlrus = Array.fill(sets)(Module(new TreePlruReplacementAlgorithm(ways)))
+class TreePlruReplacementPolicy(nWays: Int, nSets: Int, nCores: Int) extends SharedCacheReplacementPolicyType(nWays, nSets, nCores) {
+  val setPlrus = Array.fill(nSets)(Module(new TreePlruReplacementAlgorithm(nWays)))
 
-  for (i <- 0 until sets) {
+  for (i <- 0 until nSets) {
     setPlrus(i).io.update.valid := io.control.update.valid && (io.control.setIdx === i.asUInt)
     setPlrus(i).io.update.bits := io.control.update.bits
 
     setReplaceWays(i) := setPlrus(i).io.replaceWay
   }
 
+  io.control.replacementSet := VecInit(Seq.fill(nWays)(0.U(log2Up(nWays).W)))
   io.control.replaceWay := setReplaceWays(io.control.setIdx)
   io.control.isValid := true.B
 }

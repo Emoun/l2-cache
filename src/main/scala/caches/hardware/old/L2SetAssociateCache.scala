@@ -1,4 +1,4 @@
-package caches.hardware
+package caches.hardware.old
 
 import caches.hardware.reppol._
 import caches.hardware.util.Constants._
@@ -17,6 +17,10 @@ class SharedCacheIO(addrWidth: Int, dataWidth: Int, nCores: Int) extends Bundle 
   val responseStatus = Output(UInt(1.W)) // 0: OK, 1: REJECT
 }
 
+/**
+ *
+ * @deprecated
+ */
 class L2SetAssociateCache(size: Int, ways: Int, bytesPerBlock: Int, bytesPerWord: Int, nCores: Int, addressWidth: Int, repPolicy: () => SharedCacheReplacementPolicyType) extends Module {
   private val nSets = (size / bytesPerBlock) / ways
 

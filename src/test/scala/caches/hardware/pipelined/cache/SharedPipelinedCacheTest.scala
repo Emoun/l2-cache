@@ -79,6 +79,7 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     val nCores = 4
     val nWays = 8
     val addressWidth = 16
+    val reqIdWidth = 6
     val bytesPerBlock = 16
     val bytesPerSubBlock = 4
     val nSets = sizeInBytes / (nWays * bytesPerBlock)
@@ -89,6 +90,7 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       sizeInBytes = sizeInBytes,
       nWays = nWays,
       nCores = nCores,
+      reqIdWidth = reqIdWidth,
       addressWidth = addressWidth,
       bytesPerBlock = bytesPerBlock,
       bytesPerSubBlock = bytesPerSubBlock,
@@ -122,9 +124,9 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       //  remaining bits are for the tag
 
       // Access data that is not yet in the cache (put in way: 0)
-      performCacheRequest(dut, coreId = 1, reqId = 1, addr = "b000000000", rw = false)
+      performCacheRequest(dut, coreId = 1, reqId = 0, addr = "b000000000", rw = false)
       dut.clock.step(8) // Pipeline delay due to cache miss
-      expectCacheResponse(dut, coreId = 1, reqId = 1, expectedData = "hbeefdead")
+      expectCacheResponse(dut, coreId = 1, reqId = 0, expectedData = "hbeefdead")
 
       // Access data that is already in the cache
       performCacheRequest(dut, coreId = 1, reqId = 1, addr = "b000000100", rw = false)
@@ -132,24 +134,24 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       expectCacheResponse(dut, coreId = 1, reqId = 1, expectedData = "hdeadbeef")
 
       // Write to an existing line in the cache
-      performCacheRequest(dut, coreId = 1, reqId = 1, addr = "b000001000", rw = true, wData = Some("hd00dfeed"))
+      performCacheRequest(dut, coreId = 1, reqId = 2, addr = "b000001000", rw = true, wData = Some("hd00dfeed"))
       dut.clock.step(2)
-      expectCacheResponse(dut, coreId = 1, reqId = 1, expectedData = "hbabecafe")
+      expectCacheResponse(dut, coreId = 1, reqId = 2, expectedData = "hbabecafe")
 
       // Bring in another line into the cache (put in way: 1)
-      performCacheRequest(dut, coreId = 3, reqId = 3, addr = "b001001100", rw = false)
+      performCacheRequest(dut, coreId = 3, reqId = 0, addr = "b001001100", rw = false)
       dut.clock.step(8)
-      expectCacheResponse(dut, coreId = 3, reqId = 3, expectedData = "hbbadbeef")
+      expectCacheResponse(dut, coreId = 3, reqId = 0, expectedData = "hbbadbeef")
 
       // Bring in another line into the cache (put in way: 2)
-      performCacheRequest(dut, coreId = 2, reqId = 2, addr = "b010000000", rw = false)
+      performCacheRequest(dut, coreId = 2, reqId = 0, addr = "b010000000", rw = false)
       dut.clock.step(8)
-      expectCacheResponse(dut, coreId = 2, reqId = 2, expectedData = "hfacefeed")
+      expectCacheResponse(dut, coreId = 2, reqId = 0, expectedData = "hfacefeed")
 
       // Bring in another line into the cache (put in way: 3) and write some data to it too
-      performCacheRequest(dut, coreId = 3, reqId = 3, addr = "b011001100", rw = true, wData = Some("hbeefdead"))
+      performCacheRequest(dut, coreId = 3, reqId = 1, addr = "b011001100", rw = true, wData = Some("hbeefdead"))
       dut.clock.step(8)
-      expectCacheResponse(dut, coreId = 3, reqId = 3, expectedData = "hbd42f9c3")
+      expectCacheResponse(dut, coreId = 3, reqId = 1, expectedData = "hbd42f9c3")
 
       // Bring in another line into the cache (put in way: 4)
       performCacheRequest(dut, coreId = 0, reqId = 0, addr = "b100000000", rw = false)
@@ -157,24 +159,24 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       expectCacheResponse(dut, coreId = 0, reqId = 0, expectedData = "h40cbde98")
 
       // Bring in another line into the cache (put in way: 5)
-      performCacheRequest(dut, coreId = 1, reqId = 1, addr = "b101000100", rw = false)
+      performCacheRequest(dut, coreId = 1, reqId = 3, addr = "b101000100", rw = false)
       dut.clock.step(8)
-      expectCacheResponse(dut, coreId = 1, reqId = 1, expectedData = "haf10c5be")
+      expectCacheResponse(dut, coreId = 1, reqId = 3, expectedData = "haf10c5be")
 
       // Bring in another line into the cache (put in way: 6)
-      performCacheRequest(dut, coreId = 2, reqId = 2, addr = "b110001000", rw = false)
+      performCacheRequest(dut, coreId = 2, reqId = 1, addr = "b110001000", rw = false)
       dut.clock.step(8)
-      expectCacheResponse(dut, coreId = 2, reqId = 2, expectedData = "hace04f29")
+      expectCacheResponse(dut, coreId = 2, reqId = 1, expectedData = "hace04f29")
 
       // Bring in another line into the cache (put in way: 7)
-      performCacheRequest(dut, coreId = 3, reqId = 3, addr = "b111001100", rw = false)
+      performCacheRequest(dut, coreId = 3, reqId = 2, addr = "b111001100", rw = false)
       dut.clock.step(8)
-      expectCacheResponse(dut, coreId = 3, reqId = 3, expectedData = "hf01c27ae")
+      expectCacheResponse(dut, coreId = 3, reqId = 2, expectedData = "hf01c27ae")
 
       // Bring in the first cache line that will result in eviction of way 0 (put in way: 0)
-      performCacheRequest(dut, coreId = 0, reqId = 0, addr = "b1000000100", rw = false)
+      performCacheRequest(dut, coreId = 0, reqId = 1, addr = "b1000000100", rw = false)
       dut.clock.step(8)
-      expectCacheResponse(dut, coreId = 0, reqId = 0, expectedData = "h49e1af73")
+      expectCacheResponse(dut, coreId = 0, reqId = 1, expectedData = "h49e1af73")
 
       // Try to refetch the evicted cache and check if the written data was written to main memory
       // (put in way: 1)
@@ -188,11 +190,12 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     val sizeInBytes = 512
     val nCores = 4
     val nWays = 8
+    val reqIdWidth = 4
     val addressWidth = 16
     val bytesPerBlock = 16
     val bytesPerSubBlock = 4
     val nSets = sizeInBytes / (nWays * bytesPerBlock)
-    val basePolicy = () => new BitPlruReplacementAlgorithm(nWays)
+    val basePolicy = () => new BitPlruReplacementPolicy(nWays, nSets, nCores)
     val l2RepPolicy = () => new ContentionReplacementPolicy(nWays, nSets, nCores, basePolicy)
     val memFile = "./hex/test_mem_32w.hex"
 
@@ -200,6 +203,7 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       sizeInBytes = sizeInBytes,
       nWays = nWays,
       nCores = nCores,
+      reqIdWidth = reqIdWidth,
       addressWidth = addressWidth,
       bytesPerBlock = bytesPerBlock,
       bytesPerSubBlock = bytesPerSubBlock,

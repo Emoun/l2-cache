@@ -79,8 +79,8 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
   }
 
   "ContentionReplacementPolicy" should "reach contention limit for BitPlru" in {
-    val (ways, sets, nCores) = (4, 2, 3)
-    test(new ContentionReplacementPolicy(ways, sets, nCores, () => new BitPlruReplacementAlgorithm(ways))).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+    val (nWays, nSets, nCores) = (4, 2, 3)
+    test(new ContentionReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores))).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default assignments
       dut.io.control.update.valid.poke(false.B)
       dut.io.control.update.bits.poke(0.U)
@@ -190,8 +190,8 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
   }
 
   "ContentionReplacementPolicy" should "reach contention limit for 4 cores and 8 ways, over 512 sets" in {
-    val (ways, sets, nCores) = (8, 512, 4)
-    test(new ContentionReplacementPolicy(ways, sets, nCores, () => new BitPlruReplacementAlgorithm(ways)))
+    val (nWays, nSets, nCores) = (8, 512, 4)
+    test(new ContentionReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores)))
       .withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default assignments
       dut.io.control.update.valid.poke(false.B)

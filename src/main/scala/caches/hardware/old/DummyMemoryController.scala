@@ -1,8 +1,12 @@
-package caches.hardware
+package caches.hardware.old
 
 import chisel3._
 import chisel3.util._
 
+/**
+ *
+ * @deprecated
+ */
 class MemoryControllerIO(addrWidth: Int, burstWidth: Int) extends Bundle {
   val ack = Input(Bool())
   val respStatus = Input(UInt(1.W))

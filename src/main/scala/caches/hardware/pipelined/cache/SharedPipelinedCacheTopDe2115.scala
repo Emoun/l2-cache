@@ -8,8 +8,8 @@ class SharedPipelinedCacheTopDe2115 (
                                sizeInBytes: Int,
                                nWays: Int,
                                nCores: Int,
-                               addressWidth: Int,
                                reqIdWidth: Int,
+                               addressWidth: Int,
                                bytesPerBlock: Int,
                                bytesPerSubBlock: Int,
                                bytesPerBurst: Int,
@@ -42,6 +42,7 @@ class SharedPipelinedCacheTopDe2115 (
     sizeInBytes = sizeInBytes,
     nWays = nWays,
     nCores = nCores,
+    reqIdWidth = reqIdWidth,
     addressWidth = addressWidth,
     bytesPerBlock = bytesPerBlock,
     bytesPerSubBlock = bytesPerSubBlock,
@@ -68,20 +69,21 @@ object SharedPipelinedCacheTopDe2115 extends App {
   val freq = 50000000
   val uartBaud = 115200
 
-  val l2Size = 131072 // 256 KiB
+  val l2Size = 524288 // 256 KiB
+//    val l2Size = 131072 // 128 KiB
   //  val l2Size = 16384 // 16 KiB
   val l2Ways = 8
   val nCores = 4
+  val reqIdWidth = 6
   val addressWidth = 32
   val l2BytesPerBlock = 64
   val l2BytesPerSubBlock = 16
   val l2BytesPerMemBurst = 1
 
   val l2nSets = l2Size / (l2Ways * l2BytesPerBlock)
-  val l2BasePolicy = () => new BitPlruReplacementAlgorithm(l2Ways)
 
   val plruL2RepPolicy = () => new BitPlruReplacementPolicy(l2Ways, l2nSets, nCores)
-  val contL2RepPolicy = () => new ContentionReplacementPolicy(l2Ways, l2nSets, nCores, l2BasePolicy)
+  val contL2RepPolicy = () => new ContentionReplacementPolicy(l2Ways, l2nSets, nCores, plruL2RepPolicy)
 
   println("Generating the L2 cache hardware for the DE2-115 board...")
   (new chisel3.stage.ChiselStage).emitVerilog(
@@ -90,13 +92,13 @@ object SharedPipelinedCacheTopDe2115 extends App {
       nWays = l2Ways,
       nCores = nCores,
       addressWidth = addressWidth,
-      reqIdWidth = 4,
+      reqIdWidth = reqIdWidth,
       bytesPerBlock = l2BytesPerBlock,
       bytesPerSubBlock = l2BytesPerSubBlock,
       bytesPerBurst = l2BytesPerMemBurst,
       freq = freq,
       uartBaud = uartBaud,
-      l2RepPolicy = plruL2RepPolicy
+      l2RepPolicy = contL2RepPolicy
     ),
     Array("--target-dir", "generated")
   )

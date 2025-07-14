@@ -1,4 +1,4 @@
-package caches.hardware
+package caches.hardware.old
 
 import caches.hardware.reppol.{SchedulerIO, SharedCacheReplacementPolicyType}
 import caches.hardware.util.Constants.ADDRESS_WIDTH
@@ -6,6 +6,10 @@ import chisel3._
 import chisel3.util._
 import chisel3.util.experimental.BoringUtils
 
+/**
+ *
+ * @deprecated
+ */
 class debugCache(size: Int, ways: Int, bytesPerBlock: Int, bytesPerWord: Int) extends Bundle {
   private val indexWidth = log2Up((size / bytesPerBlock) / ways)
   private val blockOffsetWidth = log2Up(bytesPerBlock / bytesPerWord)

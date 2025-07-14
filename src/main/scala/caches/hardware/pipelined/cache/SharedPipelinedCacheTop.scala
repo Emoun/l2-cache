@@ -8,6 +8,7 @@ class SharedPipelinedCacheTop(
                          sizeInBytes: Int,
                          nWays: Int,
                          nCores: Int,
+                         reqIdWidth: Int,
                          addressWidth: Int,
                          bytesPerBlock: Int,
                          bytesPerSubBlock: Int,
@@ -18,7 +19,7 @@ class SharedPipelinedCacheTop(
 
   val io = IO(new Bundle {
     val scheduler = new SchedulerIO(nCores)
-    val cache = new CacheIO(nCores, addressWidth, bytesPerSubBlock * 8)
+    val cache = new CacheIO(nCores, reqIdWidth, addressWidth, bytesPerSubBlock * 8)
     val mem = new MemoryControllerIO(addressWidth, bytesPerBurst * 8)
   })
 
@@ -28,6 +29,7 @@ class SharedPipelinedCacheTop(
     sizeInBytes = sizeInBytes,
     nWays = nWays,
     nCores = nCores,
+    reqIdWidth = reqIdWidth,
     addressWidth = addressWidth,
     bytesPerBlock = bytesPerBlock,
     bytesPerSubBlock = bytesPerSubBlock,
@@ -46,6 +48,7 @@ object SharedPipelinedCacheTop extends App {
   val l2Size = 262144
   val l2Ways = 8
   val nCores = 4
+  val reqIdWidth = 4
   val addressWidth = 32
   val l2BytesPerBlock = 64
   val l2BytesPerSubBlock = 16
@@ -59,6 +62,7 @@ object SharedPipelinedCacheTop extends App {
       sizeInBytes = l2Size,
       nWays = l2Ways,
       nCores = nCores,
+      reqIdWidth = reqIdWidth,
       addressWidth = addressWidth,
       bytesPerBlock = l2BytesPerBlock,
       bytesPerSubBlock = l2BytesPerSubBlock,

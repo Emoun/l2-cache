@@ -1,7 +1,7 @@
 package caches.hardware.pipelined.cache
 
+import caches.hardware.old.MemBlock
 import chisel3._
-import caches.hardware.MemBlock
 import caches.hardware.reppol.ReplacementPolicyIO
 import chisel3.util.{Decoupled, PriorityEncoder, log2Up}
 
@@ -18,12 +18,12 @@ class CacheResponseIO(dataWidth: Int, reqIdWidth: Int) extends Bundle {
   val responseStatus = Output(UInt(1.W)) // 1 - OK, 0 - Rejected
 }
 
-class CacheIO(nCores: Int, addrWidth: Int, dataWidth: Int) extends Bundle {
-  val coreReqs = Vec(nCores, new CacheRequestIO(addrWidth, dataWidth, log2Up(nCores)))
-  val coreResps = Vec(nCores, new CacheResponseIO(dataWidth, log2Up(nCores)))
+class CacheIO(nCores: Int, reqIdWidth: Int, addrWidth: Int, dataWidth: Int) extends Bundle {
+  val coreReqs = Vec(nCores, new CacheRequestIO(addrWidth, dataWidth, reqIdWidth))
+  val coreResps = Vec(nCores, new CacheResponseIO(dataWidth, reqIdWidth))
 }
 
-class SharedPipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, addressWidth: Int, bytesPerBlock: Int, bytesPerSubBlock: Int, bytesPerBurst: Int) extends Module {
+class SharedPipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, reqIdWidth: Int, addressWidth: Int, bytesPerBlock: Int, bytesPerSubBlock: Int, bytesPerBurst: Int) extends Module {
   private val nSets = sizeInBytes / (nWays * bytesPerBlock)
   private val wordsPerBlock = bytesPerBlock / bytesPerSubBlock
   private val byteOffsetWidth = log2Up(bytesPerSubBlock)
@@ -33,7 +33,7 @@ class SharedPipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, addressWid
   private val nMshrs = nWays // nMshrs = nWays for now
 
   val io = IO(new Bundle{
-    val cache = new CacheIO(nCores, addressWidth, bytesPerSubBlock * 8)
+    val cache = new CacheIO(nCores, reqIdWidth, addressWidth, bytesPerSubBlock * 8)
     val repPol = Flipped(new ReplacementPolicyIO(nWays, nSets, nCores))
     val mem = new MemoryControllerIO(addressWidth, bytesPerBurst * 8)
   })
@@ -46,13 +46,13 @@ class SharedPipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, addressWid
     pipelineReg
   }
 
-  val missQueue = Module(new MissFifo(nCores, nMshrs, nWays, log2Up(nCores), tagWidth, indexWidth, blockOffsetWidth, bytesPerSubBlock * 8))
-  val updateLogic = Module(new UpdateUnit(nCores, nWays, log2Up(nCores), tagWidth, indexWidth, bytesPerBlock * 8, bytesPerSubBlock * 8))
+  val missQueue = Module(new MissFifo(nCores, nMshrs, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, bytesPerSubBlock * 8))
+  val updateLogic = Module(new UpdateUnit(nCores, nWays, reqIdWidth, tagWidth, indexWidth, bytesPerBlock * 8, bytesPerSubBlock * 8))
 
   val pipeStall = updateLogic.io.cacheUpdateControl.stall
 
   // ---------------- Decode ----------------
-  val arbiter = Module(new RequestArbiter(nCores, addressWidth, bytesPerSubBlock * 8, log2Up(nCores)))
+  val arbiter = Module(new RequestArbiter(nCores, addressWidth, bytesPerSubBlock * 8, reqIdWidth))
   val reqAccept = !pipeStall && !missQueue.io.full
 
   arbiter.io.out.reqId.ready := reqAccept
@@ -146,9 +146,6 @@ class SharedPipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, addressWid
   val indexRepReg = pipelineReg(indexTagReg, 0.U, !pipeStall)
   val tagRepReg = pipelineReg(tagTagReg, 0.U, !pipeStall)
 
-  // TODO: Pipeline the replacement policy to delay the output of the current replacement way by two cc
-  //  and add one more pipeline stage to allow the contention policy to compute the non-critical and unlimited ways
-
   // ---------------- Replacement ----------------
 
   io.repPol.coreId := coreIdRepReg
@@ -204,11 +201,11 @@ class SharedPipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, addressWid
   dataMem.io.wrData := updateLogic.io.cacheUpdateControl.memWriteData
 
   val coreIdReadReg = pipelineReg(coreIdRepReg, 0.U, !pipeStall)
-  val repValidReadReg = pipelineReg(isValidRep, true.B, !pipeStall)
   val reqValidReadReg = pipelineReg(reqValidRepReg, false.B, !pipeStall)
   val reqIdReadReg = pipelineReg(reqIdRepReg, 0.U, !pipeStall)
   val reqRwReadReg = pipelineReg(reqRwRepReg, false.B, !pipeStall)
   val wDataReadReg = pipelineReg(wDataRepReg, 0.U, !pipeStall)
+  val repValidReadReg = pipelineReg(isValidRep, true.B, !pipeStall)
   val hitReadReg = pipelineReg(hitRepReg, false.B, !pipeStall)
   val hitWayReadReg = pipelineReg(hitWayRepReg, 0.U, !pipeStall)
   val isRepDirtyReadReg = pipelineReg(isRepDirty, false.B, !pipeStall)
@@ -226,20 +223,9 @@ class SharedPipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, addressWid
   wbQueue.io.pushEntry.tag := dirtyTagReadReg
   wbQueue.io.pushEntry.index := indexReadReg
 
-//  val reqValidUpdateReg = RegNext(reqValidReadReg && hitReadReg, false.B)
-//  val reqIdUpdateReg = RegNext(reqIdReadReg, 0.U)
-//  val reqRwUpdateReg = RegNext(reqRwReadReg, false.B)
-//  val wDataUpdateReg = RegNext(wDataReadReg, 0.U)
-//  val cacheMemReadUpdateReg = RegNext(dataMem.io.rData, VecInit(Seq.fill(nWays)(0.U((bytesPerSubBlock * 8).W))))
-//  val hitUpdateReg = RegNext(hitReadReg, false.B)
-//  val hitWayUpdateReg = RegNext(hitWayReadReg, 0.U)
-//  val blockUpdateReg = RegNext(blockReadReg, 0.U)
-//  val indexUpdateReg = RegNext(indexReadReg, 0.U)
-//  val tagUpdateReg = RegNext(tagReadReg, 0.U)
-
   // ---------------- Update ----------------
 
-  val memInterface = Module(new MemoryInterface(nCores, nWays, log2Up(nCores), tagWidth, indexWidth, blockOffsetWidth, bytesPerBlock * 8, bytesPerSubBlock * 8, bytesPerBurst * 8))
+  val memInterface = Module(new MemoryInterface(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, bytesPerBlock * 8, bytesPerSubBlock * 8, bytesPerBurst * 8))
 
   // Connections between memory interface and the miss and write-back FIFOs
   memInterface.io.missFifo.popEntry <> missQueue.io.popEntry
@@ -268,7 +254,7 @@ class SharedPipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, addressWid
 
   // TODO: We should make use of the reqId.ready
   for (coreIdx <- 0 until nCores) {
-    io.cache.coreResps(coreIdx).reqId.valid := (updateLogic.io.coreResp.reqId.bits === coreIdx.U) && updateLogic.io.coreResp.reqId.valid // TODO: Fix this to use core Id instead of reqID
+    io.cache.coreResps(coreIdx).reqId.valid := (updateLogic.io.cacheUpdateControl.coreId === coreIdx.U) && updateLogic.io.coreResp.reqId.valid
     io.cache.coreResps(coreIdx).reqId.bits := updateLogic.io.coreResp.reqId.bits
     io.cache.coreResps(coreIdx).rData := updateLogic.io.coreResp.rData
     io.cache.coreResps(coreIdx).responseStatus :=  updateLogic.io.coreResp.responseStatus

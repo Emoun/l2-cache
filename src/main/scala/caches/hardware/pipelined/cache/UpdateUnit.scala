@@ -45,6 +45,7 @@ class UpdateUnit(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexW
   val refill = WireDefault(false.B)
   val update = WireDefault(false.B)
   val stall = WireDefault(false.B)
+  val coreId = WireDefault(0.U(log2Up(nCores).W))
   val respReqId = WireDefault(0.U(reqIdWidth.W))
   val respRData = WireDefault(0.U(subBlockWidth.W))
   val responseStatus = WireDefault(0.U(1.W))
@@ -73,6 +74,7 @@ class UpdateUnit(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexW
 
     respRData := io.memoryInterface.memReadData(io.memoryInterface.blockOffset)
     respReqId := io.memoryInterface.reqId
+    coreId := io.memoryInterface.coreId
     responseStatus := io.memoryInterface.responseStatus
   }.elsewhen(io.readStage.valid) {
     tag := io.readStage.tag
@@ -90,6 +92,7 @@ class UpdateUnit(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexW
 
     respRData := io.readStage.memReadData(io.readStage.blockOffset)
     respReqId := io.readStage.reqId
+    coreId := io.readStage.coreId
     responseStatus := io.readStage.responseStatus
   }
 
@@ -105,7 +108,7 @@ class UpdateUnit(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexW
   io.cacheUpdateControl.update := update
   io.cacheUpdateControl.memWriteData := cacheWriteData
   io.cacheUpdateControl.wrEn := wrEn
-  io.cacheUpdateControl.coreId := 0.U // TODO: Fix this
+  io.cacheUpdateControl.coreId := coreId
 
   io.coreResp.reqId.valid := io.readStage.valid || io.memoryInterface.valid
   io.coreResp.reqId.bits := respReqId

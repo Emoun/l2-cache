@@ -1,4 +1,4 @@
-package caches.hardware
+package caches.hardware.old
 
 import caches.hardware.reppol._
 import caches.hardware.util.Constants._
@@ -11,6 +11,10 @@ class L2CacheDe2115IO(addressWidth: Int, coreBytesPerWord: Int, nCores: Int) ext
   val lower = new MemoryControllerIO(addressWidth, 16)
 }
 
+/**
+ *
+ * @deprecated
+ */
 class L2SetAssociateCacheDe2115Top(
                                     l2Size: Int,
                                     l2Ways: Int,
@@ -22,9 +26,6 @@ class L2SetAssociateCacheDe2115Top(
                                     l2RepPolicy: () => SharedCacheReplacementPolicyType,
                                     l1Cache: () => L2SetAssociateCache
                                   ) extends Module {
-  // TODO: Create and instantiate an actual memory (more like a dummy memory) that can be initialized from a hex file
-  //  no need to have 32 bit address width for a byte addressable memory since this will only impact
-  //  the index field size which in turn only reduce the number of memory bits needed for the tags
   val io = IO(new L2CacheDe2115IO(addressWidth, coreBytesPerWord, 1))
 
   val l1 = Module(l1Cache())

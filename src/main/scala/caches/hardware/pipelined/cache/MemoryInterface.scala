@@ -54,6 +54,7 @@ class MemoryInterface(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, i
   val reqIndexReg = RegInit(0.U(indexWidth.W))
   val reqTagReg = RegInit(0.U(tagWidth.W))
   val reqIdReg = RegInit(0.U(reqIdWidth.W))
+  val coreIdReg = RegInit(0.U(log2Up(nCores).W))
 
   // Default signal assignments
   val memRAddrValid = WireDefault(false.B)
@@ -70,7 +71,6 @@ class MemoryInterface(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, i
   val memRwDataRegAsUint = memRwDataReg.asUInt
   val responseStatus = WireDefault(0.U(1.W))
 
-  // TODO: If there are two separate lines, we could perform a read and a write simultaneously
   switch(stateReg) {
     is(sIdle) {
 
@@ -97,6 +97,7 @@ class MemoryInterface(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, i
         reqIndexReg := io.missFifo.popEntry.index
         reqTagReg := io.missFifo.popEntry.tag
         reqIdReg := io.missFifo.popEntry.reqId
+        coreIdReg := io.missFifo.popEntry.coreId
 
         stateReg := sRead
       }
@@ -170,7 +171,7 @@ class MemoryInterface(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, i
   io.updateLogic.index := reqIndexReg
   io.updateLogic.tag := reqTagReg
   io.updateLogic.reqId := reqIdReg
-  io.updateLogic.coreId := 0.U // TODO: Fix this
+  io.updateLogic.coreId := coreIdReg
 
   val outAddr = Cat(reqTagReg, reqIndexReg) << (blockOffsetWidth + byteOffsetWidth).U
 
