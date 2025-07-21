@@ -69,8 +69,8 @@ object SharedPipelinedCacheTopDe2115 extends App {
   val freq = 50000000
   val uartBaud = 115200
 
-  val l2Size = 524288 // 256 KiB
-//    val l2Size = 131072 // 128 KiB
+//  val l2Size = 524288 // 256 KiB
+    val l2Size = 131072 // 128 KiB
   //  val l2Size = 16384 // 16 KiB
   val l2Ways = 8
   val nCores = 4
@@ -98,7 +98,7 @@ object SharedPipelinedCacheTopDe2115 extends App {
       bytesPerBurst = l2BytesPerMemBurst,
       freq = freq,
       uartBaud = uartBaud,
-      l2RepPolicy = contL2RepPolicy
+      l2RepPolicy = plruL2RepPolicy
     ),
     Array("--target-dir", "generated")
   )

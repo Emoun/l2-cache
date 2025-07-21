@@ -76,7 +76,7 @@ abstract class SoftCache(l: Int, w: Int, s: Int)  {
    */
   def isHit(addr: Long): Option[(Int, Int)];
 
-  def printAll();
+  def printAll(): Unit;
 
   /**
    * Evict the cache line containing this address, wherever it may reside.
@@ -145,7 +145,7 @@ abstract class TrackingCache[T](l: Int, w: Int, s: Int) extends
    * @param setIdx index of set that hit
    * @param wayIdx index of way that hit
    */
-  def onHit(coreId: Int, setIdx: Int, wayIdx: Int,withRefill:Boolean);
+  def onHit(coreId: Int, setIdx: Int, wayIdx: Int,withRefill:Boolean): Unit;
 
   /**
    * An action that should be performed upon a miss, returning the way index that should
@@ -355,7 +355,7 @@ class LruCache(lineLength: Int, ways: Int, sets: Int) extends
   }
 
   override def defaultPayload(coreId: Int, setIdx: Int, wayIdx: Int): (Int, Unit) = {
-    (0, Unit)
+    (0, ())
 
   }
 }
@@ -364,7 +364,7 @@ class PartitionedCache(lineLength: Int, ways: Int, sets: Int) extends
   TrackingCache[(Int,Unit)](lineLength, ways, sets) with LRUReplacement[Unit] with PartitionedReplacement[(Int,Unit)]
 {
   override def defaultPayload(coreId: Int, setIdx: Int, wayIdx: Int): (Int, Unit) = {
-    (0, Unit)
+    (0, ())
   }
 
   override def applyPartitioning(coreId: Int): Boolean = {
@@ -499,7 +499,7 @@ class ContentionCache(lineLength: Int, ways: Int, sets: Int, contentionCost: Int
     miss
   }
 
-  override def printAll() {
+  override def printAll() : Unit = {
     super.printAll()
     print("{ ")
     for( entry <- _contention) {
@@ -712,7 +712,7 @@ class ContentionPartCache(lineLength: Int, ways: Int, sets: Int, contentionCost:
     miss
   }
 
-  override def printAll() {
+  override def printAll() : Unit = {
     super.printAll()
     print("{ ")
     for( entry <- _contention) {

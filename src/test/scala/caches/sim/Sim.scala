@@ -7,13 +7,13 @@ class TraceTrafficTests2 extends AnyFunSuite {
   var rand: scala.util.Random = new scala.util.Random;
 
   test("Empty") {
-    var traf = new TraceTraffic(1, Array.empty.toIterator, (_) => ())
+    var traf = new TraceTraffic(1, Array.empty.iterator, (_) => ())
 
     assert(Range.apply(0,100).forall(_ => traf.requestMemoryAccess().isEmpty))
   }
 
   test("Single") {
-    var traf = new TraceTraffic(1, Array(new MemAccess(0,true, 0, 0)).toIterator, (_) => ())
+    var traf = new TraceTraffic(1, Array(new MemAccess(0,true, 0, 0)).iterator, (_) => ())
 
     assert(traf.requestMemoryAccess().isDefined)
     traf.serveMemoryAccess(())
@@ -21,7 +21,7 @@ class TraceTrafficTests2 extends AnyFunSuite {
   }
 
   test("Single Double Size") {
-    var traf = new TraceTraffic(1, Array(new MemAccess(1,true, 0, 0)).toIterator, (_) => ())
+    var traf = new TraceTraffic(1, Array(new MemAccess(1,true, 0, 0)).iterator, (_) => ())
 
     assert(traf.requestMemoryAccess().contains((0,true,())))
     traf.serveMemoryAccess(())
@@ -31,7 +31,7 @@ class TraceTrafficTests2 extends AnyFunSuite {
   }
 
   test("Single Double Size 2") {
-    var traf = new TraceTraffic(2, Array(new MemAccess(2,true, 10, 0)).toIterator, (_) => ())
+    var traf = new TraceTraffic(2, Array(new MemAccess(2,true, 10, 0)).iterator, (_) => ())
 
     assert(traf.requestMemoryAccess().contains((10,true,())))
     traf.serveMemoryAccess(())
@@ -41,7 +41,7 @@ class TraceTrafficTests2 extends AnyFunSuite {
   }
 
   test("Single Quad Size") {
-    var traf = new TraceTraffic(2, Array(new MemAccess(3,true, 20, 0)).toIterator, (_) => ())
+    var traf = new TraceTraffic(2, Array(new MemAccess(3,true, 20, 0)).iterator, (_) => ())
 
     assert(traf.requestMemoryAccess().contains((20,true,())))
     traf.serveMemoryAccess(())
@@ -58,7 +58,7 @@ class TraceTrafficTests2 extends AnyFunSuite {
     var traf = new TraceTraffic(4, Array(
       new MemAccess(0,true, 20, 0),
       new MemAccess(0,true, 56, 0)
-    ).toIterator,(_) => ())
+    ).iterator,(_) => ())
 
     assert(traf.requestMemoryAccess().contains((20,true,())))
     traf.serveMemoryAccess(())
@@ -71,7 +71,7 @@ class TraceTrafficTests2 extends AnyFunSuite {
     var traf = new TraceTraffic(2, Array(
       new MemAccess(2,true, 20, 0),
       new MemAccess(0,true, 56, 0)
-    ).toIterator,(_) => ())
+    ).iterator,(_) => ())
 
     assert(traf.requestMemoryAccess().contains((20,true,())))
     traf.serveMemoryAccess(())
@@ -86,7 +86,7 @@ class TraceTrafficTests2 extends AnyFunSuite {
     var traf = new TraceTraffic(1, Array(
       new MemAccess(2,true, 16, 0),
       new MemAccess(1,true, 90, 0)
-    ).toIterator,(_) => ())
+    ).iterator,(_) => ())
 
     assert(traf.requestMemoryAccess().contains((16,true,())))
     traf.serveMemoryAccess(())
@@ -107,7 +107,7 @@ class TraceTrafficTests2 extends AnyFunSuite {
     var delay = rand.nextInt(300)
     var traf = new TraceTraffic(1, Array(
       new MemAccess(0,true, 16, delay)
-    ).toIterator,(_) => ())
+    ).iterator,(_) => ())
 
     assert(Range.apply(0, delay).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
@@ -128,7 +128,7 @@ class TraceTrafficTests2 extends AnyFunSuite {
     var traf = new TraceTraffic(1, Array(
       new MemAccess(0,true, 16, delay),
       new MemAccess(0,true, 74, delay2)
-    ).toIterator,(_) => ())
+    ).iterator,(_) => ())
 
     assert(Range.apply(0, delay).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
@@ -158,7 +158,7 @@ class TraceTrafficTests2 extends AnyFunSuite {
     var traf = new TraceTraffic(1, Array(
       new MemAccess(1,true, 16, delay),
       new MemAccess(0,true, 74, delay2)
-    ).toIterator,(_) => ())
+    ).iterator,(_) => ())
 
     assert(Range.apply(0, delay).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
@@ -193,7 +193,7 @@ class TraceTrafficTests2 extends AnyFunSuite {
 
     var traf = new TraceTraffic(2, Array(
       new MemAccess(1,true, 1, delay),
-    ).toIterator,(_) => ())
+    ).iterator,(_) => ())
 
     assert(Range.apply(0, delay).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
@@ -223,7 +223,7 @@ class TraceTrafficTests2 extends AnyFunSuite {
 
     var traf = new TraceTraffic(2, Array(
       new MemAccess(2,true, 1, delay),
-    ).toIterator,(_) => ())
+    ).iterator,(_) => ())
 
     assert(Range.apply(0, delay).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
@@ -260,7 +260,7 @@ class TraceTrafficTests2 extends AnyFunSuite {
 
     var traf = new TraceTraffic(2, Array(
       new MemAccess(2,true, 6, delay),
-    ).toIterator,(_) => ())
+    ).iterator,(_) => ())
 
     assert(Range.apply(0, delay).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
@@ -290,7 +290,7 @@ class TraceTrafficTests2 extends AnyFunSuite {
 
     var traf = new TraceTraffic(2, Array(
       new MemAccess(3,true, 11, delay),
-    ).toIterator,(_) => ())
+    ).iterator,(_) => ())
 
     assert(Range.apply(0, delay).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
@@ -341,7 +341,7 @@ class TraceTrafficTests2 extends AnyFunSuite {
 
     var traf = new TraceTraffic(8, Array(
       new MemAccess(2,true, 4, delay),
-    ).toIterator,(_) => ())
+    ).iterator,(_) => ())
 
     assert(Range.apply(0, delay).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
@@ -364,7 +364,7 @@ class TraceTrafficTests2 extends AnyFunSuite {
 
     var traf = new TraceTraffic(8, Array(
       new MemAccess(2,true,3, delay),
-    ).toIterator,(_) => ())
+    ).iterator,(_) => ())
 
     assert(Range.apply(0, delay).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
@@ -387,7 +387,7 @@ class TraceTrafficTests2 extends AnyFunSuite {
 
     var traf = new TraceTraffic(8, Array(
       new MemAccess(2,true,5, delay),
-    ).toIterator,(_) => ())
+    ).iterator,(_) => ())
 
     assert(Range.apply(0, delay).forall(_=> {
       val result = traf.requestMemoryAccess().isEmpty
@@ -419,7 +419,7 @@ class TraceTrafficTests2 extends AnyFunSuite {
       new MemAccess(0,true,1, delay),
       new MemAccess(0,true,2, delay),
       new MemAccess(0,true,3, delay),
-    ).toIterator,(_) => ())
+    ).iterator,(_) => ())
 
     assert(!traf.isDone())
 
@@ -553,7 +553,7 @@ class RoundRobinArbiterTests extends AnyFunSuite {
         def triggerCycle() = {counts(idx) += 1};
 
         def requestMemoryAccess(): Option[(Long, Boolean, Unit)] = {
-          if(math.random < 0.5) Some((0, true, ())) else None
+          if(math.random() < 0.5) Some((0, true, ())) else None
         };
 
         def serveMemoryAccess(token: Unit):Boolean = true;
@@ -574,7 +574,7 @@ class RoundRobinArbiterTests extends AnyFunSuite {
       latency,
       Array(new TraceTraffic(1, Array(
         new MemAccess(0,true, 20, 0)
-      ).toIterator,(_) => ())),
+      ).iterator,(_) => ())),
       (_) => {
         done = !done
         None
@@ -660,7 +660,7 @@ class RoundRobinArbiterTests extends AnyFunSuite {
     var latency = 2+rand.nextInt(25)
     val newTraffic = () => new TraceTraffic(1, Array(
       new MemAccess(0, true, 20, 0)
-    ).toIterator, (_) => ())
+    ).iterator, (_) => ())
 
 
     var arbiter = new RoundRobinArbiter(8,
@@ -695,7 +695,7 @@ class RoundRobinArbiterTests extends AnyFunSuite {
     var done = 0
     val newTraffic = (addr: Int) => new TraceTraffic(1, Array(
       new MemAccess(0, true, addr, 0)
-    ).toIterator, (_) => done += 1)
+    ).iterator, (_) => done += 1)
 
     var arbiter = new RoundRobinArbiter(8,
       latency,
@@ -740,7 +740,7 @@ class RoundRobinArbiterTests extends AnyFunSuite {
     var done = 0
     val newTraffic = (addr: Int) => new TraceTraffic(1, Array(
       new MemAccess(0, true, addr, 0)
-    ).toIterator, (_) => done += 1)
+    ).iterator, (_) => done += 1)
 
     var arbiter = new RoundRobinArbiter(8,
       latency,
@@ -779,7 +779,7 @@ class RoundRobinArbiterTests extends AnyFunSuite {
     var done = Array.fill(3){false}
     val newTraffic = (coreId: Int, addr: Int) => new TraceTraffic(1, Array(
       new MemAccess(0, true, addr, 0)
-    ).toIterator, (_) => done(coreId) = true)
+    ).iterator, (_) => done(coreId) = true)
     val doneArray = (d1:Boolean, d2:Boolean, d3:Boolean) => {
       done(0) == d1 && done(1) == d2 && done(2) == d3
     }
@@ -843,7 +843,7 @@ class RoundRobinArbiterTests extends AnyFunSuite {
     var done = Array.fill(3){0}
     val newTraffic = (coreId: Int, addr: Int) => new TraceTraffic(1, Array(
       new MemAccess(0, true, addr, 0)
-    ).toIterator, (_) => done(coreId) += 1)
+    ).iterator, (_) => done(coreId) += 1)
     val doneArray = (d1:Int, d2:Int, d3:Int) => {
       done(0) == d1 && done(1) == d2 && done(2) == d3
     }

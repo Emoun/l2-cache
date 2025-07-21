@@ -1217,7 +1217,7 @@ class CacheTrafficTest extends AnyFunSuite {
       new RoundRobinArbiter(1,1,
         Array(new TraceTraffic(1, Array(
           new MemAccess(0,true, 20, 0)
-        ).toIterator,(_) => ())),
+        ).iterator,(_) => ())),
         (_) => {
           done = true
           None
@@ -1246,7 +1246,7 @@ class CacheTrafficTest extends AnyFunSuite {
           new MemAccess(0,false, 0, 0),
           new MemAccess(0,false, 4, 0),
           new MemAccess(0,false, 8, 0),
-        ).toIterator,(_) => ())),
+        ).iterator,(_) => ())),
         (_) => None,
       ),
       new LruCache(2,2,2),
@@ -1285,7 +1285,7 @@ class CacheTrafficTest extends AnyFunSuite {
       new RoundRobinArbiter(1,1,
         Array(new TraceTraffic(1, Array(
           new MemAccess(0,true, 20, 0)
-        ).toIterator,(_) => ())),
+        ).iterator,(_) => ())),
         (_) => {
           done = true
           None
@@ -1385,7 +1385,7 @@ class CacheTrafficTest extends AnyFunSuite {
           new MemAccess(0,false, 0, 0),
           new MemAccess(0,false, 4, 0),
           new MemAccess(0,false, 8, 0),
-        ).toIterator,(_) => ())),
+        ).iterator,(_) => ())),
         (_) => None,
       ),
       new SoftCache(2,2,2) {
@@ -1599,7 +1599,7 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
       new RoundRobinArbiter(1,1,
         Array(new TraceTraffic(1, Array(
           new MemAccess(0,true, 20, 0)
-        ).toIterator,(_) => ())),
+        ).iterator,(_) => ())),
         (_) => {
           done = true
           None
@@ -1629,10 +1629,10 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
         Array(
           new TraceTraffic(1, Array(
             new MemAccess(0,true, 20, 0)
-          ).toIterator,(_) => ()),
+          ).iterator,(_) => ()),
           new TraceTraffic(1, Array(
             new MemAccess(0,true, 40, 0)
-          ).toIterator,(_) => ())),
+          ).iterator,(_) => ())),
         (_) => {
           done += 1
           None
@@ -1667,7 +1667,7 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
       new RoundRobinArbiter(1,1,
         Array(new TraceTraffic(1, Array(
           new MemAccess(0,true, 20, 0)
-        ).toIterator,(_) => ())),
+        ).iterator,(_) => ())),
         (_) => {
           done = true
           None
@@ -1705,10 +1705,10 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
         Array(
           new TraceTraffic(1, Array(
             new MemAccess(0,true, 20, 0)
-          ).toIterator,(_) => ()),
+          ).iterator,(_) => ()),
           new TraceTraffic(1, Array(
             new MemAccess(0,true, 40, 0)
-          ).toIterator,(_) => ())),
+          ).iterator,(_) => ())),
         (_) => {
           done += 1
           None
@@ -1799,10 +1799,10 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
         Array(
           new TraceTraffic(1, Array(
             new MemAccess(0,true, 20, 0)
-          ).toIterator,(_) => ()),
+          ).iterator,(_) => ()),
           new TraceTraffic(1, Array(
             new MemAccess(0,true, 20, 0)
-          ).toIterator,(_) => ())),
+          ).iterator,(_) => ())),
         (_) => {
           done += 1
           None
@@ -2346,7 +2346,7 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
           new MemAccess(0,false, 0, 0),
           new MemAccess(0,false, 4, 0),
           new MemAccess(0,false, 8, 0),
-        ).toIterator,(_) => ())),
+        ).iterator,(_) => ())),
         (_) => None,
         true
       ),
@@ -2526,7 +2526,7 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
           new MemAccess(0,false, 8, 0),
           new MemAccess(0,false, 12, 0),
           new MemAccess(0,false, 16, 0),
-        ).toIterator,(_) => ())),
+        ).iterator,(_) => ())),
         (_) => None,
       ),
       lruCache,
@@ -2578,7 +2578,7 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
   }
 
   test("Miss During Miss Contention") {
-    var contCache = new ContentionCache(2, 2, 2, 10, _ => Unit)
+    var contCache = new ContentionCache(2, 2, 2, 10, _ => ())
     contCache.setCriticality(1, 20)
 
     var traf1 = new TriggerTraffic;
@@ -2608,7 +2608,7 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
   }
 
   test("No Miss During Miss Contention") {
-    var contCache = new ContentionCache(2, 2, 2, 10, _ => Unit)
+    var contCache = new ContentionCache(2, 2, 2, 10, _ => ())
     contCache.setCriticality(0, 20)
     contCache.setCriticality(1, 20)
 
@@ -2639,7 +2639,7 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
   }
 
   test("Miss Queue Contention") {
-    var contCache = new ContentionCache(2, 2, 2, 10, _ => Unit)
+    var contCache = new ContentionCache(2, 2, 2, 10, _ => ())
     contCache.setCriticality(0, 20)
     contCache.setCriticality(2, 20)
 
@@ -2681,7 +2681,7 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
   }
 
   test("Miss Queue Write Contention") {
-    var contCache = new ContentionCache(2, 2, 2, 10, _ => Unit)
+    var contCache = new ContentionCache(2, 2, 2, 10, _ => ())
     contCache.performAccess(0,0,false,true) // Allow traf1 to not need write-back, but traf2 does
     contCache.setCriticality(0, 20)
     contCache.setCriticality(2, 30)
@@ -2737,7 +2737,7 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
   }
 
   test("Miss Queue Write Contention limit") {
-    var contCache = new ContentionCache(2, 2, 2, 10, _ => Unit)
+    var contCache = new ContentionCache(2, 2, 2, 10, _ => ())
     contCache.performAccess(0,0,false,true) // Allow traf1 to not need write-back, but traf2 does
     contCache.setCriticality(0, 20)
     contCache.setCriticality(2, 10)
@@ -2784,7 +2784,7 @@ class BufferedCacheTrafficTest extends AnyFunSuite {
   }
 
   test("Miss Queue Contention Limit") {
-    var contCache = new ContentionCache(2, 2, 2, 10, _ => Unit)
+    var contCache = new ContentionCache(2, 2, 2, 10, _ => ())
     contCache.setCriticality(0, 20)
     contCache.setCriticality(2, 0)
 

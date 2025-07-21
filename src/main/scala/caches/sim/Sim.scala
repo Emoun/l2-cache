@@ -76,7 +76,7 @@ trait Traffic[S] {
    */
   def requestMemoryAccess(): Option[(Long, Boolean, S)];
 
-  def triggerCycle();
+  def triggerCycle(): Unit;
 
   def isPowerOfTwo(x: Int): Boolean =
   {
