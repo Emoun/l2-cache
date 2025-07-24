@@ -1,15 +1,28 @@
 package caches.hardware.reppol
 
 import chisel3._
+import chisel3.util._
 
 /**
  * Tree based implementation of Pseudo LRU.
  *
- * @param ways number of ways in a set-associate cache
+ * @param nWays number of ways in a set-associate cache
  */
-class TreePlruReplacementAlgorithm(ways: Int) extends ReplacementAlgorithmType(ways) {
+class TreePlruReplacementAlgorithm(nWays: Int) extends Module() {
+  val io = IO(new Bundle {
+    val update = Input(Valid(UInt(log2Up(nWays).W)))
+    val replaceWay = Output(UInt(log2Up(nWays).W))
+    val replacementSet = Output(Vec(nWays, UInt(log2Up(nWays).W)))
+  })
+
+  var wayIdxBits = log2Up(nWays)
+
+  if (wayIdxBits % 2 != 0) {
+    wayIdxBits += 1
+  }
+
   // An array of one-bit registers, each for a node in the tree
-  val plruBits = RegInit(VecInit(Seq.fill(ways - 1)(false.B)))
+  val plruBits = RegInit(VecInit(Seq.fill(nWays - 1)(false.B)))
 
   /**
    * Finds the index of the LRU way in the set
@@ -67,9 +80,9 @@ class TreePlruReplacementAlgorithm(ways: Int) extends ReplacementAlgorithmType(w
     updateLru(io.update.bits)
   }
 
-  val lruOrderedSet = VecInit(Seq.fill(ways)(0.U(wayIdxBits.W)))
+  val lruOrderedSet = VecInit(Seq.fill(nWays)(0.U(wayIdxBits.W)))
   lruOrderedSet(0) := replaceWay // The first element is the LRU way
 
   io.replaceWay := replaceWay
-  io.replacementSet := lruOrderedSet // TODO: Implement this if needed
+  io.replacementSet := lruOrderedSet
 }

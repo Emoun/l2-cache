@@ -1,5 +1,6 @@
 package caches.hardware.old
 
+import caches.hardware.util.MemBlock
 import chisel3._
 import chisel3.util._
 

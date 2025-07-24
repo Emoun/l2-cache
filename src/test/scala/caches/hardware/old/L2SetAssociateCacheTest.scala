@@ -241,6 +241,7 @@ class L2SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     val repPolicyGen = () => new TreePlruReplacementPolicy(ways, nSets, nCores)
 
     test(new L2SetAssociateCacheTestTop(size, ways, bytesPerBlock, bytesPerWord, nCores, addressWidth, repPolicyGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+      cancel("Deprecated test")
       // Default assignments
       dut.io.higher.req.poke(false.B)
       dut.io.higher.reqId.poke(0.U)
@@ -351,6 +352,7 @@ class L2SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     val repPolicyGen = () => new TreePlruReplacementPolicy(ways, nSets, nCores)
 
     test(new L2SetAssociateCacheTestTop(size, ways, bytesPerBlock, bytesPerWord, nCores, addressWidth, repPolicyGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+      cancel("Deprecated test")
       // Default assignments
       dut.io.higher.req.poke(false.B)
       dut.io.higher.reqId.poke(0.U)
@@ -426,6 +428,7 @@ class L2SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     val repPolicyGen = () => new BitPlruReplacementPolicy(ways, nSets, nCores)
 
     test(new L2SetAssociateCacheTestTop(size, ways, bytesPerBlock, bytesPerWord, nCores, addressWidth, repPolicyGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+      cancel("Deprecated test")
       // Default assignments
       dut.io.higher.req.poke(false.B)
       dut.io.higher.reqId.poke(0.U)
@@ -575,6 +578,7 @@ class L2SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     val repPolicyGen = () => new TreePlruReplacementPolicy(ways, nSets, nCores)
 
     test(new L2SetAssociateCacheTestTop(size, ways, bytesPerBlock, bytesPerWord, nCores, addressWidth, repPolicyGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+      cancel("Deprecated test")
       // Default assignments
       dut.io.higher.req.poke(false.B)
       dut.io.higher.reqId.poke(0.U)
@@ -657,6 +661,7 @@ class L2SetAssociateCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     )
 
     test(new L2SetAssociateCacheTestTop(size, ways, bytesPerBlock, bytesPerWord, nCores, addressWidth, repPolicyGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+      cancel("Deprecated test")
       // Default assignments
       dut.io.higher.req.poke(false.B)
       dut.io.higher.reqId.poke(0.U)

@@ -9,6 +9,8 @@ import chisel3.util._
  * @param nSets number of sets in the whole cache
  */
 class TreePlruReplacementPolicy(nWays: Int, nSets: Int, nCores: Int) extends SharedCacheReplacementPolicyType(nWays, nSets, nCores) {
+  // TODO: Instantiate only a single combinational logic for computing replacement way
+  //  and only multiple registers for keeping track of each sets state
   val setPlrus = Array.fill(nSets)(Module(new TreePlruReplacementAlgorithm(nWays)))
 
   for (i <- 0 until nSets) {

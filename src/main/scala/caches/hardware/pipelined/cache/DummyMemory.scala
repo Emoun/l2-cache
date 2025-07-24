@@ -1,6 +1,6 @@
 package caches.hardware.pipelined.cache
 
-import caches.hardware.old.MemBlock
+import caches.hardware.util.MemBlock
 import chisel3._
 import chisel3.util._
 

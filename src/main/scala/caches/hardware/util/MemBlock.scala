@@ -1,13 +1,9 @@
-package caches.hardware.old
+package caches.hardware.util
 
 import chisel3._
 import chisel3.util._
 import chisel3.util.experimental.loadMemoryFromFileInline
 
-/**
- *
- * @deprecated
- */
 class MemBlockIO(depth: Int, width: Int) extends Bundle {
   val readAddr = Input(UInt(log2Up(depth).W))
   val writeAddr = Input(UInt(log2Up(depth).W))

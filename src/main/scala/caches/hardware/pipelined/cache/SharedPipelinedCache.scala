@@ -1,9 +1,9 @@
 package caches.hardware.pipelined.cache
 
-import caches.hardware.old.MemBlock
 import chisel3._
 import caches.hardware.reppol.ReplacementPolicyIO
-import chisel3.util.{Decoupled, PriorityEncoder, log2Up}
+import caches.hardware.util.{MemBlock, PipelineReg}
+import chisel3.util._
 
 class CacheRequestIO(addrWidth: Int, dataWidth: Int, reqIdWidth: Int) extends Bundle {
   val reqId = Flipped(Decoupled(UInt(reqIdWidth.W)))
@@ -37,14 +37,6 @@ class SharedPipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, reqIdWidth
     val repPol = Flipped(new ReplacementPolicyIO(nWays, nSets, nCores))
     val mem = new MemoryControllerIO(addressWidth, bytesPerBurst * 8)
   })
-
-  def pipelineReg[T <: Data](next: T, init: T, en: Bool): T = {
-    val pipelineReg = RegInit(init)
-    when(en) {
-      pipelineReg := next
-    }
-    pipelineReg
-  }
 
   val missQueue = Module(new MissFifo(nCores, nMshrs, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, bytesPerSubBlock * 8))
   val updateLogic = Module(new UpdateUnit(nCores, nWays, reqIdWidth, tagWidth, indexWidth, bytesPerBlock * 8, bytesPerSubBlock * 8))
@@ -84,14 +76,14 @@ class SharedPipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, reqIdWidth
     readTags(wayIdx) := tagMem(wayIdx).io.readData
   }
 
-  val coreIdTagReg = pipelineReg(arbiter.io.chosen, 0.U, !pipeStall)
-  val reqValidTagReg = pipelineReg(arbiter.io.out.reqId.valid && reqAccept, false.B, !pipeStall)
-  val reqIdTagReg = pipelineReg(arbiter.io.out.reqId.bits, 0.U, !pipeStall)
-  val reqRwTagReg = pipelineReg(arbiter.io.out.rw, false.B, !pipeStall)
-  val wDataTagReg = pipelineReg(arbiter.io.out.wData, 0.U, !pipeStall)
-  val blockTagReg = pipelineReg(blockOffset, 0.U, !pipeStall)
-  val indexTagReg = pipelineReg(index, 0.U, !pipeStall)
-  val tagTagReg = pipelineReg(tag, 0.U, !pipeStall)
+  val coreIdTagReg = PipelineReg(arbiter.io.chosen, 0.U, !pipeStall)
+  val reqValidTagReg = PipelineReg(arbiter.io.out.reqId.valid && reqAccept, false.B, !pipeStall)
+  val reqIdTagReg = PipelineReg(arbiter.io.out.reqId.bits, 0.U, !pipeStall)
+  val reqRwTagReg = PipelineReg(arbiter.io.out.rw, false.B, !pipeStall)
+  val wDataTagReg = PipelineReg(arbiter.io.out.wData, 0.U, !pipeStall)
+  val blockTagReg = PipelineReg(blockOffset, 0.U, !pipeStall)
+  val indexTagReg = PipelineReg(index, 0.U, !pipeStall)
+  val tagTagReg = PipelineReg(tag, 0.U, !pipeStall)
 
   // ---------------- Tag and Dirty Lookup ----------------
 
@@ -133,18 +125,18 @@ class SharedPipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, reqIdWidth
   io.repPol.setIdx := indexTagReg
   io.repPol.stall := pipeStall
 
-  val coreIdRepReg = pipelineReg(coreIdTagReg, 0.U, !pipeStall)
-  val reqValidRepReg = pipelineReg(reqValidTagReg, false.B, !pipeStall)
-  val reqIdRepReg = pipelineReg(reqIdTagReg, 0.U, !pipeStall)
-  val reqRwRepReg = pipelineReg(reqRwTagReg, false.B, !pipeStall)
-  val wDataRepReg = pipelineReg(wDataTagReg, 0.U, !pipeStall)
-  val hitRepReg = pipelineReg(hit, false.B, !pipeStall)
-  val hitWayRepReg = pipelineReg(hitWay, 0.U, !pipeStall)
-  val dirtyRepReg = pipelineReg(dirty, VecInit(Seq.fill(nWays)(false.B)), !pipeStall)
-  val readTagsRepReg = pipelineReg(readTags, VecInit(Seq.fill(nWays)(0.U(tagWidth.W))), !pipeStall)
-  val blockRepReg = pipelineReg(blockTagReg, 0.U, !pipeStall)
-  val indexRepReg = pipelineReg(indexTagReg, 0.U, !pipeStall)
-  val tagRepReg = pipelineReg(tagTagReg, 0.U, !pipeStall)
+  val coreIdRepReg = PipelineReg(coreIdTagReg, 0.U, !pipeStall)
+  val reqValidRepReg = PipelineReg(reqValidTagReg, false.B, !pipeStall)
+  val reqIdRepReg = PipelineReg(reqIdTagReg, 0.U, !pipeStall)
+  val reqRwRepReg = PipelineReg(reqRwTagReg, false.B, !pipeStall)
+  val wDataRepReg = PipelineReg(wDataTagReg, 0.U, !pipeStall)
+  val hitRepReg = PipelineReg(hit, false.B, !pipeStall)
+  val hitWayRepReg = PipelineReg(hitWay, 0.U, !pipeStall)
+  val dirtyRepReg = PipelineReg(dirty, VecInit(Seq.fill(nWays)(false.B)), !pipeStall)
+  val readTagsRepReg = PipelineReg(readTags, VecInit(Seq.fill(nWays)(0.U(tagWidth.W))), !pipeStall)
+  val blockRepReg = PipelineReg(blockTagReg, 0.U, !pipeStall)
+  val indexRepReg = PipelineReg(indexTagReg, 0.U, !pipeStall)
+  val tagRepReg = PipelineReg(tagTagReg, 0.U, !pipeStall)
 
   // ---------------- Replacement ----------------
 
@@ -200,19 +192,19 @@ class SharedPipelinedCache(sizeInBytes: Int, nWays: Int, nCores: Int, reqIdWidth
   dataMem.io.wrEn := updateLogic.io.cacheUpdateControl.wrEn
   dataMem.io.wrData := updateLogic.io.cacheUpdateControl.memWriteData
 
-  val coreIdReadReg = pipelineReg(coreIdRepReg, 0.U, !pipeStall)
-  val reqValidReadReg = pipelineReg(reqValidRepReg, false.B, !pipeStall)
-  val reqIdReadReg = pipelineReg(reqIdRepReg, 0.U, !pipeStall)
-  val reqRwReadReg = pipelineReg(reqRwRepReg, false.B, !pipeStall)
-  val wDataReadReg = pipelineReg(wDataRepReg, 0.U, !pipeStall)
-  val repValidReadReg = pipelineReg(isValidRep, true.B, !pipeStall)
-  val hitReadReg = pipelineReg(hitRepReg, false.B, !pipeStall)
-  val hitWayReadReg = pipelineReg(hitWayRepReg, 0.U, !pipeStall)
-  val isRepDirtyReadReg = pipelineReg(isRepDirty, false.B, !pipeStall)
-  val dirtyTagReadReg = pipelineReg(dirtyTag, 0.U, !pipeStall)
-  val blockReadReg = pipelineReg(blockRepReg, 0.U, !pipeStall)
-  val indexReadReg = pipelineReg(indexRepReg, 0.U, !pipeStall)
-  val tagReadReg = pipelineReg(tagRepReg, 0.U, !pipeStall)
+  val coreIdReadReg = PipelineReg(coreIdRepReg, 0.U, !pipeStall)
+  val reqValidReadReg = PipelineReg(reqValidRepReg, false.B, !pipeStall)
+  val reqIdReadReg = PipelineReg(reqIdRepReg, 0.U, !pipeStall)
+  val reqRwReadReg = PipelineReg(reqRwRepReg, false.B, !pipeStall)
+  val wDataReadReg = PipelineReg(wDataRepReg, 0.U, !pipeStall)
+  val repValidReadReg = PipelineReg(isValidRep, true.B, !pipeStall)
+  val hitReadReg = PipelineReg(hitRepReg, false.B, !pipeStall)
+  val hitWayReadReg = PipelineReg(hitWayRepReg, 0.U, !pipeStall)
+  val isRepDirtyReadReg = PipelineReg(isRepDirty, false.B, !pipeStall)
+  val dirtyTagReadReg = PipelineReg(dirtyTag, 0.U, !pipeStall)
+  val blockReadReg = PipelineReg(blockRepReg, 0.U, !pipeStall)
+  val indexReadReg = PipelineReg(indexRepReg, 0.U, !pipeStall)
+  val tagReadReg = PipelineReg(tagRepReg, 0.U, !pipeStall)
 
   // ---------------- Read ----------------
 

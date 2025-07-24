@@ -36,21 +36,8 @@ class SharedCacheReplacementIO(nWays: Int, nSets: Int, nCores: Int) extends Bund
 class SharedCacheReplacementPolicyType(nWays: Int, nSets: Int, nCores: Int) extends Module {
   val io = IO(new SharedCacheReplacementIO(nWays, nSets, nCores))
 
-  def pipelineReg[T <: Data](next: T, init: T, en: Bool): T = {
-    val pipelineReg = RegInit(init)
-    when(en) {
-      pipelineReg := next
-    }
-    pipelineReg
-  }
-
   /**
    * Store the way to replace for each set
    */
   val setReplaceWays = VecInit(Seq.fill(nSets)(0.U(log2Up(nWays).W)))
-
-  /**
-   * Indicates if there are any valid ways to evict, i.e. empty set or not
-   */
-  val setValidWays = VecInit(Seq.fill(nSets)(false.B))
 }

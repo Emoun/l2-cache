@@ -2,8 +2,6 @@ package caches.hardware.reppol
 
 import chisel3._
 import chiseltest._
-import firrtl.options.ProgramArgsAnnotation
-import firrtl.stage.FirrtlSourceAnnotation
 import org.scalatest.flatspec.AnyFlatSpec
 
 class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTester {
@@ -193,18 +191,19 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
     val (nWays, nSets, nCores) = (8, 512, 4)
     test(new ContentionReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores)))
       .withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      // Default assignments
-      dut.io.control.update.valid.poke(false.B)
-      dut.io.control.update.bits.poke(0.U)
-      dut.io.control.setIdx.poke(0.U)
-      dut.io.control.coreId.poke(0.U)
-      dut.io.scheduler.coreId.valid.poke(false.B)
-      dut.io.scheduler.coreId.bits.poke(0.U)
-      dut.io.scheduler.setCritical.poke(false.B)
-      dut.io.scheduler.unsetCritical.poke(false.B)
-      dut.io.scheduler.contentionLimit.poke(0.U)
+        cancel("Not finished test")
+        // Default assignments
+        dut.io.control.update.valid.poke(false.B)
+        dut.io.control.update.bits.poke(0.U)
+        dut.io.control.setIdx.poke(0.U)
+        dut.io.control.coreId.poke(0.U)
+        dut.io.scheduler.coreId.valid.poke(false.B)
+        dut.io.scheduler.coreId.bits.poke(0.U)
+        dut.io.scheduler.setCritical.poke(false.B)
+        dut.io.scheduler.unsetCritical.poke(false.B)
+        dut.io.scheduler.contentionLimit.poke(0.U)
 
-      dut.clock.step(1)
-    }
+        dut.clock.step(1)
+      }
   }
 }

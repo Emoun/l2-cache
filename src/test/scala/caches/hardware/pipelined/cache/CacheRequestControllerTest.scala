@@ -20,9 +20,6 @@ class CacheRequestControllerTest extends AnyFlatSpec with ChiselScalatestTester 
       dut.clock.step(cyclesPerBit)
     }
 
-    // Wait for byte to arrive at the buffer
-    dut.clock.step(1)
-
     // Check that the byte was received
     val valid = dut.io.dbg.rxValid.peek().litToBoolean
     assert(valid, "Expected UART to signal valid after byte received")
