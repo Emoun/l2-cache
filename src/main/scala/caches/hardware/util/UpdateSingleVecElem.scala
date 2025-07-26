@@ -3,20 +3,20 @@ package caches.hardware.util
 import chisel3._
 
 object UpdateSingleVecElem {
-  /** Returns a pipeline register, which can be enabled or disabled. The register accepts a default value too.
+  /** Updates a single element in a Vec.
    *
    * @example {{{
-   * val pipeReg = PipelineReg(next, init, en)
+   * val updatedVec = UpdateSingleVecElem(Vec(0.U, 1.U, 2.U), 3.U, 1.U)
    * }}}
    */
-  def apply[T <: Data](orig: Vec[T], newVal: T, valIdx: UInt): Vec[T] = {
+  def apply[T <: Data](orig: Vec[T], newVal: T, idx: UInt): Vec[T] = {
     val newVec = Wire(Vec(orig.length, chiselTypeOf(newVal)))
 
-    for (idx <- 0 until orig.length) {
-      when(idx.U === valIdx) {
-        newVec(idx) := newVal
+    for (i <- 0 until orig.length) {
+      when(i.U === idx) {
+        newVec(i) := newVal
       } .otherwise{
-        newVec(idx) := orig(idx)
+        newVec(i) := orig(i)
       }
     }
 

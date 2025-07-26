@@ -10,7 +10,9 @@ import chisel3.util._
  */
 class TreePlruReplacementAlgorithm(nWays: Int) extends Module() {
   val io = IO(new Bundle {
-    val update = Input(Valid(UInt(log2Up(nWays).W)))
+    val hitWay = Input(UInt(log2Up(nWays).W))
+    val mruBits = Input(Vec(nWays - 1, Bool()))
+    val updatedMru = Output(Vec(nWays - 1, Bool()))
     val replaceWay = Output(UInt(log2Up(nWays).W))
     val replacementSet = Output(Vec(nWays, UInt(log2Up(nWays).W)))
   })
@@ -21,20 +23,17 @@ class TreePlruReplacementAlgorithm(nWays: Int) extends Module() {
     wayIdxBits += 1
   }
 
-  // An array of one-bit registers, each for a node in the tree
-  val plruBits = RegInit(VecInit(Seq.fill(nWays - 1)(false.B)))
-
   /**
    * Finds the index of the LRU way in the set
    *
    * @return the index of the LRU way in the set
    */
-  def getLru: UInt = {
+  def getLru(mruBits: Vec[Bool]): UInt = {
     val lru = VecInit(Seq.fill(wayIdxBits)(false.B))
     val treePath = VecInit(Seq.fill(wayIdxBits)(0.U(wayIdxBits.W)))
 
     for (i <- 0 until wayIdxBits) {
-      val nodeState = plruBits(treePath(i))
+      val nodeState = mruBits(treePath(i))
       lru(wayIdxBits - 1 - i) := nodeState // Set the MSB bits first
       if (i != wayIdxBits - 1) {
         val pathOffset = (treePath(i) << 1).asUInt
@@ -55,12 +54,17 @@ class TreePlruReplacementAlgorithm(nWays: Int) extends Module() {
    *
    * @param way the way that has been accessed
    */
-  def updateLru(way: UInt): Unit = {
+  def updateLru(way: UInt, mruBits: Vec[Bool]): Vec[Bool] = {
     val treePath = VecInit(Seq.fill(wayIdxBits)(0.U(wayIdxBits.W)))
+
+    val newMru = VecInit(Seq.fill(nWays - 1)(false.B))
+    for (j <- 0 until mruBits.length) {
+      newMru(j) := mruBits(j)
+    }
 
     for (i <- 0 until wayIdxBits) {
       val accessBit = way(wayIdxBits - 1 - i)
-      plruBits(treePath(i)) := ~accessBit
+      newMru(treePath(i)) := ~accessBit
 
       if (i != wayIdxBits - 1) {
         val pathOffset = (treePath(i) << 1).asUInt
@@ -72,17 +76,15 @@ class TreePlruReplacementAlgorithm(nWays: Int) extends Module() {
         }
       }
     }
+
+    newMru
   }
 
-  val replaceWay = getLru
+  val replaceWay = getLru(io.mruBits)
+  val updatedMru = updateLru(io.hitWay, io.mruBits)
+  val replacementSet = VecInit(Seq.fill(nWays)(0.U(wayIdxBits.W)))
 
-  when(io.update.valid) {
-    updateLru(io.update.bits)
-  }
-
-  val lruOrderedSet = VecInit(Seq.fill(nWays)(0.U(wayIdxBits.W)))
-  lruOrderedSet(0) := replaceWay // The first element is the LRU way
-
+  io.updatedMru := updatedMru
   io.replaceWay := replaceWay
-  io.replacementSet := lruOrderedSet
+  io.replacementSet := replacementSet
 }

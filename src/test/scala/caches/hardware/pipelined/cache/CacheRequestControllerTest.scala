@@ -58,33 +58,31 @@ class CacheRequestControllerTest extends AnyFlatSpec with ChiselScalatestTester 
   }
 
   def expectAndConsumeRequest(dut: CacheRequestController, coreId: Int, reqId: Int, addr: String, rw: Boolean, wData: String): Unit = {
-    dut.io.cache.coreReqs(coreId).reqId.valid.expect(true.B)
-    dut.io.cache.coreReqs(coreId).reqId.bits.expect(reqId.U)
-    dut.io.cache.coreReqs(coreId).addr.expect(addr.U)
-    dut.io.cache.coreReqs(coreId).rw.expect(rw.B)
-    dut.io.cache.coreReqs(coreId).wData.expect(wData.U)
+    dut.io.cache.cores(coreId).req.reqId.valid.expect(true.B)
+    dut.io.cache.cores(coreId).req.reqId.bits.expect(reqId.U)
+    dut.io.cache.cores(coreId).req.addr.expect(addr.U)
+    dut.io.cache.cores(coreId).req.rw.expect(rw.B)
+    dut.io.cache.cores(coreId).req.wData.expect(wData.U)
 
-    dut.io.cache.coreReqs(coreId).reqId.ready.poke(true.B)
+    dut.io.cache.cores(coreId).req.reqId.ready.poke(true.B)
 
     dut.clock.step(1)
 
-    dut.io.cache.coreReqs(coreId).reqId.ready.poke(false.B)
+    dut.io.cache.cores(coreId).req.reqId.ready.poke(false.B)
   }
 
   def respondToRequest(dut: CacheRequestController, coreId: Int, reqId: Int, rData: String, responseStatus: Int): Unit = {
-    dut.io.cache.coreResps(coreId).reqId.ready.expect(true.B)
-
-    dut.io.cache.coreResps(coreId).reqId.valid.poke(true.B)
-    dut.io.cache.coreResps(coreId).reqId.bits.poke(reqId.U)
-    dut.io.cache.coreResps(coreId).rData.poke(rData.U)
-    dut.io.cache.coreResps(coreId).responseStatus.poke(responseStatus.U)
+    dut.io.cache.cores(coreId).resp.reqId.valid.poke(true.B)
+    dut.io.cache.cores(coreId).resp.reqId.bits.poke(reqId.U)
+    dut.io.cache.cores(coreId).resp.rData.poke(rData.U)
+    dut.io.cache.cores(coreId).resp.responseStatus.poke(responseStatus.U)
 
     dut.clock.step(1)
 
-    dut.io.cache.coreResps(coreId).reqId.valid.poke(false.B)
-    dut.io.cache.coreResps(coreId).reqId.bits.poke(0.U)
-    dut.io.cache.coreResps(coreId).rData.poke(0.U)
-    dut.io.cache.coreResps(coreId).responseStatus.poke(0.U)
+    dut.io.cache.cores(coreId).resp.reqId.valid.poke(false.B)
+    dut.io.cache.cores(coreId).resp.reqId.bits.poke(0.U)
+    dut.io.cache.cores(coreId).resp.rData.poke(0.U)
+    dut.io.cache.cores(coreId).resp.responseStatus.poke(0.U)
   }
 
   "CacheRequestControllerTest" should "work" in {
@@ -100,12 +98,12 @@ class CacheRequestControllerTest extends AnyFlatSpec with ChiselScalatestTester 
         // Default signal assignments
         dut.io.rxd.poke(1.U)
         for (coreIdx <- 0 until nCores) {
-          dut.io.cache.coreReqs(coreIdx).reqId.ready.poke(false.B)
+          dut.io.cache.cores(coreIdx).req.reqId.ready.poke(false.B)
 
-          dut.io.cache.coreResps(coreIdx).reqId.valid.poke(false.B)
-          dut.io.cache.coreResps(coreIdx).reqId.bits.poke(0.U)
-          dut.io.cache.coreResps(coreIdx).rData.poke(0.U)
-          dut.io.cache.coreResps(coreIdx).responseStatus.poke(0.U)
+          dut.io.cache.cores(coreIdx).resp.reqId.valid.poke(false.B)
+          dut.io.cache.cores(coreIdx).resp.reqId.bits.poke(0.U)
+          dut.io.cache.cores(coreIdx).resp.rData.poke(0.U)
+          dut.io.cache.cores(coreIdx).resp.responseStatus.poke(0.U)
         }
 
         dut.clock.step(5)

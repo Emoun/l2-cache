@@ -12,7 +12,8 @@ import chisel3.util.PriorityEncoder
 class BitPlruReplacementAlgorithm(nWays: Int) extends Module() {
   val io = IO(new Bundle {
     val hitWay = Input(UInt(log2Up(nWays).W))
-    val mruBits = Input(Vec(nWays, Bool()))
+    val computeMruBits = Input(Vec(nWays, Bool()))
+    val updateMruBits = Input(Vec(nWays, Bool()))
     val updatedMru = Output(Vec(nWays, Bool()))
     val replaceWay = Output(UInt(log2Up(nWays).W))
     val replacementSet = Output(Vec(nWays, UInt(log2Up(nWays).W)))
@@ -31,7 +32,7 @@ class BitPlruReplacementAlgorithm(nWays: Int) extends Module() {
 
     for (bitIdx <- 0 until nWays) {
       when(capacity && (bitIdx.U =/= way).asBool) { // When at capacity, reset all bits except the accessed way bit
-        newMruBits(bitIdx) := ~currentMruBits(bitIdx)
+        newMruBits(bitIdx) := false.B
       } .otherwise{
         newMruBits(bitIdx) := currentMruBits(bitIdx)
       }
@@ -97,11 +98,11 @@ class BitPlruReplacementAlgorithm(nWays: Int) extends Module() {
     PriorityEncoder((~mruBits.asUInt).asUInt)
   }
 
-  val updatedMruBits = updateMruBits(io.hitWay, io.mruBits)
+  val updatedMruBits = updateMruBits(io.hitWay, io.updateMruBits)
 
   // Replacement selection logic
-  val replaceWay = getLru(io.mruBits)
-  val replaceSet = getLruOrderedSet(io.mruBits)
+  val replaceWay = getLru(io.computeMruBits)
+  val replaceSet = getLruOrderedSet(io.computeMruBits)
 
   io.updatedMru := updatedMruBits
   io.replaceWay := replaceWay

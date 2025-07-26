@@ -59,7 +59,6 @@ class L2SetAssociateCacheDe2115Top(
   l1.io.scheduler.contentionLimit := 0.U
 
   // Connection between the L1 cache and the L2 cache
-  // TODO: Registers here to isolate the critical path of the l2 cache
   l2Cache.io.higher.req := RegNext(l1.io.lower.req)
   l2Cache.io.higher.reqId := RegNext(l1.io.lower.reqId)
   l2Cache.io.higher.addr := RegNext(l1.io.lower.addr)

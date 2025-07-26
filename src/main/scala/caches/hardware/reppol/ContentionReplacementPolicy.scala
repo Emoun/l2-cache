@@ -11,44 +11,37 @@ class LineAssignmentsArray(nWays: Int, nSets: Int, nCores: Int) extends Module()
     val wrEn = Input(Bool())
     val rSet = Input(UInt(log2Up(nSets).W))
     val wrSet = Input(UInt(log2Up(nSets).W))
-    val wrData = Input(Vec(nWays, UInt(log2Up(nCores).W)))
-    val wrWay = Input(UInt(log2Up(nWays).W))
+    val wrLineAssign = Input(Vec(nWays, UInt(log2Up(nCores).W)))
+    val wrValiAssign = Input(Vec(nWays, Bool()))
     val rLineAssign = Output(Vec(nWays, UInt(log2Up(nCores).W)))
     val rValidAssign = Output(Vec(nWays, Bool()))
   })
 
   // Memory array for keeping track of line assignments
   val lineAssignments = Module(new MemBlock(nSets, nWays * log2Up(nCores)))
+  val validLineAssignments = Module(new MemBlock(nSets, nWays))
 
   lineAssignments.io.wrEn := io.wrEn
   lineAssignments.io.readAddr := io.rSet
   lineAssignments.io.writeAddr := io.wrSet
-  lineAssignments.io.writeData := io.wrData.asUInt
+  lineAssignments.io.writeData := io.wrLineAssign.asUInt
 
-  // Valid line assignments register array
-  val validLineAssignments = Array.fill(nSets)(RegInit(VecInit(Seq.fill(nWays)(false.B))))
-  val rLineValidAssign = VecInit(Seq.fill(nWays)(false.B))
+  validLineAssignments.io.wrEn := io.wrEn
+  validLineAssignments.io.readAddr := io.rSet
+  validLineAssignments.io.writeAddr := io.wrSet
+  validLineAssignments.io.writeData := io.wrValiAssign.asUInt
 
-  val validRAddrDelayReg = PipelineReg(io.rSet, 0.U, io.stall)
-
-  for (setIdx <- 0 until nSets) {
-    when(setIdx.U === validRAddrDelayReg) {
-      rLineValidAssign := validLineAssignments(setIdx)
-
-      when(io.wrEn) {
-        validLineAssignments(setIdx)(io.wrWay) := true.B
-      }
-    }
-  }
-
-  // Break apart the read data into a VEC
+  // Break apart the read data into a VECs
   val rLineAssignments = VecInit(Seq.fill(nWays)(0.U(log2Up(nCores).W)))
+  val rValidLineAssignments = VecInit(Seq.fill(nWays)(false.B))
+
   for (idx <- 0 until nWays) {
     rLineAssignments(idx) := lineAssignments.io.readData((log2Up(nCores) - 1) + (idx * log2Up(nCores)), idx * log2Up(nCores))
+    rValidLineAssignments(idx) := validLineAssignments.io.readData(idx)
   }
 
   io.rLineAssign := rLineAssignments
-  io.rValidAssign := rLineValidAssign
+  io.rValidAssign := rValidLineAssignments
 }
 
 class CoreContentionTable(nCores: Int) extends Module() {
@@ -118,8 +111,8 @@ class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolic
   assignArr.io.wrEn := io.control.evict
   assignArr.io.rSet := io.control.setIdx
   assignArr.io.wrSet := setIdxPipeReg
-  assignArr.io.wrData := UpdateSingleVecElem(assignArr.io.rLineAssign, io.control.coreId, contAlgorithm.io.replacementWay.bits)
-  assignArr.io.wrWay := contAlgorithm.io.replacementWay.bits
+  assignArr.io.wrLineAssign := UpdateSingleVecElem(assignArr.io.rLineAssign, io.control.coreId, contAlgorithm.io.replacementWay.bits)
+  assignArr.io.wrValiAssign := UpdateSingleVecElem(assignArr.io.rValidAssign, true.B, contAlgorithm.io.replacementWay.bits)
 
   val coreTable = Module(new CoreContentionTable(nCores))
   coreTable.io.schedCoreId := io.scheduler.coreId

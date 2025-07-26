@@ -1,0 +1,57 @@
+package caches.hardware.pipelined.cache.stages
+
+import caches.hardware.pipelined.cache.TagUpdateIO
+import chisel3._
+import chisel3.util._
+import caches.hardware.util._
+
+class DecIO(nCores: Int, reqIdWidth: Int, addrWidth: Int, subBlockWidth: Int) extends Bundle() {
+  val coreId = Input(UInt(log2Up(nCores).W))
+  val reqValid = Input(Bool())
+  val reqId = Input(UInt(reqIdWidth.W))
+  val reqRw = Input(Bool())
+  val wData = Input(UInt(subBlockWidth.W))
+  val addr = Input(UInt(addrWidth.W))
+}
+
+class Dec(nCores: Int, nSets: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffWidth: Int, byteOffWidth: Int, subBlockWidth: Int) extends Module() {
+  private val addrWidth = tagWidth + indexWidth + blockOffWidth + byteOffWidth
+
+  val io = IO(new Bundle{
+    val dec = new DecIO(nCores, reqIdWidth, addrWidth, subBlockWidth)
+    val tag = Flipped(new TagIO(nWays, nCores, reqIdWidth, tagWidth, indexWidth, blockOffWidth, subBlockWidth))
+    val update = Flipped(new TagUpdateIO(nWays, tagWidth))
+    val stall = Input(Bool())
+  })
+
+  // val byteOffset = io.addr(byteOffsetWidth - 1, 0)
+  val blockOffset = io.dec.addr((blockOffWidth - 1) + byteOffWidth, byteOffWidth)
+  val index = io.dec.addr((indexWidth - 1) + blockOffWidth + byteOffWidth, blockOffWidth + byteOffWidth)
+  val tag = io.dec.addr(addrWidth - 1, indexWidth + blockOffWidth + byteOffWidth)
+
+  val tagMem = Array.fill(nWays)(Module(new MemBlock(nSets, tagWidth)))
+
+  val readTags = Wire(Vec(nWays, UInt(tagWidth.W)))
+
+  for (wayIdx <- 0 until nWays) {
+    val isUpdateWay = io.update.way === wayIdx.U
+
+    // Assign the signals for the tag memories
+    tagMem(wayIdx).io.readAddr := index
+    tagMem(wayIdx).io.writeData := io.update.tag
+    tagMem(wayIdx).io.writeAddr := io.update.index
+    tagMem(wayIdx).io.wrEn := io.update.refill && isUpdateWay
+
+    readTags(wayIdx) := tagMem(wayIdx).io.readData
+  }
+
+  io.tag.coreId := PipelineReg(io.dec.coreId, 0.U, !io.stall)
+  io.tag.reqValid := PipelineReg(io.dec.reqValid, false.B, !io.stall)
+  io.tag.reqId := PipelineReg(io.dec.reqId, 0.U, !io.stall)
+  io.tag.reqRw := PipelineReg(io.dec.reqRw, false.B, !io.stall)
+  io.tag.wData := PipelineReg(io.dec.wData, 0.U, !io.stall)
+  io.tag.blockOffset := PipelineReg(blockOffset, 0.U, !io.stall)
+  io.tag.index := PipelineReg(index, 0.U, !io.stall)
+  io.tag.tag := PipelineReg(tag, 0.U, !io.stall)
+  io.tag.readTags := readTags
+}

@@ -7,7 +7,7 @@ import chisel3.util._
 class DummyMemory(addrWidth: Int, blockWidth: Int, burstWidth: Int, dataFile: Option[String] = None) extends Module {
   require(blockWidth > burstWidth, "Block width must be greater than burst width.")
 
-  val io = IO(Flipped(new MemoryControllerIO(addrWidth, burstWidth)))
+  val io = IO(Flipped(new CacheMemoryControllerIO(addrWidth, burstWidth)))
 
   private val nBursts = blockWidth / burstWidth
   val sIdle :: sReadBurst :: sWriteBurst :: Nil = Enum(3)

@@ -6,19 +6,6 @@ import caches.hardware.reppol._
 
 /**
  * Test module with a test memory implemented as block RAM.
- * 
- * @param sizeInBytes
- * @param nWays
- * @param nCores
- * @param reqIdWidth
- * @param addressWidth
- * @param bytesPerBlock
- * @param bytesPerSubBlock
- * @param bytesPerBurst
- * @param freq
- * @param uartBaud
- * @param l2RepPolicy
- * @param dataFile
  */
 class SharedPipelinedCacheTestTopDe2115(
                                    sizeInBytes: Int,

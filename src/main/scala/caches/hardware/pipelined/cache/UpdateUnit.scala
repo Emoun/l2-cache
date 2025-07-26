@@ -17,16 +17,19 @@ class CacheUpdateEntryIO(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int
   val memReadData = Input(Vec(blockWidth / subBlockWidth, UInt(subBlockWidth.W)))
 }
 
-class CacheUpdateControlIO(nCores: Int, nWays: Int, tagWidth: Int, nSubBlocks: Int, subBlockWidth: Int) extends Bundle {
+class TagUpdateIO(nWays: Int, tagWidth: Int) extends Bundle() {
   val tag = Output(UInt(tagWidth.W))
-  val index = Output(UInt(log2Up(nWays).W))
-  val coreId = Output(UInt(log2Up(nCores).W))
   val way = Output(UInt(log2Up(nWays).W))
-  val refill = Output(Bool())
+  val index = Output(UInt(log2Up(nWays).W))
   val update = Output(Bool())
-  val stall = Output(Bool())
-  val memWriteData = Output(Vec(nSubBlocks, UInt(subBlockWidth.W)))
+  val refill = Output(Bool())
+}
+
+class CacheMemUpdateIO(nWays: Int, nSubBlocks: Int, subBlockWidth: Int) extends Bundle() {
   val wrEn = Output(Bool())
+  val way = Output(UInt(log2Up(nWays).W))
+  val index = Output(UInt(log2Up(nWays).W))
+  val memWriteData = Output(Vec(nSubBlocks, UInt(subBlockWidth.W)))
 }
 
 class UpdateUnit(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockWidth: Int, subBlockWidth: Int) extends Module {
@@ -35,8 +38,10 @@ class UpdateUnit(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexW
   val io = IO(new Bundle {
     val readStage = new CacheUpdateEntryIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockWidth, subBlockWidth)
     val memoryInterface = new CacheUpdateEntryIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockWidth, subBlockWidth)
-    val cacheUpdateControl = new CacheUpdateControlIO(nCores, nWays, tagWidth, nSubBlocks, subBlockWidth)
-    val coreResp = new CacheResponseIO(subBlockWidth, reqIdWidth)
+    val coreResps = Vec(nCores, new CacheResponseIO(subBlockWidth, reqIdWidth))
+    val memUpdate = new CacheMemUpdateIO(nWays, nSubBlocks, subBlockWidth)
+    val tagUpdate = new TagUpdateIO(nWays, tagWidth)
+    val stall = Output(Bool())
   })
 
   val tag = WireDefault(0.U(tagWidth.W))
@@ -51,8 +56,6 @@ class UpdateUnit(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexW
   val responseStatus = WireDefault(0.U(1.W))
   val wrEn = WireDefault(false.B)
   val cacheWriteData = VecInit(Seq.fill(nSubBlocks)(0.U(subBlockWidth.W)))
-
-  // TODO: Stall pipeline if core is not ready for accepting a response
 
   when(io.memoryInterface.valid) {
     refill := true.B
@@ -100,18 +103,24 @@ class UpdateUnit(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexW
     stall := true.B
   }
 
-  io.cacheUpdateControl.stall := stall
-  io.cacheUpdateControl.tag := tag
-  io.cacheUpdateControl.index := index
-  io.cacheUpdateControl.way := way
-  io.cacheUpdateControl.refill := refill
-  io.cacheUpdateControl.update := update
-  io.cacheUpdateControl.memWriteData := cacheWriteData
-  io.cacheUpdateControl.wrEn := wrEn
-  io.cacheUpdateControl.coreId := coreId
+  io.stall := stall
 
-  io.coreResp.reqId.valid := io.readStage.valid || io.memoryInterface.valid
-  io.coreResp.reqId.bits := respReqId
-  io.coreResp.rData := respRData
-  io.coreResp.responseStatus := responseStatus
+  io.tagUpdate.tag := tag
+  io.tagUpdate.index := index
+  io.tagUpdate.way := way
+  io.tagUpdate.refill := refill
+  io.tagUpdate.update := update
+
+  io.memUpdate.memWriteData := cacheWriteData
+  io.memUpdate.wrEn := wrEn
+  io.memUpdate.way := way
+  io.memUpdate.index := index
+
+  val validResponse = io.readStage.valid || io.memoryInterface.valid
+  for (coreIdx <- 0 until nCores) {
+    io.coreResps(coreIdx).reqId.valid := (coreId === coreIdx.U) && validResponse
+    io.coreResps(coreIdx).reqId.bits := respReqId
+    io.coreResps(coreIdx).rData := respRData
+    io.coreResps(coreIdx).responseStatus := responseStatus
+  }
 }

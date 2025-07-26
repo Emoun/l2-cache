@@ -19,11 +19,9 @@ class SharedPipelinedCacheTop(
   val io = IO(new Bundle {
     val scheduler = new SchedulerIO(nCores)
     val cache = new CacheIO(nCores, reqIdWidth, addressWidth, bytesPerSubBlock * 8)
-    val mem = new MemoryControllerIO(addressWidth, bytesPerBurst * 8)
+    val mem = new CacheMemoryControllerIO(addressWidth, bytesPerBurst * 8)
   })
 
-  // TODO: Add some sort of queue for rejected responses, to retry them at a later time
-  //  or expect the core to re-attempt at a later time
   val l2Cache = Module(new SharedPipelinedCache(
     sizeInBytes = sizeInBytes,
     nWays = nWays,

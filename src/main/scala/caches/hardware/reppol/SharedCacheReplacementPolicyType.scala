@@ -10,9 +10,9 @@ class ReplacementPolicyIO(nWays: Int, nSets: Int, nCores: Int) extends Bundle {
   val evict = Input(Bool()) // Some policies may need to know if when the line is being evicted
   val setIdx = Input(UInt(log2Up(nSets).W))
   val coreId = Input(UInt(log2Up(nCores).W)) // ID of the requesting core
+  val isValid = Output(Bool()) // To signal if there are no valid ways to replace
   val replaceWay = Output(UInt(log2Up(nWays).W))
   val replacementSet = Output(Vec(nWays, UInt(log2Up(nWays).W))) // If a replacement policy needs an ordered set of ways, otherwise can be ignored
-  val isValid = Output(Bool()) // To signal if there are no valid ways to replace
 }
 
 class SchedulerIO(nCores: Int) extends Bundle {
@@ -35,9 +35,4 @@ class SharedCacheReplacementIO(nWays: Int, nSets: Int, nCores: Int) extends Bund
  */
 class SharedCacheReplacementPolicyType(nWays: Int, nSets: Int, nCores: Int) extends Module {
   val io = IO(new SharedCacheReplacementIO(nWays, nSets, nCores))
-
-  /**
-   * Store the way to replace for each set
-   */
-  val setReplaceWays = VecInit(Seq.fill(nSets)(0.U(log2Up(nWays).W)))
 }

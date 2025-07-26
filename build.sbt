@@ -17,8 +17,7 @@ libraryDependencies += "edu.berkeley.cs" % "ip-contributions" % "0.5.4"
 
 libraryDependencies += "org.scalatest" %% "scalatest" % "3.2.19" % "test"
 
-
 // library name
 name := "l2-cache"
 
-lazy val l2_cache = (project in file("."))
+lazy val l2_cache = project in file(".")

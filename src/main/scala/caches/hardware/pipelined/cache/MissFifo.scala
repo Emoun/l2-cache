@@ -53,25 +53,36 @@ class MshrQueue[T <: Data](gen: T, depth: Int) extends Module {
   io.enq <> fifo.io.enq
 }
 
+// TODO: The tags are used to see if it is half-miss (a request needs a data that is currently being fetched) while ways are used to turn an access into a miss pre-emptively
+class MissFifoPushIO(nCores: Int, nMSHRs: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, subBlockWidth: Int) extends Bundle() {
+  val push = Input(Bool())
+  val pushEntry = new MissFifoEntryIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, subBlockWidth)
+  val currentIndexes = Output(Vec(nMSHRs, UInt(indexWidth.W)))
+  val currentTags = Output(Vec(nMSHRs, UInt(tagWidth.W)))
+  val validMSHRs = Output(Vec(nMSHRs, Bool()))
+  val full = Output(Bool())
+}
+
+class MissFifoPopIO(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, subBlockWidth: Int) extends Bundle() {
+  val pop = Input(Bool())
+  val popEntry = Flipped(new MissFifoEntryIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, subBlockWidth))
+  val empty = Output(Bool())
+}
+
+class MissFifoIO(nCores: Int, nMSHRs: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, subBlockWidth: Int) extends Bundle {
+  val push = new MissFifoPushIO(nCores, nMSHRs, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, subBlockWidth)
+  val pop = new MissFifoPopIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, subBlockWidth)
+}
+
 class MissFifo(nCores: Int, nMSHRs: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, subBlockWidth: Int) extends Module {
-  val io = IO(new Bundle {
-    val push = Input(Bool())
-    val pushEntry = new MissFifoEntryIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, subBlockWidth)
-    val pop = Input(Bool())
-    val popEntry = Flipped(new MissFifoEntryIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, subBlockWidth))
-    val currentIndexes = Output(Vec(nMSHRs, UInt(indexWidth.W)))
-    val currentWays = Output(Vec(nMSHRs, UInt(log2Up(nWays).W)))
-    val validMSHRs = Output(Vec(nMSHRs, Bool()))
-    val full = Output(Bool())
-    val empty = Output(Bool())
-  })
+  val io = IO(new MissFifoIO(nCores, nMSHRs, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, subBlockWidth))
 
   val rwQueue = Module(new RegFifo(Bool(), nMSHRs))
   val reqIdQueue = Module(new RegFifo(UInt(reqIdWidth.W), nMSHRs))
   val coreIdQueue = Module(new RegFifo(UInt(log2Up(nCores).W), nMSHRs))
   val wDataQueue = Module(new RegFifo(UInt(subBlockWidth.W), nMSHRs))
-  val wayQueue = Module(new MshrQueue(UInt(log2Up(nWays).W), nMSHRs))
-  val tagQueue = Module(new RegFifo(UInt(tagWidth.W), nMSHRs))
+  val wayQueue = Module(new RegFifo(UInt(log2Up(nWays).W), nMSHRs))
+  val tagQueue = Module(new MshrQueue(UInt(tagWidth.W), nMSHRs))
   val idxQueue = Module(new MshrQueue(UInt(indexWidth.W), nMSHRs))
   val blockOffQueue = Module(new RegFifo(UInt(blockOffsetWidth.W), nMSHRs))
 
@@ -94,48 +105,48 @@ class MissFifo(nCores: Int, nMSHRs: Int, nWays: Int, reqIdWidth: Int, tagWidth: 
               !blockOffQueue.io.deq.valid
 
   // Connections for pushing data
-  rwQueue.io.enq.valid := io.push
-  rwQueue.io.enq.bits := io.pushEntry.rw
-  reqIdQueue.io.enq.valid := io.push
-  reqIdQueue.io.enq.bits := io.pushEntry.reqId
-  coreIdQueue.io.enq.valid := io.push
-  coreIdQueue.io.enq.bits := io.pushEntry.coreId
-  wDataQueue.io.enq.valid := io.push
-  wDataQueue.io.enq.bits := io.pushEntry.wData
-  wayQueue.io.enq.valid := io.push
-  wayQueue.io.enq.bits := io.pushEntry.replaceWay
-  tagQueue.io.enq.valid := io.push
-  tagQueue.io.enq.bits := io.pushEntry.tag
-  idxQueue.io.enq.valid := io.push
-  idxQueue.io.enq.bits := io.pushEntry.index
-  blockOffQueue.io.enq.valid := io.push
-  blockOffQueue.io.enq.bits := io.pushEntry.blockOffset
+  rwQueue.io.enq.valid := io.push.push
+  rwQueue.io.enq.bits := io.push.pushEntry.rw
+  reqIdQueue.io.enq.valid := io.push.push
+  reqIdQueue.io.enq.bits := io.push.pushEntry.reqId
+  coreIdQueue.io.enq.valid := io.push.push
+  coreIdQueue.io.enq.bits := io.push.pushEntry.coreId
+  wDataQueue.io.enq.valid := io.push.push
+  wDataQueue.io.enq.bits := io.push.pushEntry.wData
+  wayQueue.io.enq.valid := io.push.push
+  wayQueue.io.enq.bits := io.push.pushEntry.replaceWay
+  tagQueue.io.enq.valid := io.push.push
+  tagQueue.io.enq.bits := io.push.pushEntry.tag
+  idxQueue.io.enq.valid := io.push.push
+  idxQueue.io.enq.bits := io.push.pushEntry.index
+  blockOffQueue.io.enq.valid := io.push.push
+  blockOffQueue.io.enq.bits := io.push.pushEntry.blockOffset
 
   // Connections for popping data
-  rwQueue.io.deq.ready := io.pop
-  reqIdQueue.io.deq.ready := io.pop
-  coreIdQueue.io.deq.ready := io.pop
-  wDataQueue.io.deq.ready := io.pop
-  wayQueue.io.deq.ready := io.pop
-  tagQueue.io.deq.ready := io.pop
-  idxQueue.io.deq.ready := io.pop
-  blockOffQueue.io.deq.ready := io.pop
+  rwQueue.io.deq.ready := io.pop.pop
+  reqIdQueue.io.deq.ready := io.pop.pop
+  coreIdQueue.io.deq.ready := io.pop.pop
+  wDataQueue.io.deq.ready := io.pop.pop
+  wayQueue.io.deq.ready := io.pop.pop
+  tagQueue.io.deq.ready := io.pop.pop
+  idxQueue.io.deq.ready := io.pop.pop
+  blockOffQueue.io.deq.ready := io.pop.pop
 
   for (i <- 0 until nMSHRs) {
-    io.currentWays(i) := wayQueue.io.regOut(i)
-    io.currentIndexes(i) := idxQueue.io.regOut(i)
+    io.push.currentTags(i) := tagQueue.io.regOut(i)
+    io.push.currentIndexes(i) := idxQueue.io.regOut(i)
   }
 
-  io.empty := empty
-  io.full := full
+  io.push.full := full
+  io.push.validMSHRs := tagQueue.io.validRegs
 
-  io.validMSHRs := wayQueue.io.validRegs
-  io.popEntry.rw := rwQueue.io.deq.bits
-  io.popEntry.reqId := reqIdQueue.io.deq.bits
-  io.popEntry.coreId := coreIdQueue.io.deq.bits
-  io.popEntry.wData := wDataQueue.io.deq.bits
-  io.popEntry.replaceWay := wayQueue.io.deq.bits
-  io.popEntry.tag := tagQueue.io.deq.bits
-  io.popEntry.index := idxQueue.io.deq.bits
-  io.popEntry.blockOffset := blockOffQueue.io.deq.bits
+  io.pop.empty := empty
+  io.pop.popEntry.rw := rwQueue.io.deq.bits
+  io.pop.popEntry.reqId := reqIdQueue.io.deq.bits
+  io.pop.popEntry.coreId := coreIdQueue.io.deq.bits
+  io.pop.popEntry.wData := wDataQueue.io.deq.bits
+  io.pop.popEntry.replaceWay := wayQueue.io.deq.bits
+  io.pop.popEntry.tag := tagQueue.io.deq.bits
+  io.pop.popEntry.index := idxQueue.io.deq.bits
+  io.pop.popEntry.blockOffset := blockOffQueue.io.deq.bits
 }

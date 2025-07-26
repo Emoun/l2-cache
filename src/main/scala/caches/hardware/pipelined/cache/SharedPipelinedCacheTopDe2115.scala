@@ -21,7 +21,7 @@ class SharedPipelinedCacheTopDe2115 (
     val rxd = Input(UInt(1.W))
     val txd = Output(UInt(1.W))
     val scheduler = new SchedulerIO(nCores)
-    val mem = new MemoryControllerIO(addressWidth, bytesPerBurst * 8)
+    val mem = new CacheMemoryControllerIO(addressWidth, bytesPerBurst * 8)
   })
 
   def negEdge(din: Bool): Bool = !din & RegNext(din)
@@ -98,7 +98,7 @@ object SharedPipelinedCacheTopDe2115 extends App {
       bytesPerBurst = l2BytesPerMemBurst,
       freq = freq,
       uartBaud = uartBaud,
-      l2RepPolicy = plruL2RepPolicy
+      l2RepPolicy = contL2RepPolicy
     ),
     Array("--target-dir", "generated")
   )

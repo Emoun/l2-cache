@@ -15,7 +15,7 @@ class WriteChannel(addrWidth: Int, burstWidth: Int) extends Bundle {
   val wLast = Output(Bool())
 }
 
-class MemoryControllerIO(addrWidth: Int, burstWidth: Int) extends Bundle {
+class CacheMemoryControllerIO(addrWidth: Int, burstWidth: Int) extends Bundle {
   val rChannel = new ReadChannel(addrWidth, burstWidth)
   val wChannel = new WriteChannel(addrWidth, burstWidth)
 }
@@ -27,18 +27,10 @@ class MemoryInterface(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, i
   private val nBursts = blockWidth / burstWidth
 
   val io = IO(new Bundle {
-    val missFifo = new Bundle {
-      val popEntry = new MissFifoEntryIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, subBlockWidth)
-      val empty = Input(Bool())
-      val pop = Output(Bool())
-    }
-    val wbFifo = new Bundle {
-      val popEntry = new WbFifoEntryIO(tagWidth, indexWidth, blockWidth)
-      val empty = Input(Bool())
-      val pop = Output(Bool())
-    }
+    val missFifo = Flipped(new MissFifoPopIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, subBlockWidth))
+    val wbFifo = Flipped(new WbFifoPopIO(tagWidth, indexWidth, blockWidth))
     val updateLogic = Flipped(new CacheUpdateEntryIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockWidth, subBlockWidth))
-    val memController = new MemoryControllerIO(addressWidth, burstWidth)
+    val memController = new CacheMemoryControllerIO(addressWidth, burstWidth)
   })
 
   val sIdle :: sRead :: sWrite :: sReadBurst :: sWriteBurst :: sDoneFill :: sDoneWb :: Nil = Enum(7)

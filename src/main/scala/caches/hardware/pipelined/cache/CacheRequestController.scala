@@ -92,20 +92,20 @@ class CacheRequestController(nCores: Int, addrWidth: Int, reqIdWidth: Int, bytes
     }
     is(sReq) { // Issue the received command
       reqIdValid := true.B
-      when(io.cache.coreReqs(coreId).reqId.ready) {
+      when(io.cache.cores(coreId).req.reqId.ready) {
         stateReg := sWait
       }
     }
     is(sWait) { // Wait for response from the L2 cache
       respIdReady := true.B
-      when(io.cache.coreResps(coreId).reqId.valid) {
+      when(io.cache.cores(coreId).resp.reqId.valid) {
         for (sendByteIdx <- 0 until nReadDataBytes) {
-          sendDataReg(sendByteIdx) := io.cache.coreResps(coreId).rData(7 + (sendByteIdx * 8), sendByteIdx * 8)
+          sendDataReg(sendByteIdx) := io.cache.cores(coreId).resp.rData(7 + (sendByteIdx * 8), sendByteIdx * 8)
         }
 
         // Put the response status and reqId in the response too
         val responseHead = WireDefault(0.U((nResponseHeaderBytes * 8).W))
-        responseHead := Cat(io.cache.coreResps(coreId).responseStatus, io.cache.coreResps(coreId).reqId.bits)
+        responseHead := Cat(io.cache.cores(coreId).resp.responseStatus, io.cache.cores(coreId).resp.reqId.bits)
         for (sendByteIdx <- 0 until nResponseHeaderBytes) {
           sendDataReg(nReadDataBytes + sendByteIdx) := responseHead(7 + (sendByteIdx * 8), sendByteIdx * 8)
         }
@@ -128,13 +128,11 @@ class CacheRequestController(nCores: Int, addrWidth: Int, reqIdWidth: Int, bytes
   }
 
   for (coreIdx <- 0 until nCores) {
-    io.cache.coreReqs(coreIdx).reqId.valid := Mux(coreId === coreIdx.U, reqIdValid, false.B)
-    io.cache.coreReqs(coreIdx).reqId.bits := reqId
-    io.cache.coreReqs(coreIdx).rw := rw
-    io.cache.coreReqs(coreIdx).addr := addr
-    io.cache.coreReqs(coreIdx).wData := wData
-
-    io.cache.coreResps(coreIdx).reqId.ready := Mux(coreId === coreIdx.U, respIdReady, false.B)
+    io.cache.cores(coreIdx).req.reqId.valid := Mux(coreId === coreIdx.U, reqIdValid, false.B)
+    io.cache.cores(coreIdx).req.reqId.bits := reqId
+    io.cache.cores(coreIdx).req.rw := rw
+    io.cache.cores(coreIdx).req.addr := addr
+    io.cache.cores(coreIdx).req.wData := wData
   }
 
   txBits := sendDataReg(sendDataCntReg)
