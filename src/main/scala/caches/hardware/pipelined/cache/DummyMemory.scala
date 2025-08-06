@@ -4,12 +4,12 @@ import caches.hardware.util.MemBlock
 import chisel3._
 import chisel3.util._
 
-class DummyMemory(addrWidth: Int, blockWidth: Int, burstWidth: Int, dataFile: Option[String] = None) extends Module {
-  require(blockWidth > burstWidth, "Block width must be greater than burst width.")
+class DummyMemory(addrWidth: Int, blockWidth: Int, beatSize: Int, burstLen: Int, dataFile: Option[String] = None) extends Module {
+  require((blockWidth * 8) > beatSize, "Block width must be greater than beat size.")
 
-  val io = IO(Flipped(new CacheMemoryControllerIO(addrWidth, burstWidth)))
+  val io = IO(Flipped(new CacheMemoryControllerIO(addrWidth, beatSize)))
 
-  private val nBursts = blockWidth / burstWidth
+  private val nBursts = burstLen
   val sIdle :: sReadBurst :: sWriteBurst :: Nil = Enum(3)
 
   // Registers
@@ -20,16 +20,16 @@ class DummyMemory(addrWidth: Int, blockWidth: Int, burstWidth: Int, dataFile: Op
   // Default signal assignments
   val rAddrReady = WireDefault(false.B)
   val rDataValid = WireDefault(false.B)
-  val rDataBits = WireDefault(0.U(burstWidth.W))
+  val rDataBits = WireDefault(0.U((beatSize * 8).W))
   val rLast = WireDefault(false.B)
   val wAddrReady = WireDefault(false.B)
   val wDataReady = WireDefault(false.B)
   val memReadAddr = WireDefault(0.U(addrWidth.W))
   val memWriteAddr = WireDefault(0.U(addrWidth.W))
-  val memWriteData = WireDefault(0.U(burstWidth.W))
-  val memWrEn = WireDefault(0.U(burstWidth.W))
+  val memWriteData = WireDefault(0.U((beatSize * 8).W))
+  val memWrEn = WireDefault(0.U((beatSize * 8).W))
 
-  val mem = Module(new MemBlock(math.pow(2, addrWidth).toInt, burstWidth, dataFile))
+  val mem = Module(new MemBlock(math.pow(2, addrWidth).toInt, beatSize * 8, dataFile))
 
   mem.io.readAddr := memReadAddr
   mem.io.writeAddr := memWriteAddr

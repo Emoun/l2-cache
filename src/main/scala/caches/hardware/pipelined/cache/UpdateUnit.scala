@@ -38,7 +38,8 @@ class UpdateUnit(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexW
   val io = IO(new Bundle {
     val readStage = new CacheUpdateEntryIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockWidth, subBlockWidth)
     val memoryInterface = new CacheUpdateEntryIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockWidth, subBlockWidth)
-    val coreResps = Vec(nCores, new CacheResponseIO(subBlockWidth, reqIdWidth))
+    val coreResp = new CacheResponseIO(subBlockWidth, reqIdWidth)
+    val outCoreId = Output(UInt(log2Up(nCores).W))
     val memUpdate = new CacheMemUpdateIO(nWays, nSubBlocks, subBlockWidth)
     val tagUpdate = new TagUpdateIO(nWays, tagWidth)
     val stall = Output(Bool())
@@ -116,11 +117,9 @@ class UpdateUnit(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexW
   io.memUpdate.way := way
   io.memUpdate.index := index
 
-  val validResponse = io.readStage.valid || io.memoryInterface.valid
-  for (coreIdx <- 0 until nCores) {
-    io.coreResps(coreIdx).reqId.valid := (coreId === coreIdx.U) && validResponse
-    io.coreResps(coreIdx).reqId.bits := respReqId
-    io.coreResps(coreIdx).rData := respRData
-    io.coreResps(coreIdx).responseStatus := responseStatus
-  }
+  io.coreResp.reqId.valid := io.readStage.valid || io.memoryInterface.valid
+  io.coreResp.reqId.bits := respReqId
+  io.coreResp.rData := respRData
+  io.coreResp.responseStatus := responseStatus
+  io.outCoreId := coreId
 }

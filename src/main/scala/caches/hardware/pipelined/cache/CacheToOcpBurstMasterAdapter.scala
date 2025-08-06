@@ -10,7 +10,7 @@ import chisel3.util._
  */
 class CacheToOcpBurstMasterAdapter(addrWidth: Int, dataWidth: Int, burstLen: Int) extends Module {
   val io = IO(new Bundle {
-    val cache = Flipped(new CacheMemoryControllerIO(addrWidth = addrWidth, burstWidth = dataWidth))
+    val cache = Flipped(new CacheMemoryControllerIO(addrWidth = addrWidth, beatSize = dataWidth))
     val ocpBurst = new OcpBurstMasterPort(addrWidth = addrWidth, dataWidth = dataWidth, burstLen = burstLen)
   })
 

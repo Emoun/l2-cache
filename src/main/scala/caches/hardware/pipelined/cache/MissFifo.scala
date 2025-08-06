@@ -5,17 +5,6 @@ import chisel3.util._
 import chisel.lib.fifo._
 import chisel3.util.experimental.BoringUtils
 
-class MissFifoEntryIO(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, subBlockWidth: Int) extends Bundle {
-  val rw = Input(Bool())
-  val reqId = Input(UInt(reqIdWidth.W))
-  val coreId = Input(UInt(log2Up(nCores).W))
-  val wData = Input(UInt(subBlockWidth.W))
-  val replaceWay = Input(UInt(log2Up(nWays).W))
-  val tag = Input(UInt(tagWidth.W))
-  val index = Input(UInt(indexWidth.W))
-  val blockOffset = Input(UInt(blockOffsetWidth.W))
-}
-
 class MshrFifoIO[T <: Data](gen: T, depth: Int) extends FifoIO(gen) {
   val regOut = Output(Vec(depth, gen))
   val validRegs = Output(Vec(depth, Bool()))
@@ -51,6 +40,17 @@ class MshrQueue[T <: Data](gen: T, depth: Int) extends Module {
   io.regOut <> memReg
   io.deq <> fifo.io.deq
   io.enq <> fifo.io.enq
+}
+
+class MissFifoEntryIO(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, subBlockWidth: Int) extends Bundle {
+  val rw = Input(Bool())
+  val reqId = Input(UInt(reqIdWidth.W))
+  val coreId = Input(UInt(log2Up(nCores).W))
+  val wData = Input(UInt(subBlockWidth.W))
+  val replaceWay = Input(UInt(log2Up(nWays).W))
+  val tag = Input(UInt(tagWidth.W))
+  val index = Input(UInt(indexWidth.W))
+  val blockOffset = Input(UInt(blockOffsetWidth.W))
 }
 
 // TODO: The tags are used to see if it is half-miss (a request needs a data that is currently being fetched) while ways are used to turn an access into a miss pre-emptively

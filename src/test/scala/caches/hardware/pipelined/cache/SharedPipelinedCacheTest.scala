@@ -82,7 +82,7 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
 
           // Remove the request after we have received the response
           issuedRequests.remove(firstExpectedResponseValue)
-          if (printInfo) println(s"Received response for request ${firstExpectedResponseValue.reqId} for core ${firstExpectedResponseValue.coreId}")
+          if (printInfo) println(s"Received response for request ${firstExpectedResponseValue.reqId} for core ${firstExpectedResponseValue.coreId} at CC: $currentCC.")
         }
       }
 
@@ -99,12 +99,19 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
 
         // If we issue a request we add the request to the issuedRequest queue and compute it's expected response time
         // If it is a miss the delay will depend on other previous misses
-        val respCC: Int = (currReq.isExpectedWb, currReq.isExpectedMiss, issuedRequests.count(req => req.isExpectedMiss) > 0) match {
+        var respCC: Int = (currReq.isExpectedWb, currReq.isExpectedMiss, issuedRequests.count(req => req.isExpectedMiss) > 0) match {
           case (true, true, true) => issuedRequests.filter(req => req.isExpectedMiss).maxBy(req => req.responseCC).responseCC + stalledMissLatency + memAccessLatency // If Miss under a miss causes a WB
           case (false, true, true) => issuedRequests.filter(req => req.isExpectedMiss).maxBy(req => req.responseCC).responseCC + stalledMissLatency // If Miss under a Miss
           case (false, true, false) => currentCC + fullMissLatency // If first miss
           case (_, false, _) => currentCC + hitLatency // If hit
           case (_, _, _) => 0
+        }
+
+        // If there is a request already issued with the same response CC, we must delay the current
+        // requests response CC by one cycle, since the WB will stall any hit request
+        val matchingRequest = issuedRequests.find(req => req.responseCC === respCC)
+        if (matchingRequest.isDefined) {
+          respCC += 1
         }
 
         if (currReq.isExpectedWb) {
@@ -148,36 +155,36 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
 
   def performCacheRequest(dut: SharedPipelinedCacheTestTop, coreId: Int, reqId: Int, addr: String, rw: Boolean, wData: Option[String] = None): Unit = {
     // Expect the cache to be ready to accept a request
-    dut.io.cache.cores(coreId).req.reqId.ready.expect(true.B)
+    dut.io.requests.cores(coreId).req.reqId.ready.expect(true.B)
 
     // Make request on behalf of the second core
-    dut.io.cache.cores(coreId).req.reqId.valid.poke(true.B)
-    dut.io.cache.cores(coreId).req.reqId.bits.poke(reqId.U)
-    dut.io.cache.cores(coreId).req.addr.poke(addr.U)
-    dut.io.cache.cores(coreId).req.rw.poke(rw.B)
+    dut.io.requests.cores(coreId).req.reqId.valid.poke(true.B)
+    dut.io.requests.cores(coreId).req.reqId.bits.poke(reqId.U)
+    dut.io.requests.cores(coreId).req.addr.poke(addr.U)
+    dut.io.requests.cores(coreId).req.rw.poke(rw.B)
 
     val wDataValue = wData match {
       case Some(data) => data.U
       case None => 0.U
     }
 
-    dut.io.cache.cores(coreId).req.wData.poke(wDataValue)
+    dut.io.requests.cores(coreId).req.wData.poke(wDataValue)
 
     // TODO: Extend this function to handle the case when the arbiter is not ready to accept the request
     dut.clock.step(1)
 
-    dut.io.cache.cores(coreId).req.reqId.valid.poke(false.B)
-    dut.io.cache.cores(coreId).req.reqId.bits.poke(0.U)
-    dut.io.cache.cores(coreId).req.addr.poke(0.U)
-    dut.io.cache.cores(coreId).req.rw.poke(false.B)
-    dut.io.cache.cores(coreId).req.wData.poke(0.U)
+    dut.io.requests.cores(coreId).req.reqId.valid.poke(false.B)
+    dut.io.requests.cores(coreId).req.reqId.bits.poke(0.U)
+    dut.io.requests.cores(coreId).req.addr.poke(0.U)
+    dut.io.requests.cores(coreId).req.rw.poke(false.B)
+    dut.io.requests.cores(coreId).req.wData.poke(0.U)
   }
 
   def expectCacheResponse(dut: SharedPipelinedCacheTestTop, coreId: Int, reqId: Int, expectedData: String, okResponse: Boolean = true): Unit = {
-    dut.io.cache.cores(coreId).resp.reqId.valid.expect(true.B, s"Did not receive a response for request: $reqId.")
-    dut.io.cache.cores(coreId).resp.reqId.bits.expect(reqId.U, s"Did not receive a response for request: $reqId.")
-    dut.io.cache.cores(coreId).resp.rData.expect(expectedData.U, s"Did not receive correct data for a request: $reqId.")
-    dut.io.cache.cores(coreId).resp.responseStatus.expect(okResponse.asBool, s"Did receive correct response for a request: $reqId.")
+    dut.io.requests.cores(coreId).resp.reqId.valid.expect(true.B, s"Did not receive a response for request: $reqId.")
+    dut.io.requests.cores(coreId).resp.reqId.bits.expect(reqId.U, s"Did not receive a response for request: $reqId.")
+    dut.io.requests.cores(coreId).resp.rData.expect(expectedData.U, s"Did not receive correct data for a request: $reqId.")
+    dut.io.requests.cores(coreId).resp.responseStatus.expect(okResponse.asBool, s"Did receive correct response for a request: $reqId.")
   }
 
   "SharedPipelinedCache" should "work with lru replacement policy and 8 ways" in {
@@ -192,6 +199,9 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     val l2RepPolicy = () => new BitPlruReplacementPolicy(nWays, nSets, nCores)
     val memFile = "./hex/test_mem_32w.hex"
 
+    val fullMissLatency = 11
+    val hitLatency = 4
+
     test(new SharedPipelinedCacheTestTop(
       sizeInBytes = sizeInBytes,
       nWays = nWays,
@@ -200,17 +210,18 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       addressWidth = addressWidth,
       bytesPerBlock = bytesPerBlock,
       bytesPerSubBlock = bytesPerSubBlock,
-      bytesPerBurst = bytesPerSubBlock,
+      memBeatSize = bytesPerSubBlock,
+      memBurstLen = bytesPerBlock / bytesPerSubBlock,
       l2RepPolicy,
       Some(memFile)
     )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default inputs
       for (i <- 0 until nCores) {
-        dut.io.cache.cores(i).req.reqId.valid.poke(false.B)
-        dut.io.cache.cores(i).req.reqId.bits.poke(0.U)
-        dut.io.cache.cores(i).req.addr.poke(0.U)
-        dut.io.cache.cores(i).req.rw.poke(false.B)
-        dut.io.cache.cores(i).req.wData.poke(0.U)
+        dut.io.requests.cores(i).req.reqId.valid.poke(false.B)
+        dut.io.requests.cores(i).req.reqId.bits.poke(0.U)
+        dut.io.requests.cores(i).req.addr.poke(0.U)
+        dut.io.requests.cores(i).req.rw.poke(false.B)
+        dut.io.requests.cores(i).req.wData.poke(0.U)
       }
 
       dut.io.scheduler.coreId.valid.poke(false.B)
@@ -230,64 +241,64 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
 
       // Access data that is not yet in the cache (put in way: 0)
       performCacheRequest(dut, coreId = 1, reqId = 0, addr = "b000000000", rw = false)
-      dut.clock.step(9) // Pipeline delay due to cache miss
+      dut.clock.step(fullMissLatency - 1) // Pipeline delay due to cache miss
       expectCacheResponse(dut, coreId = 1, reqId = 0, expectedData = "hbeefdead")
 
       // Access data that is already in the cache
       performCacheRequest(dut, coreId = 1, reqId = 1, addr = "b000000100", rw = false)
-      dut.clock.step(3)
+      dut.clock.step(hitLatency - 1)
       expectCacheResponse(dut, coreId = 1, reqId = 1, expectedData = "hdeadbeef")
 
       // Write to an existing line in the cache
       performCacheRequest(dut, coreId = 1, reqId = 2, addr = "b000001000", rw = true, wData = Some("hd00dfeed"))
-      dut.clock.step(3)
+      dut.clock.step(hitLatency - 1)
       expectCacheResponse(dut, coreId = 1, reqId = 2, expectedData = "hbabecafe")
 
       // Bring in another line into the cache (put in way: 1)
-      performCacheRequest(dut, coreId = 3, reqId = 0, addr = "b001001100", rw = false)
-      dut.clock.step(9)
-      expectCacheResponse(dut, coreId = 3, reqId = 0, expectedData = "hbbadbeef")
+      performCacheRequest(dut, coreId = 3, reqId = 3, addr = "b001001100", rw = false)
+      dut.clock.step(fullMissLatency - 1)
+      expectCacheResponse(dut, coreId = 3, reqId = 3, expectedData = "hbbadbeef")
 
       // Bring in another line into the cache (put in way: 2)
-      performCacheRequest(dut, coreId = 2, reqId = 0, addr = "b010000000", rw = false)
-      dut.clock.step(9)
-      expectCacheResponse(dut, coreId = 2, reqId = 0, expectedData = "hfacefeed")
+      performCacheRequest(dut, coreId = 2, reqId = 4, addr = "b010000000", rw = false)
+      dut.clock.step(fullMissLatency - 1)
+      expectCacheResponse(dut, coreId = 2, reqId = 4, expectedData = "hfacefeed")
 
       // Bring in another line into the cache (put in way: 3) and write some data to it too
-      performCacheRequest(dut, coreId = 3, reqId = 1, addr = "b011001100", rw = true, wData = Some("hbeefdead"))
-      dut.clock.step(9)
-      expectCacheResponse(dut, coreId = 3, reqId = 1, expectedData = "hbd42f9c3")
+      performCacheRequest(dut, coreId = 3, reqId = 5, addr = "b011001100", rw = true, wData = Some("hbeefdead"))
+      dut.clock.step(fullMissLatency - 1)
+      expectCacheResponse(dut, coreId = 3, reqId = 5, expectedData = "hbd42f9c3")
 
       // Bring in another line into the cache (put in way: 4)
-      performCacheRequest(dut, coreId = 0, reqId = 0, addr = "b100000000", rw = false)
-      dut.clock.step(9)
-      expectCacheResponse(dut, coreId = 0, reqId = 0, expectedData = "h40cbde98")
+      performCacheRequest(dut, coreId = 0, reqId = 6, addr = "b100000000", rw = false)
+      dut.clock.step(fullMissLatency - 1)
+      expectCacheResponse(dut, coreId = 0, reqId = 6, expectedData = "h40cbde98")
 
       // Bring in another line into the cache (put in way: 5)
-      performCacheRequest(dut, coreId = 1, reqId = 3, addr = "b101000100", rw = false)
-      dut.clock.step(9)
-      expectCacheResponse(dut, coreId = 1, reqId = 3, expectedData = "haf10c5be")
+      performCacheRequest(dut, coreId = 1, reqId = 7, addr = "b101000100", rw = false)
+      dut.clock.step(fullMissLatency - 1)
+      expectCacheResponse(dut, coreId = 1, reqId = 7, expectedData = "haf10c5be")
 
       // Bring in another line into the cache (put in way: 6)
-      performCacheRequest(dut, coreId = 2, reqId = 1, addr = "b110001000", rw = false)
-      dut.clock.step(9)
-      expectCacheResponse(dut, coreId = 2, reqId = 1, expectedData = "hace04f29")
+      performCacheRequest(dut, coreId = 2, reqId = 8, addr = "b110001000", rw = false)
+      dut.clock.step(fullMissLatency - 1)
+      expectCacheResponse(dut, coreId = 2, reqId = 8, expectedData = "hace04f29")
 
       // Bring in another line into the cache (put in way: 7)
-      performCacheRequest(dut, coreId = 3, reqId = 2, addr = "b111001100", rw = false)
-      dut.clock.step(9)
-      expectCacheResponse(dut, coreId = 3, reqId = 2, expectedData = "hf01c27ae")
+      performCacheRequest(dut, coreId = 3, reqId = 9, addr = "b111001100", rw = false)
+      dut.clock.step(fullMissLatency - 1)
+      expectCacheResponse(dut, coreId = 3, reqId = 9, expectedData = "hf01c27ae")
 
       // Bring in the first cache line that will result in eviction of way 0 (put in way: 0)
-      performCacheRequest(dut, coreId = 0, reqId = 1, addr = "b1000000100", rw = false)
-      dut.clock.step(9)
-      expectCacheResponse(dut, coreId = 0, reqId = 1, expectedData = "h49e1af73")
+      performCacheRequest(dut, coreId = 0, reqId = 10, addr = "b1000000100", rw = false)
+      dut.clock.step(fullMissLatency - 1)
+      expectCacheResponse(dut, coreId = 0, reqId = 10, expectedData = "h49e1af73")
 
       // Try to refetch the evicted cache and check if the written data was written to main memory
       // (put in way: 1)
-      performCacheRequest(dut, coreId = 1, reqId = 1, addr = "b000001000", rw = false)
-      dut.clock.step(13) // Since a write back starts at the same time as the request we have to wait for a wb before we can fetch the line back
-      expectCacheResponse(dut, coreId = 1, reqId = 1, expectedData = "hd00dfeed")
+      performCacheRequest(dut, coreId = 1, reqId = 11, addr = "b000001000", rw = false)
+      dut.clock.step(15) // Since a write back starts at the same time as the request we have to wait for a wb before we can fetch the line back
+      expectCacheResponse(dut, coreId = 1, reqId = 11, expectedData = "hd00dfeed")
     }
   }
 
@@ -304,10 +315,10 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     val l2RepPolicy = () => new ContentionReplacementPolicy(nWays, nSets, nCores, basePolicy)
     val memFile = "./hex/test_mem_32w.hex"
 
-    val fullMissLatency = 10
-    val stalledMissLatency = 7
+    val fullMissLatency = 11
+    val stalledMissLatency = 8
     val hitLatency = 4
-    val memAccessLatency = 7
+    val memAccessLatency = 8
     val entryToWbLatency = 4
 
     val printInfo = false
@@ -320,17 +331,18 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       addressWidth = addressWidth,
       bytesPerBlock = bytesPerBlock,
       bytesPerSubBlock = bytesPerSubBlock,
-      bytesPerBurst = bytesPerSubBlock,
+      memBeatSize = bytesPerSubBlock,
+      memBurstLen = bytesPerBlock / bytesPerSubBlock,
       l2RepPolicy,
       Some(memFile)
     )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default inputs
       for (i <- 0 until nCores) {
-        dut.io.cache.cores(i).req.reqId.valid.poke(false.B)
-        dut.io.cache.cores(i).req.reqId.bits.poke(0.U)
-        dut.io.cache.cores(i).req.addr.poke(0.U)
-        dut.io.cache.cores(i).req.rw.poke(false.B)
-        dut.io.cache.cores(i).req.wData.poke(0.U)
+        dut.io.requests.cores(i).req.reqId.valid.poke(false.B)
+        dut.io.requests.cores(i).req.reqId.bits.poke(0.U)
+        dut.io.requests.cores(i).req.addr.poke(0.U)
+        dut.io.requests.cores(i).req.rw.poke(false.B)
+        dut.io.requests.cores(i).req.wData.poke(0.U)
       }
 
       dut.io.scheduler.coreId.valid.poke(false.B)
@@ -406,40 +418,6 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
 
       // Evict some previously critical caches
       assertAccesses(dut, secondSetOfInstructions, hitLatency, fullMissLatency, stalledMissLatency, memAccessLatency, entryToWbLatency, printInfo)
-    }
-  }
-
-  "SharedPipelinedCacheTestTopDe2115" should "accept uart commands and return correct data" in {
-    val sizeInBytes = 512
-    val nCores = 4
-    val nWays = 8
-    val reqIdWidth = 16
-    val addressWidth = 16
-    val bytesPerBlock = 16
-    val bytesPerSubBlock = 4
-    val freq = 100000
-    val uartBaud = 50000
-    val ccsPerUartBit = freq / uartBaud
-    val nSets = sizeInBytes / (nWays * bytesPerBlock)
-    val basePolicy = () => new BitPlruReplacementPolicy(nWays, nSets, nCores)
-    val l2RepPolicy = () => new ContentionReplacementPolicy(nWays, nSets, nCores, basePolicy)
-    val memFile = "./hex/test_mem_32w.hex"
-
-    test(new SharedPipelinedCacheTestTopDe2115(
-      sizeInBytes,
-      nWays,
-      nCores,
-      reqIdWidth,
-      addressWidth,
-      bytesPerBlock,
-      bytesPerSubBlock,
-      bytesPerSubBlock,
-      freq,
-      uartBaud,
-      l2RepPolicy,
-      Some(memFile)
-    )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      ignore
     }
   }
 }

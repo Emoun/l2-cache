@@ -44,7 +44,7 @@ class CacheRequestController(nCores: Int, addrWidth: Int, reqIdWidth: Int, bytes
   val io = IO(new Bundle{
     val rxd = Input(UInt(1.W))
     val txd = Output(UInt(1.W))
-    val cache = Flipped(new CacheIO(nCores, reqIdWidth, addrWidth, bytesPerSubBlock * 8))
+    val cache = Flipped(new SharedCachePort(nCores, reqIdWidth, addrWidth, bytesPerSubBlock * 8))
     val dbg = new CacheRequestControllerDebug()
   })
 
