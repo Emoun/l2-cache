@@ -1,0 +1,117 @@
+package caches.hardware.pipelined
+
+import chisel3._
+import chisel3.util._
+import caches.hardware.reppol._
+import caches.hardware.pipelined.stages.{Dec, Read, Rep, Tag, UpdateUnit}
+
+class CacheRequestIO(addrWidth: Int, dataWidth: Int, reqIdWidth: Int) extends Bundle {
+  val reqId = Flipped(Decoupled(UInt(reqIdWidth.W)))
+  val addr = Input(UInt(addrWidth.W))
+  val rw = Input(Bool()) // 0 - Read, 1 - Write
+  val byteEn = Input(UInt((dataWidth / 8).W))
+  val wData = Input(UInt(dataWidth.W))
+}
+
+class CacheResponseIO(dataWidth: Int, reqIdWidth: Int) extends Bundle {
+  val reqId = Valid(UInt(reqIdWidth.W))
+  val rData = Output(UInt(dataWidth.W))
+  val responseStatus = Output(UInt(1.W)) // 1 - OK, 0 - Rejected
+}
+
+class CacheCorePortIO(addrWidth: Int, dataWidth: Int, reqIdWidth: Int) extends Bundle {
+  val req = new CacheRequestIO(addrWidth, dataWidth, reqIdWidth)
+  val resp = new CacheResponseIO(dataWidth, reqIdWidth)
+}
+
+class SharedPipelinedCache(
+                            sizeInBytes: Int,
+                            nWays: Int,
+                            nCores: Int,
+                            reqIdWidth: Int,
+                            addressWidth: Int,
+                            bytesPerBlock: Int,
+                            bytesPerSubBlock: Int,
+                            memBeatSize: Int,
+                            memBurstLen: Int,
+                            l2RepPolicy: () => SharedCacheReplacementPolicyType
+                          ) extends Module {
+  require(isPow2(memBeatSize), "Number of bytes per beat must be a power of 2.")
+  require(isPow2(bytesPerBlock), "Number of bytes per block must be a power of 2.")
+  require(isPow2(bytesPerBlock / bytesPerSubBlock), "The remainder of bytes per block divided by bytes per sub-block must be a power of 2.")
+
+  private val nSets = sizeInBytes / (nWays * bytesPerBlock)
+  private val subBlocksPerBlock = bytesPerBlock / bytesPerSubBlock
+  private val byteOffsetWidth = log2Up(bytesPerSubBlock)
+  private val blockOffsetWidth = log2Up(subBlocksPerBlock)
+  private val indexWidth = log2Up(nSets)
+  private val tagWidth = addressWidth - indexWidth - blockOffsetWidth - byteOffsetWidth
+  private val nMshrs = nWays // nMshrs = nWays for now
+
+  val missQueue = Module(new MissFifo(nCores, nMshrs, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, bytesPerSubBlock * 8))
+  val wbQueue = Module(new WriteBackFifo(nMshrs, tagWidth, indexWidth, bytesPerBlock * 8))
+  val updateLogic = Module(new UpdateUnit(nCores, nWays, reqIdWidth, tagWidth, indexWidth, bytesPerBlock * 8, bytesPerSubBlock * 8))
+  val repPol = Module(l2RepPolicy())
+  val schedulerDataWidth = repPol.schedulerDataWidth
+
+  val io = IO(new Bundle{
+    val core = new CacheCorePortIO(addressWidth, bytesPerSubBlock * 8, reqIdWidth)
+    val inCoreId = Input(UInt(log2Up(nCores).W))
+    val outCoreId = Output(UInt(log2Up(nCores).W))
+    val mem = new CacheMemoryControllerIO(addressWidth, memBeatSize)
+    val scheduler = new SchedulerControlIO(nCores, schedulerDataWidth)
+  })
+
+  repPol.io.scheduler <> io.scheduler
+  val pipeStall = updateLogic.io.stall || missQueue.io.push.full
+  val reqAccept = !pipeStall
+  io.core.req.reqId.ready := reqAccept
+
+  // ---------------- Decode ----------------
+  val decLogic = Module(new Dec(nCores = nCores, nSets = nSets, nWays = nWays, reqIdWidth = reqIdWidth, tagWidth = tagWidth, indexWidth = indexWidth, blockOffWidth = blockOffsetWidth, byteOffWidth = byteOffsetWidth, subBlockWidth = bytesPerSubBlock * 8))
+  decLogic.io.stall := pipeStall
+  decLogic.io.dec.coreId := io.inCoreId
+  decLogic.io.dec.reqId := io.core.req.reqId.bits
+  decLogic.io.dec.reqValid := io.core.req.reqId.valid
+  decLogic.io.dec.reqRw := io.core.req.rw
+  decLogic.io.dec.addr := io.core.req.addr
+  decLogic.io.dec.wData := io.core.req.wData
+  decLogic.io.dec.byteEn := io.core.req.byteEn
+  decLogic.io.update <> updateLogic.io.tagUpdate
+
+  // ---------------- Tag and Dirty Lookup ----------------
+
+  val tagLogic = Module(new Tag(nCores = nCores, nSets = nSets, nWays = nWays, reqIdWidth = reqIdWidth, tagWidth = tagWidth, indexWidth = indexWidth, blockOffWidth = blockOffsetWidth, subBlockWidth = bytesPerSubBlock * 8))
+  tagLogic.io.stall := pipeStall
+  tagLogic.io.tag <> decLogic.io.tag
+  tagLogic.io.update <> updateLogic.io.tagUpdate
+
+  // ---------------- Replacement ----------------
+
+  val repLogic = Module(new Rep(nCores = nCores, nSets = nSets, nWays = nWays, nMshrs = nMshrs, reqIdWidth = reqIdWidth, tagWidth = tagWidth, indexWidth = indexWidth, blockOffWidth = blockOffsetWidth, subBlockWidth = bytesPerSubBlock * 8))
+  repLogic.io.stall := pipeStall
+  repLogic.io.rep <> tagLogic.io.rep
+  repLogic.io.missFifo <> missQueue.io.push
+  repLogic.io.repPol <> repPol.io.control
+  repLogic.io.pipelineCtrl <> updateLogic.io.pipelineCtrl
+
+  // ---------------- Read ----------------
+
+  val readLogic = Module(new Read(memSizeInBytes = sizeInBytes, nCores = nCores, nWays = nWays, reqIdWidth = reqIdWidth, tagWidth = tagWidth, indexWidth = indexWidth, blockOffWidth = blockOffsetWidth, blockWidth = bytesPerBlock * 8, subBlockWidth = bytesPerSubBlock * 8))
+  readLogic.io.stall := pipeStall
+  readLogic.io.read <> repLogic.io.read
+  readLogic.io.wbQueue <> wbQueue.io.push
+  readLogic.io.memUpdate <> updateLogic.io.memUpdate
+
+  // ---------------- Update ----------------
+
+  val memInterface = Module(new MemoryInterface(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, bytesPerBlock * 8, bytesPerSubBlock * 8, beatSize = memBeatSize, burstLen = memBurstLen))
+  memInterface.io.missFifo <> missQueue.io.pop
+  memInterface.io.wbFifo <> wbQueue.io.pop
+  memInterface.io.memController <> io.mem
+
+  updateLogic.io.readStage <> readLogic.io.update
+  updateLogic.io.memoryInterface <> memInterface.io.updateLogic
+  io.core.resp <> updateLogic.io.coreResp
+  io.outCoreId := updateLogic.io.outCoreId
+}

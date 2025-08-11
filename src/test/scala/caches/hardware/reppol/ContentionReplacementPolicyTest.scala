@@ -6,31 +6,27 @@ import org.scalatest.flatspec.AnyFlatSpec
 
 class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTester {
   def setCoreAsCritical(dut: ContentionReplacementPolicy, coreID: Int, contentionLimit: Int): Unit = {
-    dut.io.scheduler.coreId.valid.poke(true.B)
-    dut.io.scheduler.coreId.bits.poke(coreID.U)
-    dut.io.scheduler.setCritical.poke(true.B)
-    dut.io.scheduler.contentionLimit.poke(contentionLimit.U)
+    dut.io.scheduler.cmd.poke(SchedulerCmd.WR)
+    dut.io.scheduler.addr.poke(coreID.U)
+    dut.io.scheduler.wData.poke(contentionLimit.U)
 
     dut.clock.step(1)
 
     // Reset the signals
-    dut.io.scheduler.coreId.valid.poke(false.B)
-    dut.io.scheduler.coreId.bits.poke(0.U)
-    dut.io.scheduler.setCritical.poke(false.B)
-    dut.io.scheduler.contentionLimit.poke(0.U)
+    dut.io.scheduler.cmd.poke(SchedulerCmd.NULL)
+    dut.io.scheduler.addr.poke(0.U)
+    dut.io.scheduler.wData.poke(0.U)
   }
 
   def unsetCoreAsCritical(dut: ContentionReplacementPolicy, coreID: Int): Unit = {
-    dut.io.scheduler.coreId.valid.poke(true.B)
-    dut.io.scheduler.coreId.bits.poke(coreID.U)
-    dut.io.scheduler.unsetCritical.poke(true.B)
+    dut.io.scheduler.cmd.poke(SchedulerCmd.RD)
+    dut.io.scheduler.addr.poke(coreID.U)
 
     dut.clock.step(1)
 
     // Reset the signals
-    dut.io.scheduler.coreId.valid.poke(false.B)
-    dut.io.scheduler.coreId.bits.poke(0.U)
-    dut.io.scheduler.unsetCritical.poke(false.B)
+    dut.io.scheduler.cmd.poke(SchedulerCmd.NULL)
+    dut.io.scheduler.addr.poke(0.U)
   }
 
   def performEvictionRequest(dut: ContentionReplacementPolicy, coreId: Int, setIdx: Int, expectedEvictionCandidate: Option[Int] = None): Unit = {
@@ -84,11 +80,9 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
       dut.io.control.update.bits.poke(0.U)
       dut.io.control.setIdx.poke(0.U)
       dut.io.control.coreId.poke(0.U)
-      dut.io.scheduler.coreId.valid.poke(false.B)
-      dut.io.scheduler.coreId.bits.poke(0.U)
-      dut.io.scheduler.setCritical.poke(false.B)
-      dut.io.scheduler.unsetCritical.poke(false.B)
-      dut.io.scheduler.contentionLimit.poke(0.U)
+      dut.io.scheduler.cmd.poke(SchedulerCmd.NULL)
+      dut.io.scheduler.addr.poke(0.U)
+      dut.io.scheduler.wData.poke(0.U)
 
       dut.clock.step(1)
 

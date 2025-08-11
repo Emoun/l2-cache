@@ -88,19 +88,19 @@ check-verilog:
 # Show help
 help:
 	@echo "Available targets:"
-	@echo "  buildhw          				- Generate Verilog for main top level module and copy to Quartus project: $(QUARTUS_PROJECT_DIR)"
-	@echo "	 test 			  				- Run sbt test and test synthesis"
-	@echo "  test-sbt    	  				- Run sbt test"
-	@echo "  test-synth       				- Generate Verilog for test module and synthesize with Quartus"
-	@echo "  synth-test 	  				- Synthesisze test module in Quartus project: $(SYNTH_TEST_QUARTUS_PROJECT_DIR)"
-	@echo "  generate-verilog 				- Generate Verilog from Scala source"
-	@echo "  generate-test-synth-verilog:	- Generate Verilog for test module"
-	@echo "  copy-to-quartus  				- Copy generated Verilog to Quartus project"
-	@echo "  synth-test-copy-to-quartus		- Copy generated test module Verilog to Quartus project"
-	@echo "  check-verilog    				- Check if generated Verilog file exists"
-	@echo "  clean            				- Clean generated files and build artifacts"
-	@echo "  clean-quartus    				- Clean Quartus project files (use with caution)"
-	@echo "  help             				- Show this help message"
+	@echo "  buildhw                        - Generate Verilog for main top level module and copy to Quartus project: $(QUARTUS_PROJECT_DIR)"
+	@echo "  test                           - Run sbt test and test synthesis"
+	@echo "  test-sbt                       - Run sbt test"
+	@echo "  test-synth                     - Generate Verilog for test module and synthesize with Quartus"
+	@echo "  synth-test                     - Synthesisze test module in Quartus project: $(SYNTH_TEST_QUARTUS_PROJECT_DIR)"
+	@echo "  generate-verilog               - Generate Verilog from Scala source"
+	@echo "  generate-test-synth-verilog    - Generate Verilog for test module"
+	@echo "  copy-to-quartus                - Copy generated Verilog to Quartus project"
+	@echo "  synth-test-copy-to-quartus     - Copy generated test module Verilog to Quartus project"
+	@echo "  check-verilog                  - Check if generated Verilog file exists"
+	@echo "  clean                          - Clean generated files and build artifacts"
+	@echo "  clean-quartus                  - Clean Quartus project files (use with caution)"
+	@echo "  help                           - Show this help message"
 
 # Phony targets
 .PHONY: generate-verilog copy-to-quartus clean clean-quartus check-verilog help

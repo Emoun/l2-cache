@@ -46,7 +46,7 @@ class LineAssignmentsArray(nWays: Int, nSets: Int, nCores: Int) extends Module()
 
 class CoreContentionTable(nCores: Int) extends Module() {
   val io = IO(new Bundle{
-    val schedCoreId = Input(Valid(UInt(log2Up(nCores).W)))
+    val schedCoreId = Input(UInt(log2Up(nCores).W))
     val setCritical = Input(Bool())
     val unsetCritical = Input(Bool())
     val setContentionLimit = Input(UInt(CONTENTION_LIMIT_WIDTH.W))
@@ -55,16 +55,19 @@ class CoreContentionTable(nCores: Int) extends Module() {
     val rCritCores = Output(Vec(nCores, Bool()))
   })
 
+  // NOTE: There is no forwarding, if a core is set or unset as critical,
+  // the current cache request will not see it until the next cycle.
+
   // Registers for keeping the state of each active core
   val contentionLimits = RegInit(VecInit(Seq.fill(nCores)(0.U(CONTENTION_LIMIT_WIDTH.W))))
   val criticalCores = RegInit(VecInit(Seq.fill(nCores)(false.B)))
 
   // Set and unset cores as critical
   for (coreTableIdx <- 0 until nCores) {
-    when (io.setCritical && (io.schedCoreId.valid && io.schedCoreId.bits === coreTableIdx.U)) {
+    when (io.setCritical && io.schedCoreId === coreTableIdx.U) {
       criticalCores(coreTableIdx) := true.B
       contentionLimits(coreTableIdx) := io.setContentionLimit
-    } .elsewhen (io.unsetCritical && (io.schedCoreId.valid && io.schedCoreId.bits === coreTableIdx.U)) {
+    } .elsewhen (io.unsetCritical && io.schedCoreId === coreTableIdx.U) {
       criticalCores(coreTableIdx) := false.B
       contentionLimits(coreTableIdx) := 0.U
     }
@@ -86,7 +89,7 @@ class CoreContentionTable(nCores: Int) extends Module() {
  * @param nCores number of cores sharing the cache
  * @param basePolicy the base replacement policy module generating function
  */
-class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolicy: () => SharedCacheReplacementPolicyType) extends SharedCacheReplacementPolicyType(nWays, nSets, nCores) {
+class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolicy: () => SharedCacheReplacementPolicyType) extends SharedCacheReplacementPolicyType(nWays, nSets, nCores, CONTENTION_LIMIT_WIDTH) {
   // ---------------- Base policy stage ----------------
 
   // Base policy instantiation
@@ -115,10 +118,11 @@ class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolic
   assignArr.io.wrValiAssign := UpdateSingleVecElem(assignArr.io.rValidAssign, true.B, contAlgorithm.io.replacementWay.bits)
 
   val coreTable = Module(new CoreContentionTable(nCores))
-  coreTable.io.schedCoreId := io.scheduler.coreId
-  coreTable.io.setCritical := io.scheduler.setCritical
-  coreTable.io.unsetCritical := io.scheduler.unsetCritical
-  coreTable.io.setContentionLimit := io.scheduler.contentionLimit
+  coreTable.io.schedCoreId := io.scheduler.addr
+  coreTable.io.setCritical := io.scheduler.cmd === SchedulerCmd.WR
+  coreTable.io.unsetCritical := io.scheduler.cmd === SchedulerCmd.RD
+  coreTable.io.setContentionLimit := io.scheduler.wData
+  io.scheduler.rData := 0.U
   coreTable.io.incrContention := contAlgorithm.io.updateCore
 
   val isCoreCrit = coreTable.io.rCritCores(io.control.coreId)
