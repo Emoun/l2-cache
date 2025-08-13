@@ -14,16 +14,18 @@ class OcpCacheWrapperPort(
                            memBurstLen: Int,
                          ) extends Bundle {
   val core = new OcpBurstSlavePort(addrWidth, coreDataWidth, coreBurstLen)
-  val inCoreId = Input(UInt(log2Up(nCores).W))
   val mem = new OcpBurstMasterPort(addrWidth, memDataWidth, memBurstLen)
   val scheduler = new OcpCoreSlavePort(log2Up(nCores), CONTENTION_LIMIT_WIDTH)
 }
 
 /**
- * A module that wraps a shared pipelined cache into an OCP interface.
+ * A module that wraps a shared pipelined cache into an OCP compatible interface.
+ * This wrapper has an OCP burst interface for the accessing core, the OCPCore interface for the scheduler,
+ * and a single OCP burst interface for the memory.
+ *
  * @param l2Cache A l2 cache generating function
  */
-class OcpCacheWrapper(
+class OcpCacheWrapperSingleCore(
                        nCores: Int,
                        addrWidth: Int,
                        coreDataWidth: Int,
@@ -42,8 +44,7 @@ class OcpCacheWrapper(
   ocpCoreAdapter.io.core <> io.scheduler
   cache.io.scheduler <> ocpCoreAdapter.io.scheduler
 
-  // TODO: Think about how to pass a core ID, since patmos memory arbiter does not provide a core ID
-  cache.io.inCoreId := io.inCoreId
+  cache.io.inCoreId := 0.U
   ocpSlaveAdapter.io.ocpBurst <> io.core
   cache.io.core <> ocpSlaveAdapter.io.corePort
 

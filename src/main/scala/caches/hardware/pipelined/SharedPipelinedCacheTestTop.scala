@@ -28,7 +28,7 @@ class SharedPipelinedCacheTestTop(
   require(isPow2(memBeatSize), "Bytes per burst need to be a power of 2.")
 
   val subBlockDataWidth = bytesPerSubBlock * 8
-  val arbiter = Module(new RequestArbiter(nCores, addressWidth, bytesPerSubBlock * 8, reqIdWidth))
+  val arbiter = Module(new RoundRobinRequestArbiter(nCores, addressWidth, bytesPerSubBlock * 8, reqIdWidth))
 
   val l2Cache = Module(new SharedPipelinedCache(
     sizeInBytes = sizeInBytes,

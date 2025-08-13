@@ -25,7 +25,7 @@ class RepIO(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth:
 class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffWidth: Int, subBlockWidth: Int) extends Module() {
   val io = IO(new Bundle {
       val rep = new RepIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockOffWidth, subBlockWidth)
-      val pipelineCtrl = Flipped(new PipelineCtrlIO(nWays, tagWidth))
+      val pipelineCtrl = Flipped(new PipelineCtrlIO(nWays, indexWidth, tagWidth))
       val read = Flipped(new ReadIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockOffWidth, subBlockWidth))
       val missFifo = Flipped(new MissFifoPushIO(nCores = nCores, nMSHRs = nMshrs, nWays = nWays, reqIdWidth = reqIdWidth, tagWidth = tagWidth, indexWidth = indexWidth, blockOffsetWidth = blockOffWidth, subBlockWidth = subBlockWidth))
       val repPol = Flipped(new ReplacementPolicyIO(nWays = nWays, nSets = nSets, nCores = nCores))
@@ -97,7 +97,7 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   // TODO: Miss fifo needs the inverse of the byteEn
   io.missFifo.push := evict
   io.missFifo.pushEntry.rw := reqRwReg
-  io.missFifo.pushEntry.byteEnInverse := (~byteEnReg).asUInt
+  io.missFifo.pushEntry.byteEn := byteEnReg
   io.missFifo.pushEntry.replaceWay := repWay
   io.missFifo.pushEntry.tag := tagReg
   io.missFifo.pushEntry.index := indexReg

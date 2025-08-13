@@ -189,7 +189,7 @@ class MemoryInterface(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, i
   io.updateLogic.valid := updateLogicValid
   io.updateLogic.rw := io.missFifo.popEntry.rw
   io.updateLogic.wWay := io.missFifo.popEntry.replaceWay
-  io.updateLogic.byteEnInverse := io.missFifo.popEntry.byteEnInverse
+  io.updateLogic.byteEn := io.missFifo.popEntry.byteEn
   io.updateLogic.blockOffset := io.missFifo.popEntry.blockOffset
   io.updateLogic.index := io.missFifo.popEntry.index
   io.updateLogic.tag := io.missFifo.popEntry.tag

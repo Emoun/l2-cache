@@ -45,7 +45,7 @@ class MshrQueue[T <: Data](gen: T, depth: Int) extends Module {
 class MissFifoEntryIO(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, subBlockWidth: Int) extends Bundle {
   val rw = Input(Bool())
   val reqId = Input(UInt(reqIdWidth.W))
-  val byteEnInverse = Input(UInt((subBlockWidth / 8).W))
+  val byteEn = Input(UInt((subBlockWidth / 8).W))
   val coreId = Input(UInt(log2Up(nCores).W))
   val replaceWay = Input(UInt(log2Up(nWays).W))
   val tag = Input(UInt(tagWidth.W))
@@ -113,7 +113,7 @@ class MissFifo(nCores: Int, nMSHRs: Int, nWays: Int, reqIdWidth: Int, tagWidth: 
   coreIdQueue.io.enq.valid := io.push.push
   coreIdQueue.io.enq.bits := io.push.pushEntry.coreId
   byteEnInverseQueue.io.enq.valid := io.push.push
-  byteEnInverseQueue.io.enq.bits := io.push.pushEntry.byteEnInverse
+  byteEnInverseQueue.io.enq.bits := io.push.pushEntry.byteEn
   wayQueue.io.enq.valid := io.push.push
   wayQueue.io.enq.bits := io.push.pushEntry.replaceWay
   tagQueue.io.enq.valid := io.push.push
@@ -145,7 +145,7 @@ class MissFifo(nCores: Int, nMSHRs: Int, nWays: Int, reqIdWidth: Int, tagWidth: 
   io.pop.popEntry.rw := rwQueue.io.deq.bits
   io.pop.popEntry.reqId := reqIdQueue.io.deq.bits
   io.pop.popEntry.coreId := coreIdQueue.io.deq.bits
-  io.pop.popEntry.byteEnInverse := byteEnInverseQueue.io.deq.bits
+  io.pop.popEntry.byteEn := byteEnInverseQueue.io.deq.bits
   io.pop.popEntry.replaceWay := wayQueue.io.deq.bits
   io.pop.popEntry.tag := tagQueue.io.deq.bits
   io.pop.popEntry.index := idxQueue.io.deq.bits

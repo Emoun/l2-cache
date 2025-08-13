@@ -40,7 +40,7 @@ class SharedCacheReplacementIO(nWays: Int, nSets: Int, nCores: Int, dataWidth: I
  * @param nWays number of ways in a single cache set
  * @param nSets number of sets in the whole cache
  */
-class SharedCacheReplacementPolicyType(nWays: Int, nSets: Int, nCores: Int, dataWidth: Int) extends Module {
+class SharedCacheReplacementPolicyType(nWays: Int, nSets: Int, nCores: Int, dataWidth: Int = 1) extends Module {
   val io = IO(new SharedCacheReplacementIO(nWays, nSets, nCores, dataWidth))
 
   val schedulerDataWidth = dataWidth

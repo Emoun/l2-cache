@@ -36,7 +36,7 @@ class OcpCacheWrapperTest extends AnyFlatSpec with ChiselScalatestTester {
       l2RepPolicy = l2ContPolGen
     )
 
-    test(new OcpCacheWrapper(
+    test(new OcpCacheWrapperSingleCore(
       nCores = nCores,
       addrWidth = addrWidth,
       coreDataWidth = coreDataWidth,

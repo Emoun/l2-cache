@@ -20,7 +20,7 @@ class SharedPipelinedCacheSynthTop(
   private val coreDataWidth = 32
   private val coreBurstLen = bytesPerSubBlock / (coreDataWidth / 8)
 
-  val io = IO(new OcpCacheWrapperPort(nCores, addrWidth, coreDataWidth, coreBurstLen, memBeatSize * 8, memBurstLen))
+  val io = IO(new OcpCacheWrapperMultiCorePort(nCores, addrWidth, coreDataWidth, coreBurstLen, memBeatSize * 8, memBurstLen))
 
   val l2CacheGen = () => new SharedPipelinedCache(
     sizeInBytes = sizeInBytes,
@@ -35,7 +35,7 @@ class SharedPipelinedCacheSynthTop(
     l2RepPolicy = l2RepPolicyGen
   )
 
-  val l2Cache = Module(new OcpCacheWrapper(
+  val l2Cache = Module(new OcpCacheWrapperMultiCore(
     nCores = nCores,
     addrWidth = addrWidth,
     coreDataWidth = coreDataWidth,
@@ -48,7 +48,6 @@ class SharedPipelinedCacheSynthTop(
   l2Cache.io.mem <> io.mem
   l2Cache.io.scheduler <> io.scheduler
   l2Cache.io.core <> io.core
-  l2Cache.io.inCoreId := io.inCoreId
 }
 
 object SharedPipelinedCacheSynthTop extends App {
@@ -56,7 +55,7 @@ object SharedPipelinedCacheSynthTop extends App {
   val l2Size = 131072 // 128 KiB
   //  val l2Size = 16384 // 16 KiB
   val nWays = 8
-  val nCores = 4
+  val nCores = 2
   val addressWidth = 32
   val bytesPerBlock = 64
   val bytesPerSubBlock = 16
@@ -79,7 +78,7 @@ object SharedPipelinedCacheSynthTop extends App {
       bytesPerSubBlock = bytesPerSubBlock,
       memBeatSize = memBeatSize,
       memBurstLen = memBurstLen,
-      l2RepPolicyGen = contL2RepPolicy
+      l2RepPolicyGen = plruL2RepPolicy
     ),
     Array("--target-dir", "generated")
   )

@@ -30,7 +30,7 @@ class UpdateIO(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWid
 class MemInterfaceToUpdateIO(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockWidth: Int, subBlockWidth: Int) extends Bundle() {
   val valid = Input(Bool())
   val rw = Input(Bool())
-  val byteEnInverse = Input(UInt((subBlockWidth / 8).W))
+  val byteEn = Input(UInt((subBlockWidth / 8).W))
   val reqId = Input(UInt(reqIdWidth.W))
   val coreId = Input(UInt(log2Up(nCores).W))
   val wWay = Input(UInt(log2Up(nWays).W))
@@ -43,30 +43,29 @@ class MemInterfaceToUpdateIO(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth:
 /**
  * IO interface from the update stage to the tag stage
  */
-class PipelineCtrlIO(nWays: Int, tagWidth: Int) extends Bundle() {
+class PipelineCtrlIO(nWays: Int, indexWidth: Int, tagWidth: Int) extends Bundle() {
   val tag = Output(UInt(tagWidth.W))
   val way = Output(UInt(log2Up(nWays).W))
-  val index = Output(UInt(log2Up(nWays).W))
+  val index = Output(UInt(indexWidth.W))
   val refill = Output(Bool()) // For setting the line as valid
   val invalidate = Output(Bool()) // For setting the line as invalid
 }
 
-class TagUpdateIO(nWays: Int, tagWidth: Int) extends PipelineCtrlIO(nWays, tagWidth) {
+class TagUpdateIO(nWays: Int, indexWidth: Int, tagWidth: Int) extends PipelineCtrlIO(nWays, indexWidth, tagWidth) {
   val update = Output(Bool()) // For setting the line as dirty
 }
 
 /**
  * IO interface for control signals from the update stage to the cache memory
  */
-class CacheMemUpdateIO(nWays: Int, nSubBlocks: Int, subBlockWidth: Int) extends Bundle() {
+class CacheMemUpdateIO(nWays: Int, indexWidth: Int, nSubBlocks: Int, subBlockWidth: Int) extends Bundle() {
   val wrEn = Output(Bool())
   val way = Output(UInt(log2Up(nWays).W))
-  val index = Output(UInt(log2Up(nWays).W))
+  val index = Output(UInt(indexWidth.W))
   val memWriteData = Output(Vec(nSubBlocks, UInt(subBlockWidth.W)))
   val byteMask = Output(UInt(((nSubBlocks * subBlockWidth) / 8).W))
 }
 
-// TODO: No need to respond to a write request, since it does not return any data back
 class UpdateUnit(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockWidth: Int, subBlockWidth: Int) extends Module {
   private val nSubBlocks = blockWidth / subBlockWidth
 
@@ -74,9 +73,9 @@ class UpdateUnit(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexW
     val readStage = new UpdateIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockWidth, subBlockWidth)
     val memoryInterface = new MemInterfaceToUpdateIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockWidth, subBlockWidth)
     val coreResp = new CacheResponseIO(subBlockWidth, reqIdWidth)
-    val memUpdate = new CacheMemUpdateIO(nWays, nSubBlocks, subBlockWidth)
-    val pipelineCtrl = new PipelineCtrlIO(nWays, tagWidth)
-    val tagUpdate = new TagUpdateIO(nWays, tagWidth)
+    val memUpdate = new CacheMemUpdateIO(nWays, indexWidth, nSubBlocks, subBlockWidth)
+    val pipelineCtrl = new PipelineCtrlIO(nWays, indexWidth, tagWidth)
+    val tagUpdate = new TagUpdateIO(nWays, indexWidth, tagWidth)
     val outCoreId = Output(UInt(log2Up(nCores).W))
     val stall = Output(Bool())
   })
@@ -88,7 +87,7 @@ class UpdateUnit(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexW
   val wrEn = WireDefault(false.B)
 
   val updateTag = WireDefault(0.U(tagWidth.W))
-  val updateIndex = WireDefault(0.U(log2Up(nWays).W))
+  val updateIndex = WireDefault(0.U(indexWidth.W))
   val updateWay = WireDefault(0.U(log2Up(nWays).W))
   val coreRespCoreId = WireDefault(0.U(log2Up(nCores).W))
 
@@ -111,16 +110,17 @@ class UpdateUnit(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexW
     coreRespId := io.memoryInterface.reqId
     coreRespCoreId := io.memoryInterface.coreId
     coreRespStatus := 1.U
-    coreRespValid := true.B
 
     when(io.memoryInterface.rw) {
       update := true.B
       // Disable writing to all the bytes except to the ones the core wrote to
       val byteShift = Cat(io.memoryInterface.blockOffset, 0.U(log2Up(subBlockWidth / 8).W))
-      val byteMask = (io.memoryInterface.byteEnInverse << byteShift).asUInt
+      val byteMask = (~(io.memoryInterface.byteEn << byteShift)).asUInt
       updateWriteByteMask := byteMask((blockWidth / 8) - 1, 0)
     } .otherwise {
-      updateWriteByteMask := ((1 << (blockWidth / 8)) - 1).U // All bytes enabled
+
+      updateWriteByteMask := ((BigInt(1) << (blockWidth / 8)) - 1).U // All bytes enabled
+      coreRespValid := true.B // Only respond to the request if it is a read request
     }
   } .elsewhen(io.readStage.valid) {
     when(io.readStage.isHit) {
@@ -132,7 +132,6 @@ class UpdateUnit(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexW
       coreRespId := io.readStage.reqId
       coreRespCoreId := io.readStage.coreId
       coreRespStatus := io.readStage.responseStatus
-      coreRespValid := true.B
 
       when(io.readStage.rw) {
         update := true.B
@@ -142,6 +141,8 @@ class UpdateUnit(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexW
         val byteMask = (io.readStage.byteEn << byteShift).asUInt
         updateWriteByteMask := byteMask((blockWidth / 8) - 1, 0)
         updateWriteData(io.readStage.blockOffset) := io.readStage.wData
+      } .otherwise{
+        coreRespValid := true.B // Only respond to the request if it is a read request
       }
     } .otherwise {
       updateTag := io.readStage.tag
@@ -163,6 +164,7 @@ class UpdateUnit(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexW
       when(io.readStage.rw) {
         wrEn := true.B
         invalidate := true.B
+        // TODO: Set the line as dirty here too
 
         val byteShift = Cat(io.readStage.blockOffset, 0.U(log2Up(subBlockWidth / 8).W))
         val byteMask = (io.readStage.byteEn << byteShift).asUInt
