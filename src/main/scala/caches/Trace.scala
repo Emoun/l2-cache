@@ -19,10 +19,8 @@ class MemBlocks(blocks: HashMap[String, (Long, Int)], absolutes: HashSet[String]
   val memBlocks = blocks
   val absoluteBlocks = absolutes
 
-
-
   /**
-   * Returns the effective address of the an access from the given memory block with the given offset.
+   * Returns the effective address of the access from the given memory block with the given offset.
    * @param block
    * @param offset
    * @return
@@ -43,6 +41,17 @@ class MemBlocks(blocks: HashMap[String, (Long, Int)], absolutes: HashSet[String]
 
       mem._1 + offset
     }
+  }
+
+  def isPrivate(graphId: Int, addr: Long): Boolean = {
+    for(block <- memBlocks) {
+      if(block._2._1 <= addr && addr < (block._2._1+block._2._2)) {
+        // Found block
+        return block._1.startsWith(s"Graph_${graphId}")
+      }
+    }
+    // Address is not in any block, meaning its absolute, which we treat as shared
+    false
   }
 }
 
@@ -286,9 +295,10 @@ object Trace2Sim {
 
       if (data_num.toInt > 0) {
         assert(name_space_0 != "NA" || name_space_1 != "NA", s"Did not find expected memory access in instruction: $line")
-
+        var data_count = 0
         if (name_space_0 != "NA") {
           assert(rw_0 != "NA")
+          data_count += 1
 
           for (id <- graphIds) {
             accesses(id) = accesses(id) :+ new MemAccess(
@@ -301,6 +311,7 @@ object Trace2Sim {
         }
         if (name_space_1 != "NA") {
           assert(rw_1 != "NA")
+          data_count += 1
           for (id <- graphIds) {
             accesses(id) = accesses(id) :+ new MemAccess(
               (math.log(len_1.toInt) / math.log(2)).toInt,
@@ -310,6 +321,7 @@ object Trace2Sim {
             )
           }
         }
+        assert(data_count == data_num.toInt)
       }
     }
 
@@ -390,7 +402,7 @@ object Trace2Sim {
     }
   }
 
-  def initializeRunners(traceMapping: HashMap[String, HashSet[Int]], memAllocs: Source, taskGraph: Source): Array[CoreRunner] = {
+  def initializeRunners(traceMapping: HashMap[String, HashSet[Int]], memAllocs: Source, taskGraph: Source): (Array[CoreRunner], MemBlocks) = {
     var allGraphIds = HashSet.empty[Int]
     for(ids <- traceMapping) {
       assert(allGraphIds.intersect(ids._2).size == 0, "Duplicate graph ID")
@@ -422,7 +434,7 @@ object Trace2Sim {
       }
     }
 
-    allGraphIds.toArray.map(id => new CoreRunner(new TaskGraphRun(deps), jobAccesses(id)))
+    (allGraphIds.toArray.map(id => new CoreRunner(new TaskGraphRun(deps), jobAccesses(id))), memBlocks)
   }
 
   def runSim(
@@ -443,7 +455,7 @@ object Trace2Sim {
             ): Unit = {
     println("Running Simulation '" + simID + "'")
 
-    val runners = initializeRunners(
+    val (runners, memBlocks) = initializeRunners(
       traceMapping,
       Source.fromFile(traceBaseDir + memAlocFileName),
       Source.fromFile(traceBaseDir + "task_graph.csv")
@@ -686,6 +698,16 @@ object Trace2Sim {
       })
     }
 
+    var l2PartitionCacheGen = (simId: String, sets: Int, wayPart: Int) => {
+      val cache = new PartitionedCache(l2LineSize, l2Ways, sets)
+      for(i <- 0 until wayPart) {
+        cache.assignWay(0, i)
+      }
+      (cache, (coreId:Int) => {
+        cache.unassignCore(coreId)
+      })
+    }
+
     val defaultJobName = "Slot1_Cell0_Task0_Parallel0_Kernel"
 
     val cacheSizes = Array(
@@ -757,8 +779,57 @@ object Trace2Sim {
             "8 cores, limit " + limit._2 + " " + size._3,
           );
         }
+
+        val partitions = Array(
+          (1, "1Way"),
+          (2, "2Way"),
+          (3, "3Way"),
+          (4, "4Way"),
+          (5, "5Way"),
+          (6, "6Way"),
+          (7, "7Way"),
+          (8, "8Way"),
+        )
+        for (part <- partitions) {
+          configs +:= (
+            "mixed4Partition" + part._2 + size._2 + writeBack._2,
+            HashMap(defaultJobName -> HashSet[Int](0, 1, 2, 3)),
+            l1LruDtuCache,
+            (clock: () => Long, simID: String) => l2PartitionCacheGen(simID, size._1, part._1),
+            l1Latency,
+            l2Latency,
+            memLatency,
+            l1BurstSize,
+            l2BurstSize,
+            memBurstSize,
+            writeBack._1,
+            "Lru",
+            "Partitioned",
+            "4 cores, Critical partition " + part._2 + " " + size._3,
+          );
+
+          configs +:= (
+            "mixed8Partition" + part._2 + size._2 + writeBack._2,
+            HashMap(defaultJobName -> HashSet[Int](0, 1, 2, 3, 4, 5, 6, 7)),
+            l1LruDtuCache,
+            (clock: () => Long, simID: String) => l2PartitionCacheGen(simID, size._1, part._1),
+            l1Latency,
+            l2Latency,
+            memLatency,
+            l1BurstSize,
+            l2BurstSize,
+            memBurstSize,
+            writeBack._1,
+            "Lru",
+            "Partitioned",
+            "8 cores, Critical partition " + part._2 + " " + size._3,
+          );
+        }
       }
     }
+
+
+
     try {
       accessTimesFile.write("simId,coreNr,jobId,instanceNr,clockFinish,latency\n")
       jobFinishTimesFile.write("simId,coreNr,jobId,instanceNr,clockFinish\n")
