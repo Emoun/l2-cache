@@ -8,7 +8,7 @@ import chisel3.util._
  * @param nWays number of ways in a single cache set
  * @param nSets number of sets in the whole cache
  */
-class BitPlruReplacementPolicy(nWays: Int, nSets: Int, nCores: Int) extends SharedCacheReplacementPolicyType(nWays, nSets, nCores, 1) {
+class BitPlruReplacementPolicy(nWays: Int, nSets: Int, nCores: Int) extends SharedCacheReplacementPolicyType(nWays, nSets, nCores) {
   // ---------------- Base policy stage ----------------
 
   val readMruBits = VecInit(Seq.fill(nWays)(false.B))

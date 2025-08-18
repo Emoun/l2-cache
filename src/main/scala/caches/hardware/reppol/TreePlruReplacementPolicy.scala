@@ -8,7 +8,7 @@ import chisel3.util._
  * @param nWays number of ways in a single cache set
  * @param nSets number of sets in the whole cache
  */
-class TreePlruReplacementPolicy(nWays: Int, nSets: Int, nCores: Int) extends SharedCacheReplacementPolicyType(nWays, nSets, nCores, 1) {
+class TreePlruReplacementPolicy(nWays: Int, nSets: Int, nCores: Int) extends SharedCacheReplacementPolicyType(nWays, nSets, nCores) {
   val setMruBits = Array.fill(nSets)(RegInit(VecInit(Seq.fill(nWays - 1)(false.B))))
 
   val selMruBits = VecInit(Seq.fill(nWays - 1)(false.B))

@@ -26,7 +26,7 @@ class ReadIO(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth
 class Read(memSizeInBytes: Int, nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffWidth: Int, blockWidth: Int, subBlockWidth: Int)  extends Module {
   val io = IO(new Bundle {
     val read = new ReadIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockOffWidth, subBlockWidth)
-    val memUpdate = Flipped(new CacheMemUpdateIO(nWays = nWays, nSubBlocks = blockWidth / subBlockWidth, subBlockWidth = subBlockWidth))
+    val memUpdate = Flipped(new CacheMemUpdateIO(nWays = nWays, indexWidth = indexWidth, nSubBlocks = blockWidth / subBlockWidth, subBlockWidth = subBlockWidth))
     val stall = Input(Bool())
     val wbQueue = Flipped(new WbFifoPushIO(tagWidth = tagWidth, indexWidth = indexWidth, blockWidth = blockWidth))
     val update = Flipped(new UpdateIO(nCores = nCores, nWays = nWays, reqIdWidth = reqIdWidth, tagWidth = tagWidth, indexWidth = indexWidth, blockWidth = blockWidth, subBlockWidth = subBlockWidth))
@@ -41,7 +41,6 @@ class Read(memSizeInBytes: Int, nCores: Int, nWays: Int, reqIdWidth: Int, tagWid
   dataMem.io.wrEn := io.memUpdate.wrEn
   dataMem.io.wrData := io.memUpdate.memWriteData
   dataMem.io.byteMask := io.memUpdate.byteMask
-  dataMem.io.stall := io.stall
 
   val coreIdReg = PipelineReg(io.read.coreId, 0.U, !io.stall)
   val reqValidReg = PipelineReg(io.read.reqValid, false.B, !io.stall)
@@ -59,6 +58,7 @@ class Read(memSizeInBytes: Int, nCores: Int, nWays: Int, reqIdWidth: Int, tagWid
   val indexReg = PipelineReg(io.read.index, 0.U, !io.stall)
   val tagReg = PipelineReg(io.read.tag, 0.U, !io.stall)
 
+  // TODO: Add dirty bits per sub-block and use these as the writeback mask
   io.wbQueue.push := isRepDirtyReg && !isHitReg && reqValidReg && repValidReg
   io.wbQueue.pushEntry.wbData := dataMem.io.rData.asUInt
   io.wbQueue.pushEntry.tag := dirtyTagReg

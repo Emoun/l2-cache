@@ -40,6 +40,17 @@ class SharedPipelinedCache(
   require(isPow2(bytesPerBlock), "Number of bytes per block must be a power of 2.")
   require(isPow2(bytesPerBlock / bytesPerSubBlock), "The remainder of bytes per block divided by bytes per sub-block must be a power of 2.")
 
+  println(
+    s"L2 Cache Configuration: " +
+    s"Size = $sizeInBytes bytes, " +
+    s"Associativity = $nWays, " +
+    s"Block Size = $bytesPerBlock bytes, " +
+    s"Sub-block Size = $bytesPerSubBlock bytes, " +
+    s"Memory Beat Size = $memBeatSize bytes, " +
+    s"Memory Burst Length = $memBurstLen beats, " +
+    s"Number of Cores = $nCores" + "\n"
+  )
+
   private val nSets = sizeInBytes / (nWays * bytesPerBlock)
   private val subBlocksPerBlock = bytesPerBlock / bytesPerSubBlock
   private val byteOffsetWidth = log2Up(bytesPerSubBlock)
@@ -53,6 +64,7 @@ class SharedPipelinedCache(
   val updateLogic = Module(new UpdateUnit(nCores, nWays, reqIdWidth, tagWidth, indexWidth, bytesPerBlock * 8, bytesPerSubBlock * 8))
   val repPol = Module(l2RepPolicy())
   val schedulerDataWidth = repPol.schedulerDataWidth
+  val l2CacheBytesPerSubBlock = bytesPerSubBlock
 
   val io = IO(new Bundle{
     val core = new CacheCorePortIO(addressWidth, bytesPerSubBlock * 8, reqIdWidth)
@@ -77,7 +89,6 @@ class SharedPipelinedCache(
   decLogic.io.dec.addr := io.core.req.addr
   decLogic.io.dec.wData := io.core.req.wData
   decLogic.io.dec.byteEn := io.core.req.byteEn
-  decLogic.io.update <> updateLogic.io.tagUpdate
 
   // ---------------- Tag and Dirty Lookup ----------------
 

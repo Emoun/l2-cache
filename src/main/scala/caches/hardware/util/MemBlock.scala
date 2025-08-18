@@ -87,6 +87,8 @@ class ByteMaskedMemBlock(depth: Int, width: Int, dataFile: Option[String] = None
     mem.write(io.writeAddr, writeDataAsVec, io.byteEn)
   }
 
+  // TODO: This module cannot be easily synthesized by quartus
+
   // Read
   readDataAsVec := mem.read(io.readAddr)
 
@@ -104,5 +106,5 @@ class ByteMaskedMemBlock(depth: Int, width: Int, dataFile: Option[String] = None
     }
   }
 
-  io.readData := Mux(forwardSelReg, forwardDataAsVec.asUInt, readDataAsVec.asUInt)
+  io.readData := Mux(forwardSelReg, writeDataAsVec.asUInt, readDataAsVec.asUInt)
 }

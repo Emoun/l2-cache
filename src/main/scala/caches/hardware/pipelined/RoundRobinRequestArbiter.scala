@@ -3,7 +3,7 @@ package caches.hardware.pipelined
 import chisel3._
 import chisel3.util._
 
-class RequestArbiter(nReqs: Int, addrWidth: Int, dataWidth: Int, reqIdWidth: Int) extends Module {
+class RoundRobinRequestArbiter(nReqs: Int, addrWidth: Int, dataWidth: Int, reqIdWidth: Int) extends Module {
   val io = IO(new Bundle {
     val ports = Vec(nReqs, new CacheRequestIO(addrWidth, dataWidth, reqIdWidth))
     val out = Flipped(new CacheRequestIO(addrWidth, dataWidth, reqIdWidth))

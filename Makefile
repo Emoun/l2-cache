@@ -17,7 +17,7 @@ test: test-sbt test-synth
 test-sbt:
 	sbt test
 
-# Test if quartus can succesfully synthesis the test module
+# Test if quartus can successfully synthesis the test module
 test-synth: generate-test-synth-verilog synth-test-copy-to-quartus clean-generated synth-test
 
 # Synthesize the test level module
@@ -92,7 +92,7 @@ help:
 	@echo "  test                           - Run sbt test and test synthesis"
 	@echo "  test-sbt                       - Run sbt test"
 	@echo "  test-synth                     - Generate Verilog for test module and synthesize with Quartus"
-	@echo "  synth-test                     - Synthesisze test module in Quartus project: $(SYNTH_TEST_QUARTUS_PROJECT_DIR)"
+	@echo "  synth-test                     - Synthesize test module in Quartus project: $(SYNTH_TEST_QUARTUS_PROJECT_DIR)"
 	@echo "  generate-verilog               - Generate Verilog from Scala source"
 	@echo "  generate-test-synth-verilog    - Generate Verilog for test module"
 	@echo "  copy-to-quartus                - Copy generated Verilog to Quartus project"
