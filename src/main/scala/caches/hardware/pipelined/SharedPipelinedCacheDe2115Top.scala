@@ -62,6 +62,7 @@ class SharedPipelinedCacheDe2115Top(
   l2CacheTop.io.scheduler.cmd := debSchCmd.io.swDb
   l2CacheTop.io.scheduler.addr := debSchAddr.io.swDb
   l2CacheTop.io.scheduler.wData := debSchWData.io.swDb
+  io.scheduler.rData := l2CacheTop.io.scheduler.rData
 
   // Request scheduler connection to rxd and txd lines
   io.rxd <> cacheReqCtrl.io.rxd

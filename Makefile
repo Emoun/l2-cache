@@ -1,9 +1,9 @@
-SCALA_MAIN_CLASS = caches.hardware.pipelined.cache.SharedPipelinedCacheDe2115Top
+SCALA_MAIN_CLASS = caches.hardware.pipelined.SharedPipelinedCacheDe2115Top
 GENERATED_DIR = generated
 QUARTUS_PROJECT_DIR = quartus/SharedPipelinedCacheDe2115Top
 VERILOG_FILE = SharedPipelinedCacheDe2115Top.v
 
-SYNTH_TEST_SCALA_MAIN_CLASS = caches.hardware.pipelined.cache.SharedPipelinedCacheSynthTop
+SYNTH_TEST_SCALA_MAIN_CLASS = caches.hardware.pipelined.SharedPipelinedCacheSynthTop
 SYNTH_TEST_QUARTUS_PROJECT_DIR = quartus/SharedPipelinedCacheSynthTop
 SYNTH_TEST_QUARTUS_PROJECT_NAME = SharedPipelinedCacheSynthTop
 SYNTH_TEST_VERILOG_FILE = SharedPipelinedCacheSynthTop.v
