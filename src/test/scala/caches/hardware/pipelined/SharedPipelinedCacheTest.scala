@@ -308,7 +308,7 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     val addressWidth = 16
     val reqIdWidth = 6
     val bytesPerBlock = 32
-    val bytesPerSubBlock = 4
+    val bytesPerSubBlock = 8
     val nSets = sizeInBytes / (nWays * bytesPerBlock)
     val l2RepPolicy = () => new BitPlruReplacementPolicy(nWays, nSets, nCores)
     val memFile = "./hex/test_mem_32w.hex"

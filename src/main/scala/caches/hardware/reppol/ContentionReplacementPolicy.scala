@@ -104,7 +104,9 @@ class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolic
   basePolicyInst.io.control.stall := io.control.stall
   basePolicyInst.io.scheduler <> io.scheduler
 
-  val setIdxPipeReg = PipelineReg(io.control.setIdx, 0.U, !io.control.stall)
+  // Need to delay this signal by two CCs since the bit plru uses memory to store the MRU bits
+  val setIdxDelayReg = PipelineReg(io.control.setIdx, 0.U, !io.control.stall)
+  val setIdxPipeReg = PipelineReg(setIdxDelayReg, 0.U, !io.control.stall)
 
   // ---------------- Eviction stage ----------------
   val contAlgorithm = Module(new ContentionReplacementAlgorithm(nWays, nCores))
@@ -112,7 +114,7 @@ class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolic
   val assignArr = Module(new LineAssignmentsArray(nWays, nSets, nCores))
   assignArr.io.stall := io.control.stall
   assignArr.io.wrEn := io.control.evict
-  assignArr.io.rSet := io.control.setIdx
+  assignArr.io.rSet := setIdxDelayReg
   assignArr.io.wrSet := setIdxPipeReg
   assignArr.io.wrLineAssign := UpdateSingleVecElem(assignArr.io.rLineAssign, io.control.coreId, contAlgorithm.io.replacementWay.bits)
   assignArr.io.wrValiAssign := UpdateSingleVecElem(assignArr.io.rValidAssign, true.B, contAlgorithm.io.replacementWay.bits)

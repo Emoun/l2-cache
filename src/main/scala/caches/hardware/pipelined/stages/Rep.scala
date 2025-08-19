@@ -19,6 +19,7 @@ class RepIO(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth:
   val setTags = Input(Vec(nWays, UInt(tagWidth.W)))
   val blockOffset = Input(UInt(blockOffWidth.W))
   val index = Input(UInt(indexWidth.W))
+  val repPolReadIndex = Input(UInt(indexWidth.W))
   val tag = Input(UInt(tagWidth.W))
 }
 
@@ -48,7 +49,7 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   }
 
   // ---------------- Compute Replace Way ----------------
-  io.repPol.setIdx := io.rep.index
+  io.repPol.setIdx := io.rep.repPolReadIndex
   io.repPol.stall := io.stall
 
   // Check if the hit way is valid and if it is the same as the one being currently refilled

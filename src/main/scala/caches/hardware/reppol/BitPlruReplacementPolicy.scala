@@ -1,8 +1,8 @@
 package caches.hardware.reppol
 
-import caches.hardware.util.PipelineReg
 import chisel3._
 import chisel3.util._
+import caches.hardware.util.{MemBlock, PipelineReg}
 
 /**
  * @param nWays number of ways in a single cache set
@@ -10,27 +10,30 @@ import chisel3.util._
  */
 class BitPlruReplacementPolicy(nWays: Int, nSets: Int, nCores: Int) extends SharedCacheReplacementPolicyType(nWays, nSets, nCores) {
   // ---------------- Base policy stage ----------------
+  def plruBits(rIdx: UInt, wrEn: Bool, wIdx: UInt, wData: Vec[Bool]): Vec[Bool] = {
+    val mruBits = Module(new MemBlock(nSets, nWays))
+    val rMruBits = Wire(Vec(nWays, Bool()))
 
-  val readMruBits = VecInit(Seq.fill(nWays)(false.B))
-  val updateStageSetIdx = WireDefault(0.U(log2Up(nSets).W))
-  val updatedMruBits = VecInit(Seq.fill(nWays)(false.B))
+    mruBits.io.readAddr := rIdx
+    mruBits.io.writeAddr := wIdx
+    mruBits.io.writeData := wData.asUInt
+    mruBits.io.wrEn := wrEn
 
-  val setMruBits = Array.fill(nSets)(RegInit(VecInit(Seq.fill(nWays)(false.B))))
+    rMruBits := mruBits.io.readData.asBools
 
-  for (setIdx <- 0 until nSets) {
-    // Multiplexer for selecting the mru bits
-    when(setIdx.U === io.control.setIdx) {
-      readMruBits := setMruBits(setIdx)
-    }
-
-    // Demultiplexer for updating the mru bits
-    when(setIdx.U === updateStageSetIdx && io.control.update.valid) {
-      setMruBits(setIdx) := updatedMruBits
-    }
+    rMruBits
   }
 
-  val doForward = updateStageSetIdx === io.control.setIdx && io.control.update.valid
-  val computeMruBits = Mux(doForward, updatedMruBits, readMruBits)
+  val updateStageSetIdx = WireDefault(0.U(log2Up(nSets).W))
+  val updatedStageMruBits = VecInit(Seq.fill(nWays)(false.B))
+
+  val readMruBits = plruBits(io.control.setIdx, io.control.update.valid, updateStageSetIdx, updatedStageMruBits)
+  val idxDelayReg = PipelineReg(io.control.setIdx, 0.U, !io.control.stall)
+
+  // ---------------- Read stage ----------------
+
+  val doForward = updateStageSetIdx === idxDelayReg && io.control.update.valid
+  val computeMruBits = Mux(doForward, updatedStageMruBits, readMruBits)
 
   val bitPlruAlgorithm = Module(new BitPlruReplacementAlgorithm(nWays))
   bitPlruAlgorithm.io.computeMruBits := computeMruBits
@@ -39,14 +42,14 @@ class BitPlruReplacementPolicy(nWays: Int, nSets: Int, nCores: Int) extends Shar
   val replaceSet = bitPlruAlgorithm.io.replacementSet
 
   val mruBitsPipeReg = PipelineReg(computeMruBits, VecInit(Seq.fill(nWays)(false.B)), !io.control.stall)
-  val setIdxPipeReg = PipelineReg(io.control.setIdx, 0.U, !io.control.stall)
+  val setIdxPipeReg = PipelineReg(idxDelayReg, 0.U, !io.control.stall)
   val replaceWayPipeReg = PipelineReg(replaceWay, 0.U, !io.control.stall)
   val replaceSetPipeReg = PipelineReg(replaceSet, VecInit(Seq.fill(nWays)(0.U(log2Up(nWays).W))), !io.control.stall)
 
   // ---------------- Update stage ----------------
   bitPlruAlgorithm.io.hitWay := io.control.update.bits
   bitPlruAlgorithm.io.updateMruBits := mruBitsPipeReg
-  updatedMruBits := bitPlruAlgorithm.io.updatedMru
+  updatedStageMruBits := bitPlruAlgorithm.io.updatedMru
   updateStageSetIdx := setIdxPipeReg
 
   io.control.replaceWay := replaceWayPipeReg

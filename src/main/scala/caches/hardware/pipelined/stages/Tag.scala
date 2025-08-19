@@ -149,5 +149,6 @@ class Tag(nCores: Int, nSets: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, i
   io.rep.setTags := PipelineReg(readTags, VecInit(Seq.fill(nWays)(0.U(tagWidth.W))), !io.stall) // Need this to get the dirty tag later on
   io.rep.blockOffset := PipelineReg(io.tag.blockOffset, 0.U, !io.stall)
   io.rep.index := PipelineReg(io.tag.index, 0.U, !io.stall)
+  io.rep.repPolReadIndex := io.tag.index
   io.rep.tag := PipelineReg(io.tag.tag, 0.U, !io.stall)
 }

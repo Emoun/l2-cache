@@ -26,7 +26,7 @@ class CacheMemory(sizeInBytes: Int, nWays: Int, bytesPerBlock: Int, bytesPerSubB
   val waySplitMem = Array.fill(nWays)(
     Array.fill(nSubBlocks)(
       Array.fill(bytesPerSubBlock / 4)(
-        Module(new MemBlock(nSets, 32)))
+        Module(new MemBlock(nSets, 32, forward = false)))
       )
   )
 

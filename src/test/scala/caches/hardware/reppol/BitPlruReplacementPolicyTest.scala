@@ -245,8 +245,13 @@ class BitPlruReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTeste
 
       dut.io.control.update.valid.poke(false.B)
       dut.io.control.update.bits.poke(0.U)
+
       dut.io.control.setIdx.poke(1.U)
       //-------------
+      dut.clock.step(1)
+
+      dut.io.control.setIdx.poke(0.U)
+
       dut.clock.step(1)
 
       dut.io.control.replaceWay.expect(0.U)
@@ -254,7 +259,8 @@ class BitPlruReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTeste
 
       dut.io.control.update.valid.poke(true.B)
       dut.io.control.update.bits.poke(0.U)
-      dut.io.control.setIdx.poke(0.U)
+
+      dut.io.control.setIdx.poke(1.U)
 
       dut.clock.step(1)
 
@@ -263,7 +269,8 @@ class BitPlruReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTeste
 
       dut.io.control.update.valid.poke(true.B)
       dut.io.control.update.bits.poke(0.U)
-      dut.io.control.setIdx.poke(1.U)
+
+      dut.io.control.setIdx.poke(0.U)
 
       dut.clock.step(1)
 
@@ -272,7 +279,6 @@ class BitPlruReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTeste
 
       dut.io.control.update.valid.poke(true.B)
       dut.io.control.update.bits.poke(1.U)
-      dut.io.control.setIdx.poke(0.U)
 
       dut.clock.step(1)
 
@@ -281,7 +287,8 @@ class BitPlruReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTeste
 
       dut.io.control.update.valid.poke(true.B)
       dut.io.control.update.bits.poke(0.U)
-      dut.io.control.setIdx.poke(1.U)
+
+      dut.clock.step(1)
     }
   }
 }

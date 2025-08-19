@@ -29,7 +29,7 @@ class DummyMemory(addrWidth: Int, blockWidth: Int, beatSize: Int, burstLen: Int,
   val memWriteData = WireDefault(0.U((beatSize * 8).W))
   val memWrEn = WireDefault(0.U((beatSize * 8).W))
 
-  val mem = Module(new MemBlock(math.pow(2, addrWidth).toInt, beatSize * 8, dataFile))
+  val mem = Module(new MemBlock(math.pow(2, addrWidth).toInt, beatSize * 8, dataFile = dataFile))
 
   mem.io.readAddr := memReadAddr
   mem.io.writeAddr := memWriteAddr
