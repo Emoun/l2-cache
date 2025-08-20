@@ -69,14 +69,12 @@ class CacheRequestControllerTest extends AnyFlatSpec with ChiselScalatestTester 
     dut.io.cache.cores(coreId).resp.reqId.valid.poke(true.B)
     dut.io.cache.cores(coreId).resp.reqId.bits.poke(reqId.U)
     dut.io.cache.cores(coreId).resp.rData.poke(rData.U)
-    dut.io.cache.cores(coreId).resp.responseStatus.poke(responseStatus.U)
 
     dut.clock.step(1)
 
     dut.io.cache.cores(coreId).resp.reqId.valid.poke(false.B)
     dut.io.cache.cores(coreId).resp.reqId.bits.poke(0.U)
     dut.io.cache.cores(coreId).resp.rData.poke(0.U)
-    dut.io.cache.cores(coreId).resp.responseStatus.poke(0.U)
   }
 
   "CacheRequestControllerTest" should "work" in {
@@ -97,7 +95,6 @@ class CacheRequestControllerTest extends AnyFlatSpec with ChiselScalatestTester 
           dut.io.cache.cores(coreIdx).resp.reqId.valid.poke(false.B)
           dut.io.cache.cores(coreIdx).resp.reqId.bits.poke(0.U)
           dut.io.cache.cores(coreIdx).resp.rData.poke(0.U)
-          dut.io.cache.cores(coreIdx).resp.responseStatus.poke(0.U)
         }
 
         dut.clock.step(5)
@@ -155,7 +152,7 @@ class CacheRequestControllerTest extends AnyFlatSpec with ChiselScalatestTester 
 
         dut.clock.step(4)
 
-        receiveByte(dut, expectedByte = 0x07, cyclesPerBit = 2)
+        receiveByte(dut, expectedByte = 0x03, cyclesPerBit = 2)
 
         dut.clock.step(4)
       }

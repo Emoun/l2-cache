@@ -26,7 +26,6 @@ class OcpCacheWrapperPort(
  * @param l2Cache A l2 cache generating function
  */
 class OcpCacheWrapperSingleCore(
-                       nCores: Int,
                        addrWidth: Int,
                        coreDataWidth: Int,
                        coreBurstLen: Int,
@@ -34,12 +33,12 @@ class OcpCacheWrapperSingleCore(
                        memBurstLen: Int,
                        l2Cache: () => SharedPipelinedCache
                      ) extends Module {
-  val io = IO(new OcpCacheWrapperPort(nCores, addrWidth, coreDataWidth, coreBurstLen, memDataWidth, memBurstLen))
+  val io = IO(new OcpCacheWrapperPort(1, addrWidth, coreDataWidth, coreBurstLen, memDataWidth, memBurstLen))
 
   val cache = Module(l2Cache())
   val ocpSlaveAdapter = Module(new OcpBurstSlaveToCacheRequestAdapter(addrWidth, coreDataWidth, coreBurstLen))
   val ocpMasterAdapter = Module(new CacheMemToOcpBurstMasterAdapter(addrWidth, memDataWidth, memBurstLen))
-  val ocpCoreAdapter = Module(new OcpCoreSlaveToSchedulerAdapter(nCores, cache.schedulerDataWidth))
+  val ocpCoreAdapter = Module(new OcpCoreSlaveToSchedulerAdapter(1, cache.schedulerDataWidth))
 
   ocpCoreAdapter.io.core <> io.scheduler
   cache.io.scheduler <> ocpCoreAdapter.io.scheduler

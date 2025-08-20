@@ -12,7 +12,7 @@ class OcpBurstSlaveToCacheRequestAdapter(addrWidth: Int, dataWidth: Int, burstLe
 
   // We first latch the request, then we issue it in the next clock cycle and wait for it to be accepted,
   // once accepted we wait for response
-  val sIdle :: sWaitReadAccept :: sWaitReadResp :: sReadBurst :: sWriteBurst :: sWaitWriteAccept :: Nil = Enum(6)
+  val sIdle :: sWaitReadAccept :: sWaitReadResp :: sReadBurst :: sWriteBurst :: sWaitWriteAccept :: sWaitWriteResp :: Nil = Enum(7)
 
   // Registers
   val stateReg = RegInit(sIdle)
@@ -109,6 +109,12 @@ class OcpBurstSlaveToCacheRequestAdapter(addrWidth: Int, dataWidth: Int, burstLe
       cacheReqRw := true.B
 
       when(io.corePort.req.reqId.ready) {
+        stateReg := sWaitWriteResp
+      }
+    }
+
+    is (sWaitWriteResp) {
+      when(io.corePort.resp.reqId.valid) {
         ocpSResp := ocp.OcpResp.DVA
         stateReg := sIdle
       }

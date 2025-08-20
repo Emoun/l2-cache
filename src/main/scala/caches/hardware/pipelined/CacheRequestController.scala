@@ -50,7 +50,7 @@ class CacheRequestController(nCores: Int, addrWidth: Int, reqIdWidth: Int, bytes
 
   val nCmdBytes = math.ceil((1 + reqIdWidth + log2Up(nCores) + addrWidth + (bytesPerSubBlock * 8)) / 8.0).toInt
   val nReadDataBytes = math.ceil(bytesPerSubBlock).toInt
-  val nResponseHeaderBytes = math.ceil(1 + reqIdWidth / 8.0).toInt
+  val nResponseHeaderBytes = math.ceil(reqIdWidth / 8.0).toInt
   val nSendDataBytes = nReadDataBytes + nResponseHeaderBytes
   val sReceive :: sReq :: sWait :: sSend :: Nil = Enum(4)
 
@@ -105,7 +105,7 @@ class CacheRequestController(nCores: Int, addrWidth: Int, reqIdWidth: Int, bytes
 
         // Put the response status and reqId in the response too
         val responseHead = WireDefault(0.U((nResponseHeaderBytes * 8).W))
-        responseHead := Cat(io.cache.cores(coreId).resp.responseStatus, io.cache.cores(coreId).resp.reqId.bits)
+        responseHead := io.cache.cores(coreId).resp.reqId.bits
         for (sendByteIdx <- 0 until nResponseHeaderBytes) {
           sendDataReg(nReadDataBytes + sendByteIdx) := responseHead(7 + (sendByteIdx * 8), sendByteIdx * 8)
         }

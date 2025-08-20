@@ -16,7 +16,6 @@ class CacheRequestIO(addrWidth: Int, dataWidth: Int, reqIdWidth: Int) extends Bu
 class CacheResponseIO(dataWidth: Int, reqIdWidth: Int) extends Bundle {
   val reqId = Valid(UInt(reqIdWidth.W))
   val rData = Output(UInt(dataWidth.W))
-  val responseStatus = Output(UInt(1.W)) // 1 - OK, 0 - Rejected
 }
 
 class CacheCorePortIO(addrWidth: Int, dataWidth: Int, reqIdWidth: Int) extends Bundle {
@@ -24,6 +23,10 @@ class CacheCorePortIO(addrWidth: Int, dataWidth: Int, reqIdWidth: Int) extends B
   val resp = new CacheResponseIO(dataWidth, reqIdWidth)
 }
 
+/**
+ * @param memBeatSize beat size in bytes
+ * @param memBurstLen number of beats in a burst
+ */
 class SharedPipelinedCache(
                             sizeInBytes: Int,
                             nWays: Int,
@@ -46,14 +49,21 @@ class SharedPipelinedCache(
   private val blockOffsetWidth = log2Up(subBlocksPerBlock)
   private val indexWidth = log2Up(nSets)
   private val tagWidth = addressWidth - indexWidth - blockOffsetWidth - byteOffsetWidth
-  private val nMshrs = nWays // nMshrs = nWays for now
+  private val nMshrs = nWays / 2 // nMshrs = nWays for now
+  private val nHalfMissCmds = 8 // Number of half miss commands
 
-  val missQueue = Module(new MissFifo(nCores, nMshrs, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, bytesPerSubBlock * 8))
+  val missQueue = Module(new MissFifo(nCores, nHalfMissCmds, nMshrs, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, bytesPerSubBlock * 8, bytesPerBlock * 8))
   val wbQueue = Module(new WriteBackFifo(nMshrs, tagWidth, indexWidth, bytesPerBlock * 8))
   val updateLogic = Module(new UpdateUnit(nCores, nWays, reqIdWidth, tagWidth, indexWidth, bytesPerBlock * 8, bytesPerSubBlock * 8))
   val repPol = Module(l2RepPolicy())
+
   val schedulerDataWidth = repPol.schedulerDataWidth
   val l2CacheBytesPerSubBlock = bytesPerSubBlock
+
+  val invalidateLine = WireDefault(false.B)
+  val invalidateWay = WireDefault(0.U(log2Up(nWays).W))
+  val invalidateIndex = WireDefault(0.U(indexWidth.W))
+  val missFifoCmdCapacity = WireDefault(false.B)
 
   println(
     s"L2 Cache Configuration: " +
@@ -75,21 +85,33 @@ class SharedPipelinedCache(
     val scheduler = new SchedulerControlIO(nCores, schedulerDataWidth)
   })
 
-  repPol.io.scheduler <> io.scheduler
-  val pipeStall = updateLogic.io.stall || missQueue.io.push.full
+  val rejectionQueue = Module(new RejectionQueue(nCores = nCores, addrWidth = addressWidth, dataWidth = bytesPerSubBlock * 8, reqIdWidth = reqIdWidth, depth = nCores))
+  val coreReqMux = Module(new CoreReqMux(nCores = nCores, addrWidth = addressWidth, dataWidth = bytesPerSubBlock * 8, reqIdWidth = reqIdWidth))
+
+  val pipeStall = updateLogic.io.stall || missQueue.io.push.full // || missFifoCmdCapacity
   val reqAccept = !pipeStall
-  io.core.req.reqId.ready := reqAccept
+
+  // Connect core request and rejection queue to the core request multiplexer that feeds into the cache pipeline
+  coreReqMux.io.req1 <> io.core.req
+  coreReqMux.io.req2 <> rejectionQueue.io.popEntry
+  coreReqMux.io.req1CoreID := io.inCoreId
+  coreReqMux.io.req2CoreID := rejectionQueue.io.popCoreId
+  coreReqMux.io.out.reqId.ready := reqAccept
+
+  // Connect replacement policy with the rejection queue
+  rejectionQueue.io.popRejQueue <> repPol.io.control.popRejQueue
+  repPol.io.scheduler <> io.scheduler
 
   // ---------------- Decode ----------------
-  val decLogic = Module(new Dec(nCores = nCores, nSets = nSets, nWays = nWays, reqIdWidth = reqIdWidth, tagWidth = tagWidth, indexWidth = indexWidth, blockOffWidth = blockOffsetWidth, byteOffWidth = byteOffsetWidth, subBlockWidth = bytesPerSubBlock * 8))
+  val decLogic = Module(new Dec(nCores = nCores, nWays = nWays, reqIdWidth = reqIdWidth, tagWidth = tagWidth, indexWidth = indexWidth, blockOffWidth = blockOffsetWidth, byteOffWidth = byteOffsetWidth, subBlockWidth = bytesPerSubBlock * 8))
   decLogic.io.stall := pipeStall
-  decLogic.io.dec.coreId := io.inCoreId
-  decLogic.io.dec.reqId := io.core.req.reqId.bits
-  decLogic.io.dec.reqValid := io.core.req.reqId.valid
-  decLogic.io.dec.reqRw := io.core.req.rw
-  decLogic.io.dec.addr := io.core.req.addr
-  decLogic.io.dec.wData := io.core.req.wData
-  decLogic.io.dec.byteEn := io.core.req.byteEn
+  decLogic.io.dec.coreId := coreReqMux.io.outCoreID
+  decLogic.io.dec.reqValid := coreReqMux.io.out.reqId.valid
+  decLogic.io.dec.reqId := coreReqMux.io.out.reqId.bits
+  decLogic.io.dec.reqRw := coreReqMux.io.out.rw
+  decLogic.io.dec.addr := coreReqMux.io.out.addr
+  decLogic.io.dec.wData := coreReqMux.io.out.wData
+  decLogic.io.dec.byteEn := coreReqMux.io.out.byteEn
 
   // ---------------- Tag and Dirty Lookup ----------------
 
@@ -97,15 +119,25 @@ class SharedPipelinedCache(
   tagLogic.io.stall := pipeStall
   tagLogic.io.tag <> decLogic.io.tag
   tagLogic.io.update <> updateLogic.io.tagUpdate
+  tagLogic.io.invalidate.invalidate := invalidateLine
+  tagLogic.io.invalidate.way := invalidateWay
+  tagLogic.io.invalidate.index := invalidateIndex
+  tagLogic.io.setValidLine := updateLogic.io.setValidLine
 
   // ---------------- Replacement ----------------
 
-  val repLogic = Module(new Rep(nCores = nCores, nSets = nSets, nWays = nWays, nMshrs = nMshrs, reqIdWidth = reqIdWidth, tagWidth = tagWidth, indexWidth = indexWidth, blockOffWidth = blockOffsetWidth, subBlockWidth = bytesPerSubBlock * 8))
+  val repLogic = Module(new Rep(nCores = nCores, nSets = nSets, nWays = nWays, nMshrs = nMshrs, reqIdWidth = reqIdWidth, tagWidth = tagWidth, indexWidth = indexWidth, blockOffWidth = blockOffsetWidth, blockWidth = bytesPerBlock * 8, subBlockWidth = bytesPerSubBlock * 8))
   repLogic.io.stall := pipeStall
   repLogic.io.rep <> tagLogic.io.rep
   repLogic.io.missFifo <> missQueue.io.push
   repLogic.io.repPol <> repPol.io.control
-  repLogic.io.pipelineCtrl <> updateLogic.io.pipelineCtrl
+  repLogic.io.setLineValid := updateLogic.io.setValidLine
+  invalidateLine := repLogic.io.invalidate.invalidate
+  invalidateWay := repLogic.io.invalidate.way
+  invalidateIndex := repLogic.io.invalidate.index
+  missFifoCmdCapacity := repLogic.io.halfMissCapacity
+  rejectionQueue.io.push := repLogic.io.pushReject
+  rejectionQueue.io.pushEntry := repLogic.io.pushRejectEntry
 
   // ---------------- Read ----------------
 
@@ -117,7 +149,7 @@ class SharedPipelinedCache(
 
   // ---------------- Update ----------------
 
-  val memInterface = Module(new MemoryInterface(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, bytesPerBlock * 8, bytesPerSubBlock * 8, beatSize = memBeatSize, burstLen = memBurstLen))
+  val memInterface = Module(new MemoryInterface(nCores, nWays, nHalfMissCmds, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, bytesPerBlock * 8, bytesPerSubBlock * 8, beatSize = memBeatSize, burstLen = memBurstLen))
   memInterface.io.missFifo <> missQueue.io.pop
   memInterface.io.wbFifo <> wbQueue.io.pop
   memInterface.io.memController <> io.mem

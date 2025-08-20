@@ -10,7 +10,7 @@ import caches.hardware.util.{MemBlock, PipelineReg}
  */
 class BitPlruReplacementPolicy(nWays: Int, nSets: Int, nCores: Int) extends SharedCacheReplacementPolicyType(nWays, nSets, nCores) {
   // ---------------- Base policy stage ----------------
-  def plruBits(rIdx: UInt, wrEn: Bool, wIdx: UInt, wData: Vec[Bool]): Vec[Bool] = {
+  def plruBits(rIdx: UInt, wrEn: Bool, wIdx: UInt, wData: Vec[Bool], stall: Bool): Vec[Bool] = {
     val mruBits = Module(new MemBlock(nSets, nWays))
     val rMruBits = Wire(Vec(nWays, Bool()))
 
@@ -18,6 +18,7 @@ class BitPlruReplacementPolicy(nWays: Int, nSets: Int, nCores: Int) extends Shar
     mruBits.io.writeAddr := wIdx
     mruBits.io.writeData := wData.asUInt
     mruBits.io.wrEn := wrEn
+    mruBits.io.stall := stall
 
     rMruBits := mruBits.io.readData.asBools
 
@@ -27,7 +28,7 @@ class BitPlruReplacementPolicy(nWays: Int, nSets: Int, nCores: Int) extends Shar
   val updateStageSetIdx = WireDefault(0.U(log2Up(nSets).W))
   val updatedStageMruBits = VecInit(Seq.fill(nWays)(false.B))
 
-  val readMruBits = plruBits(io.control.setIdx, io.control.update.valid, updateStageSetIdx, updatedStageMruBits)
+  val readMruBits = plruBits(io.control.setIdx, io.control.update.valid, updateStageSetIdx, updatedStageMruBits, io.control.stall)
   val idxDelayReg = PipelineReg(io.control.setIdx, 0.U, !io.control.stall)
 
   // ---------------- Read stage ----------------
@@ -56,4 +57,6 @@ class BitPlruReplacementPolicy(nWays: Int, nSets: Int, nCores: Int) extends Shar
   io.control.replacementSet := replaceSetPipeReg
   io.control.isValid := true.B
   io.scheduler.rData := DontCare // Bit PLRU does not use scheduler control
+  io.control.popRejQueue.valid := DontCare
+  io.control.popRejQueue.bits := DontCare
 }

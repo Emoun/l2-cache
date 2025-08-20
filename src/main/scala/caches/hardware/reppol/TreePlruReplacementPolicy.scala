@@ -45,5 +45,7 @@ class TreePlruReplacementPolicy(nWays: Int, nSets: Int, nCores: Int) extends Sha
   io.control.replacementSet := replaceSetPipeReg
   io.control.isValid := true.B
   io.scheduler.rData := DontCare
+  io.control.popRejQueue.valid := DontCare
+  io.control.popRejQueue.bits := DontCare
 }
 
