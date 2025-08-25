@@ -50,7 +50,8 @@ class CoreContentionTable(nCores: Int) extends Module() {
     val setCritical = Input(Bool())
     val unsetCritical = Input(Bool())
     val setContentionLimit = Input(UInt(CONTENTION_LIMIT_WIDTH.W))
-    val incrContention = Input(Valid(UInt(log2Up(nCores).W)))
+    val incrContention1 = Input(Valid(UInt(log2Up(nCores).W)))
+    val incrContention2 = Input(Valid(UInt(log2Up(nCores).W)))
     val rLimits = Output(Vec(nCores, UInt(CONTENTION_LIMIT_WIDTH.W)))
     val rCritCores = Output(Vec(nCores, Bool()))
   })
@@ -72,7 +73,15 @@ class CoreContentionTable(nCores: Int) extends Module() {
       contentionLimits(coreTableIdx) := 0.U
     }
 
-    when(io.incrContention.valid && io.incrContention.bits === coreTableIdx.U) {
+    when(io.incrContention1.valid) {
+      when(io.incrContention1.bits === coreTableIdx.U){
+        when(io.incrContention2.valid && io.incrContention1.bits === io.incrContention2.bits) {
+          contentionLimits(coreTableIdx) := contentionLimits(coreTableIdx) - 2.U
+        }.otherwise{
+          contentionLimits(coreTableIdx) := contentionLimits(coreTableIdx) - 1.U
+        }
+      }
+    }.elsewhen(io.incrContention2.valid && io.incrContention2.bits === coreTableIdx.U) {
       contentionLimits(coreTableIdx) := contentionLimits(coreTableIdx) - 1.U
     }
   }
@@ -89,7 +98,7 @@ class CoreContentionTable(nCores: Int) extends Module() {
  * @param nCores number of cores sharing the cache
  * @param basePolicy the base replacement policy module generating function
  */
-class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolicy: () => SharedCacheReplacementPolicyType) extends SharedCacheReplacementPolicyType(nWays, nSets, nCores, CONTENTION_LIMIT_WIDTH) {
+class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolicy: () => SharedCacheReplacementPolicyType, enableMissInMiss: Boolean = false) extends SharedCacheReplacementPolicyType(nWays, nSets, nCores, CONTENTION_LIMIT_WIDTH) {
   // ---------------- Base policy stage ----------------
 
   // Base policy instantiation
@@ -102,6 +111,7 @@ class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolic
   basePolicyInst.io.control.update.valid := io.control.update.valid
   basePolicyInst.io.control.update.bits := io.control.update.bits
   basePolicyInst.io.control.stall := io.control.stall
+  basePolicyInst.io.control.missActive := io.control.missActive
   basePolicyInst.io.scheduler <> io.scheduler
 
   // Need to delay this signal by two CCs since the bit plru uses memory to store the MRU bits
@@ -109,7 +119,7 @@ class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolic
   val setIdxPipeReg = PipelineReg(setIdxDelayReg, 0.U, !io.control.stall)
 
   // ---------------- Eviction stage ----------------
-  val contAlgorithm = Module(new ContentionReplacementAlgorithm(nWays, nCores))
+  val contAlgorithm = Module(new ContentionReplacementAlgorithm(nWays, nCores, enableMissInMiss))
 
   val assignArr = Module(new LineAssignmentsArray(nWays, nSets, nCores))
   assignArr.io.stall := io.control.stall
@@ -125,18 +135,18 @@ class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolic
   coreTable.io.unsetCritical := io.scheduler.cmd === SchedulerCmd.RD
   coreTable.io.setContentionLimit := io.scheduler.wData
   io.scheduler.rData := 0.U
-  coreTable.io.incrContention := contAlgorithm.io.updateCore
-
-  val isCoreCrit = coreTable.io.rCritCores(io.control.coreId)
+  coreTable.io.incrContention1 := contAlgorithm.io.updateCore
+  coreTable.io.incrContention2 := contAlgorithm.io.updateCoreMim
 
   // Compute the eviction for each set
   contAlgorithm.io.evict := io.control.evict
-  contAlgorithm.io.isReqCoreCritical := isCoreCrit
+  contAlgorithm.io.reqCore := io.control.coreId
   contAlgorithm.io.baseCandidates := basePolicyInst.io.control.replacementSet
   contAlgorithm.io.lineAssignments := assignArr.io.rLineAssign
   contAlgorithm.io.validLineAssignments := assignArr.io.rValidAssign
   contAlgorithm.io.coreLimits := coreTable.io.rLimits
   contAlgorithm.io.criticalCores := coreTable.io.rCritCores
+  contAlgorithm.io.missActive := io.control.missActive
 
   io.control.replaceWay := contAlgorithm.io.replacementWay.bits
   io.control.isValid := contAlgorithm.io.replacementWay.valid

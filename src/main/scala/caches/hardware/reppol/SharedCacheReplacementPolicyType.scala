@@ -27,6 +27,7 @@ class ReplacementPolicyIO(nWays: Int, nSets: Int, nCores: Int) extends Bundle {
   val isValid = Output(Bool()) // To signal if there are no valid ways to replace
   val replaceWay = Output(UInt(log2Up(nWays).W))
   val replacementSet = Output(Vec(nWays, UInt(log2Up(nWays).W))) // If a replacement policy needs an ordered set of ways, otherwise can be ignored
+  val missActive = Input(Bool()) // Whether misses are currently being serviced by the miss queue
 }
 
 class SharedCacheReplacementIO(nWays: Int, nSets: Int, nCores: Int, dataWidth: Int) extends Bundle {

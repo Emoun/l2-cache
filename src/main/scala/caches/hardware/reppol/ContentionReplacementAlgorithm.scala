@@ -4,18 +4,22 @@ import chisel3._
 import chisel3.util._
 import caches.hardware.util.Constants._
 
-class ContentionReplacementAlgorithm(nWays: Int, nCores: Int) extends Module {
+class ContentionReplacementAlgorithm(nWays: Int, nCores: Int, enableMissInMiss: Boolean = false) extends Module {
   val io = IO(new Bundle {
     val evict = Input(Bool())
-    val isReqCoreCritical = Input(Bool())
+    val reqCore = Input(UInt(log2Up(nCores).W))
     val baseCandidates = Input(Vec(nWays, UInt(log2Up(nWays).W)))
     val validLineAssignments = Input(Vec(nWays, Bool()))
     val lineAssignments = Input(Vec(nWays, UInt(log2Up(nCores).W)))
     val coreLimits = Input(Vec(nCores, UInt(CONTENTION_LIMIT_WIDTH.W)))
     val criticalCores = Input(Vec(nCores, Bool()))
     val updateCore = Output(Valid(UInt(log2Up(nCores).W)))
+    val updateCoreMim = Output(Valid(UInt(log2Up(nCores).W)))
     val replacementWay = Output(Valid(UInt(log2Up(nWays).W)))
+    val missActive = Input(Bool())
   })
+
+  val isReqCoreCritical = io.criticalCores(io.reqCore)
 
   val replaceWay = WireDefault(0.U(log2Up(nWays).W))
   val isValidReplaceWay = WireDefault(false.B)
@@ -26,6 +30,8 @@ class ContentionReplacementAlgorithm(nWays: Int, nCores: Int) extends Module {
 
   val updateCore = WireDefault(false.B)
   val updateCoreId = WireDefault(0.U(log2Up(nCores).W))
+  val updateCoreMim = WireDefault(false.B)
+  val updateCoreIdMim = WireDefault(0.U(log2Up(nCores).W))
 
   // Determine critical and unlimited ways
   for (i <- 0 until nWays) {
@@ -48,24 +54,35 @@ class ContentionReplacementAlgorithm(nWays: Int, nCores: Int) extends Module {
   val firstUCSetWayCore = coreAssignments(firstUCSetIdx)
   val anyNonCriticalWays = criticalWays.map(x => !x).reduce((x, y) => x || y)
 
+  val missInMissEvent = isReqCoreCritical && io.evict && io.missActive
+
+  // Trigger Miss-In-Miss event
+  if(enableMissInMiss) {
+    when(missInMissEvent) {
+      updateCoreMim := true.B
+      updateCoreIdMim := io.reqCore
+    }
+  }
+
   when(unlimitedWays.reduce((x, y) => x || y)) {
     // If we encounter a contention event we need to update the contention count
-    when(firstUCSetWayCoreCritical && (!io.isReqCoreCritical || anyNonCriticalWays)) {
-      when(io.evict) {
+    val evictionEvent = firstUCSetWayCoreCritical && anyNonCriticalWays
+    val replacementEvent = firstUCSetWayCoreCritical && !isReqCoreCritical
+    when(io.evict && (evictionEvent || replacementEvent)) {
         updateCore := true.B
         updateCoreId := firstUCSetWayCore
-      }
     }
-
     replaceWay := io.baseCandidates(firstUCSetIdx)
     isValidReplaceWay := true.B
-  } .elsewhen(io.isReqCoreCritical) {
+  } .elsewhen(isReqCoreCritical) {
     replaceWay := io.baseCandidates(0)
     isValidReplaceWay := true.B
   }
 
   io.updateCore.valid := updateCore
   io.updateCore.bits := updateCoreId
+  io.updateCoreMim.valid := updateCoreMim
+  io.updateCoreMim.bits := updateCoreIdMim
   io.replacementWay.valid := isValidReplaceWay
   io.replacementWay.bits := replaceWay
 }

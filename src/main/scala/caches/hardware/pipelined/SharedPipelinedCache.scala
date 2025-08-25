@@ -106,6 +106,7 @@ class SharedPipelinedCache(
   repLogic.io.missFifo <> missQueue.io.push
   repLogic.io.repPol <> repPol.io.control
   repLogic.io.pipelineCtrl <> updateLogic.io.pipelineCtrl
+  repLogic.io.missActive := !missQueue.io.pop.empty
 
   // ---------------- Read ----------------
 

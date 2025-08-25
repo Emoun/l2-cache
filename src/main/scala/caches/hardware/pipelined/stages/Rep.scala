@@ -31,6 +31,7 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
       val missFifo = Flipped(new MissFifoPushIO(nCores = nCores, nMSHRs = nMshrs, nWays = nWays, reqIdWidth = reqIdWidth, tagWidth = tagWidth, indexWidth = indexWidth, blockOffsetWidth = blockOffWidth, subBlockWidth = subBlockWidth))
       val repPol = Flipped(new ReplacementPolicyIO(nWays = nWays, nSets = nSets, nCores = nCores))
       val stall = Input(Bool())
+      val missActive = Input(Bool())
     }
   )
 
@@ -51,6 +52,7 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   // ---------------- Compute Replace Way ----------------
   io.repPol.setIdx := io.rep.repPolReadIndex
   io.repPol.stall := io.stall
+  io.repPol.missActive := io.missActive
 
   // Check if the hit way is valid and if it is the same as the one being currently refilled
   //  if so then turn this request into a miss
