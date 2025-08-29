@@ -35,6 +35,7 @@ class DummyMemory(addrWidth: Int, blockWidth: Int, beatSize: Int, burstLen: Int,
   mem.io.writeAddr := memWriteAddr
   mem.io.writeData := memWriteData
   mem.io.wrEn := memWrEn
+  mem.io.stall := false.B
 
   switch(stateReg) {
     is(sIdle) {

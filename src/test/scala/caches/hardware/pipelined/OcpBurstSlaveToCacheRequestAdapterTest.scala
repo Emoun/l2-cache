@@ -17,7 +17,6 @@ class OcpBurstSlaveToCacheRequestAdapterTest extends AnyFlatSpec with ChiselScal
       dut.io.corePort.resp.reqId.valid.poke(false.B)
       dut.io.corePort.resp.reqId.bits.poke(0.U)
       dut.io.corePort.resp.rData.poke(0.U)
-      dut.io.corePort.resp.responseStatus.poke(0.U)
       // ---- Memory Interface Inputs
       dut.io.ocpBurst.M.Cmd.poke(ocp.OcpCmd.IDLE)
       dut.io.ocpBurst.M.Addr.poke(0.U)
@@ -65,13 +64,11 @@ class OcpBurstSlaveToCacheRequestAdapterTest extends AnyFlatSpec with ChiselScal
       // Return a cache response
       dut.io.corePort.resp.reqId.valid.poke(true.B)
       dut.io.corePort.resp.rData.poke("hbadc0ffee0ddf00dbeefbbadbbadbeef".U)
-      dut.io.corePort.resp.responseStatus.poke(0.U)
 
       dut.clock.step(1)
 
       dut.io.corePort.resp.reqId.valid.poke(false.B)
       dut.io.corePort.resp.rData.poke(0.U)
-      dut.io.corePort.resp.responseStatus.poke(0.U)
 
       // Expect the OCP interface to return the first element of the read data
       dut.io.ocpBurst.S.Data.expect("hbbadbeef".U)
@@ -172,6 +169,11 @@ class OcpBurstSlaveToCacheRequestAdapterTest extends AnyFlatSpec with ChiselScal
 
       // Accept the WR request at the core port
       dut.io.corePort.req.reqId.ready.poke(true.B)
+
+      dut.clock.step(4)
+
+      // Provide response to the WR request at the core port
+      dut.io.corePort.resp.reqId.valid.poke(true.B)
 
       // Expect the acknowledgement of the OCP WR transaction
       dut.io.ocpBurst.S.Resp.expect(ocp.OcpResp.DVA)

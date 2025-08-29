@@ -24,6 +24,7 @@ class ReplacementPolicyIO(nWays: Int, nSets: Int, nCores: Int) extends Bundle {
   val evict = Input(Bool()) // Some policies may need to know if when the line is being evicted
   val setIdx = Input(UInt(log2Up(nSets).W))
   val coreId = Input(UInt(log2Up(nCores).W)) // ID of the requesting core
+  val popRejQueue = Valid(UInt(log2Up(nCores).W)) // For specifying how many entries should be popped from the rejection queue
   val isValid = Output(Bool()) // To signal if there are no valid ways to replace
   val replaceWay = Output(UInt(log2Up(nWays).W))
   val replacementSet = Output(Vec(nWays, UInt(log2Up(nWays).W))) // If a replacement policy needs an ordered set of ways, otherwise can be ignored

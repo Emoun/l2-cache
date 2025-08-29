@@ -14,7 +14,7 @@ class DecIO(nCores: Int, reqIdWidth: Int, addrWidth: Int, subBlockWidth: Int) ex
   val addr = Input(UInt(addrWidth.W))
 }
 
-class Dec(nCores: Int, nSets: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffWidth: Int, byteOffWidth: Int, subBlockWidth: Int) extends Module() {
+class Dec(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffWidth: Int, byteOffWidth: Int, subBlockWidth: Int) extends Module() {
   private val addrWidth = tagWidth + indexWidth + blockOffWidth + byteOffWidth
 
   val io = IO(new Bundle{

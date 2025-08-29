@@ -51,9 +51,11 @@ class SharedPipelinedCacheSynthTop(
 }
 
 object SharedPipelinedCacheSynthTop extends App {
-//  val l2Size = 262144 // 256 KiB
-    val l2Size = 131072 // 128 KiB
-  //  val l2Size = 16384 // 16 KiB
+  // val l2Size = 524288 // 512 KiB
+  // val l2Size = 262144 // 256 KiB
+  // val l2Size = 131072 // 128 KiB
+  val l2Size = 65536 // 64 KiB
+  // val l2Size = 16384 // 16 KiB
   val nWays = 8
   val nCores = 4
   val addressWidth = 32
@@ -78,7 +80,7 @@ object SharedPipelinedCacheSynthTop extends App {
       bytesPerSubBlock = bytesPerSubBlock,
       memBeatSize = memBeatSize,
       memBurstLen = memBurstLen,
-      l2RepPolicyGen = contL2RepPolicy
+      l2RepPolicyGen = plruL2RepPolicy
     ),
     Array("--target-dir", "generated")
   )

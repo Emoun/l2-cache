@@ -36,7 +36,7 @@ class OcpCacheWrapperTest extends AnyFlatSpec with ChiselScalatestTester {
       l2RepPolicy = l2ContPolGen
     )
 
-    test(new OcpCacheWrapperSingleCore(
+    test(new OcpCacheWrapperMultiCore(
       nCores = nCores,
       addrWidth = addrWidth,
       coreDataWidth = coreDataWidth,
@@ -46,11 +46,13 @@ class OcpCacheWrapperTest extends AnyFlatSpec with ChiselScalatestTester {
       l2Cache = l2CacheGen
     )).withAnnotations(Seq(WriteVcdAnnotation, WriteFstAnnotation)) { dut =>
       // Default assignments
-      dut.io.core.M.Cmd.poke(OcpCmd.IDLE)
-      dut.io.core.M.Addr.poke(0.U)
-      dut.io.core.M.Data.poke(0.U)
-      dut.io.core.M.DataByteEn.poke(0.U)
-      dut.io.core.M.DataValid.poke(0.U)
+      for (i <- 0 until nCores) {
+        dut.io.core(i).M.Cmd.poke(OcpCmd.IDLE)
+        dut.io.core(i).M.Addr.poke(0.U)
+        dut.io.core(i).M.Data.poke(0.U)
+        dut.io.core(i).M.DataByteEn.poke(0.U)
+        dut.io.core(i).M.DataValid.poke(0.U)
+      }
 
       dut.io.mem.S.Resp.poke(OcpResp.NULL)
       dut.io.mem.S.Data.poke(0.U)
@@ -78,68 +80,68 @@ class OcpCacheWrapperTest extends AnyFlatSpec with ChiselScalatestTester {
 
       dut.clock.step(1)
 
-      // --------------- Issue a write command to the cache ---------------
-      dut.io.core.M.Cmd.poke(OcpCmd.WR)
-      dut.io.core.M.Addr.poke("h08f0".U)
-      dut.io.core.M.Data.poke("hdeadbeef".U)
-      dut.io.core.M.DataByteEn.poke("b1110".U)
-      dut.io.core.M.DataValid.poke(1.U)
+      // --------------- Issue a write command to the cache from first core ---------------
+      dut.io.core(0).M.Cmd.poke(OcpCmd.WR)
+      dut.io.core(0).M.Addr.poke("h08f0".U)
+      dut.io.core(0).M.Data.poke("hdeadbeef".U) // Give the first data word
+      dut.io.core(0).M.DataByteEn.poke("b1110".U)
+      dut.io.core(0).M.DataValid.poke(1.U)
 
-      dut.io.core.S.Resp.expect(OcpResp.NULL)
-      dut.io.core.S.Data.expect(0.U)
-      dut.io.core.S.CmdAccept.expect(true.B)
-      dut.io.core.S.DataAccept.expect(true.B)
-
-      dut.clock.step(1)
-
-      dut.io.core.M.Cmd.poke(OcpCmd.IDLE)
-      dut.io.core.M.Addr.poke(0.U)
-      dut.io.core.M.Data.poke("hcafebabe".U)
-      dut.io.core.M.DataByteEn.poke("b0110".U)
-      dut.io.core.M.DataValid.poke(1.U)
-
-      dut.io.core.S.Resp.expect(OcpResp.NULL)
-      dut.io.core.S.Data.expect(0.U)
-      dut.io.core.S.CmdAccept.expect(false.B)
-      dut.io.core.S.DataAccept.expect(true.B)
+      dut.io.core(0).S.Resp.expect(OcpResp.NULL)
+      dut.io.core(0).S.Data.expect(0.U)
+      dut.io.core(0).S.CmdAccept.expect(true.B)
+      dut.io.core(0).S.DataAccept.expect(true.B)
 
       dut.clock.step(1)
 
-      dut.io.core.M.Data.poke("hbeefdead".U)
-      dut.io.core.M.DataByteEn.poke("b1111".U)
-      dut.io.core.M.DataValid.poke(1.U)
+      dut.io.core(0).M.Cmd.poke(OcpCmd.IDLE)
+      dut.io.core(0).M.Addr.poke(0.U)
+      dut.io.core(0).M.Data.poke("hcafebabe".U) // Give the second data word
+      dut.io.core(0).M.DataByteEn.poke("b0110".U)
+      dut.io.core(0).M.DataValid.poke(1.U)
 
-      dut.io.core.S.Resp.expect(OcpResp.NULL)
-      dut.io.core.S.Data.expect(0.U)
-      dut.io.core.S.CmdAccept.expect(false.B)
-      dut.io.core.S.DataAccept.expect(true.B)
-
-      dut.clock.step(1)
-
-      dut.io.core.M.Data.poke("hbabecafe".U)
-      dut.io.core.M.DataByteEn.poke("b1001".U)
-      dut.io.core.M.DataValid.poke(1.U)
-
-      dut.io.core.S.Resp.expect(OcpResp.NULL)
-      dut.io.core.S.Data.expect(0.U)
-      dut.io.core.S.CmdAccept.expect(false.B)
-      dut.io.core.S.DataAccept.expect(true.B)
+      dut.io.core(0).S.Resp.expect(OcpResp.NULL)
+      dut.io.core(0).S.Data.expect(0.U)
+      dut.io.core(0).S.CmdAccept.expect(false.B)
+      dut.io.core(0).S.DataAccept.expect(true.B)
 
       dut.clock.step(1)
 
-      dut.io.core.M.Data.poke(0.U)
-      dut.io.core.M.DataValid.poke(0.U)
+      dut.io.core(0).M.Data.poke("hbeefdead".U) // Give the third data word
+      dut.io.core(0).M.DataByteEn.poke("b1111".U)
+      dut.io.core(0).M.DataValid.poke(1.U)
 
-      dut.io.core.S.Resp.expect(OcpResp.DVA)
-      dut.io.core.S.Data.expect(0.U)
-      dut.io.core.S.CmdAccept.expect(false.B)
-      dut.io.core.S.DataAccept.expect(false.B)
+      dut.io.core(0).S.Resp.expect(OcpResp.NULL)
+      dut.io.core(0).S.Data.expect(0.U)
+      dut.io.core(0).S.CmdAccept.expect(false.B)
+      dut.io.core(0).S.DataAccept.expect(true.B)
+
+      dut.clock.step(1)
+
+      dut.io.core(0).M.Data.poke("hbabecafe".U) // Give the fourth data word
+      dut.io.core(0).M.DataByteEn.poke("b1001".U)
+      dut.io.core(0).M.DataValid.poke(1.U)
+
+      dut.io.core(0).S.Resp.expect(OcpResp.NULL)
+      dut.io.core(0).S.Data.expect(0.U)
+      dut.io.core(0).S.CmdAccept.expect(false.B)
+      dut.io.core(0).S.DataAccept.expect(true.B)
+
+      dut.clock.step(1)
+
+      dut.io.core(0).M.Data.poke(0.U)
+      dut.io.core(0).M.DataValid.poke(0.U)
+
+      dut.io.core(0).S.Resp.expect(OcpResp.NULL) // Expect the write data to not be acknowledged yet
+      dut.io.core(0).S.Data.expect(0.U)
+      dut.io.core(0).S.CmdAccept.expect(false.B)
+      dut.io.core(0).S.DataAccept.expect(false.B)
 
       dut.clock.step(5)
 
       // --------------- Expect the cache to issue a read command ---------------
       dut.io.mem.M.Cmd.expect(OcpCmd.RD)
-      dut.io.mem.M.Addr.expect("h08e0".U) // TODO: Double check this address
+      dut.io.mem.M.Addr.expect("h08e0".U)
       dut.io.mem.M.Data.expect(0.U)
       dut.io.mem.M.DataByteEn.expect(0.U)
       dut.io.mem.M.DataValid.expect(0.U)
@@ -207,7 +209,7 @@ class OcpCacheWrapperTest extends AnyFlatSpec with ChiselScalatestTester {
 
       // --------------- Expect the cache to issue a second read command ---------------
       dut.io.mem.M.Cmd.expect(OcpCmd.RD)
-      dut.io.mem.M.Addr.expect("h08f0".U) // TODO: Double check this address
+      dut.io.mem.M.Addr.expect("h08f0".U)
       dut.io.mem.M.Data.expect(0.U)
       dut.io.mem.M.DataByteEn.expect(0.U)
       dut.io.mem.M.DataValid.expect(0.U)
@@ -268,6 +270,128 @@ class OcpCacheWrapperTest extends AnyFlatSpec with ChiselScalatestTester {
 
       dut.io.mem.S.Resp.poke(OcpResp.NULL)
       dut.io.mem.S.Data.poke(0.U)
+
+      dut.clock.step(2)
+
+      dut.io.core(0).S.Resp.expect(OcpResp.DVA) // Expect the write data to not be acknowledged after it was brought to the cache
+      dut.io.core(0).S.Data.expect(0.U)
+      dut.io.core(0).S.CmdAccept.expect(false.B)
+      dut.io.core(0).S.DataAccept.expect(false.B)
+
+      dut.clock.step(1)
+
+      // --------------- Issue a read command to the cache from third core ---------------
+      dut.io.core(2).M.Cmd.poke(OcpCmd.RD)
+      dut.io.core(2).M.Addr.poke("ha4f7".U)
+
+      dut.io.core(2).S.Resp.expect(OcpResp.NULL)
+      dut.io.core(2).S.Data.expect(0.U)
+      dut.io.core(2).S.CmdAccept.expect(true.B)
+      dut.io.core(2).S.DataAccept.expect(false.B)
+
+      dut.clock.step(1)
+
+      dut.io.core(2).M.Cmd.poke(OcpCmd.IDLE)
+      dut.io.core(2).M.Addr.poke(0.U)
+
+      // Step until the cache generates a read request to memory
+      dut.clock.step(5)
+
+      dut.io.mem.M.Cmd.expect(OcpCmd.RD)
+      dut.io.mem.M.Addr.expect("ha4e0".U)
+
+      dut.io.mem.S.Resp.poke(OcpResp.NULL)
+      dut.io.mem.S.Data.poke(0.U)
+      dut.io.mem.S.CmdAccept.poke(true.B)
+      dut.io.mem.S.DataAccept.poke(false.B)
+
+      dut.clock.step(1)
+
+      dut.io.mem.S.Resp.poke(OcpResp.DVA)
+      dut.io.mem.S.Data.poke("hfaceb00c".U) // Give the first data word
+
+      dut.clock.step(1)
+
+      dut.io.mem.S.Resp.poke(OcpResp.DVA)
+      dut.io.mem.S.Data.poke("h00d15ea5".U) // Give the second data word
+
+      dut.clock.step(1)
+
+      dut.io.mem.S.Resp.poke(OcpResp.DVA)
+      dut.io.mem.S.Data.poke("hc0010ff0".U) // Give the second data word
+
+      dut.clock.step(1)
+
+      dut.io.mem.S.Resp.poke(OcpResp.DVA)
+      dut.io.mem.S.Data.poke("hc001d00d".U) // Give the second data word
+
+      dut.clock.step(1)
+
+      dut.io.mem.S.Resp.poke(OcpResp.NULL)
+      dut.io.mem.S.Data.poke(0.U) // Give the second data word
+
+      // Expect the cache to generate a second read request to memory
+      dut.io.mem.M.Cmd.expect(OcpCmd.RD)
+      dut.io.mem.M.Addr.expect("ha4f0".U)
+
+      dut.io.mem.S.Resp.poke(OcpResp.NULL)
+      dut.io.mem.S.Data.poke(0.U)
+      dut.io.mem.S.CmdAccept.poke(true.B)
+      dut.io.mem.S.DataAccept.poke(false.B)
+
+      dut.clock.step(1)
+
+      dut.io.mem.S.Resp.poke(OcpResp.DVA)
+      dut.io.mem.S.Data.poke("h542af425".U) // Give the first data word
+
+      dut.clock.step(1)
+
+      dut.io.mem.S.Resp.poke(OcpResp.DVA)
+      dut.io.mem.S.Data.poke("hb000000d".U) // Give the second data word
+
+      dut.clock.step(1)
+
+      dut.io.mem.S.Resp.poke(OcpResp.DVA)
+      dut.io.mem.S.Data.poke("hff5e3a41".U) // Give the second data word
+
+      dut.clock.step(1)
+
+      dut.io.mem.S.Resp.poke(OcpResp.DVA)
+      dut.io.mem.S.Data.poke("h6abb4cee".U) // Give the second data word
+
+      dut.clock.step(1)
+
+      dut.io.mem.S.Resp.poke(OcpResp.NULL)
+      dut.io.mem.S.Data.poke(0.U) // Give the second data word
+
+      // Expect the cache to return the read data to the core
+      dut.clock.step(3)
+
+      dut.io.core(2).S.Resp.expect(OcpResp.DVA)
+      dut.io.core(2).S.Data.expect("h542af425".U)
+      dut.io.core(2).S.CmdAccept.expect(false.B)
+      dut.io.core(2).S.DataAccept.expect(false.B)
+
+      dut.clock.step(1)
+
+      dut.io.core(2).S.Resp.expect(OcpResp.DVA)
+      dut.io.core(2).S.Data.expect("hb000000d".U)
+      dut.io.core(2).S.CmdAccept.expect(false.B)
+      dut.io.core(2).S.DataAccept.expect(false.B)
+
+      dut.clock.step(1)
+
+      dut.io.core(2).S.Resp.expect(OcpResp.DVA)
+      dut.io.core(2).S.Data.expect("hff5e3a41".U)
+      dut.io.core(2).S.CmdAccept.expect(false.B)
+      dut.io.core(2).S.DataAccept.expect(false.B)
+
+      dut.clock.step(1)
+
+      dut.io.core(2).S.Resp.expect(OcpResp.DVA)
+      dut.io.core(2).S.Data.expect("h6abb4cee".U)
+      dut.io.core(2).S.CmdAccept.expect(false.B)
+      dut.io.core(2).S.DataAccept.expect(false.B)
 
       dut.clock.step(1)
     }

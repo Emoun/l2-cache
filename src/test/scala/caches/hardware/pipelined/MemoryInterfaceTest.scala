@@ -9,6 +9,7 @@ class MemoryInterfaceTest extends AnyFlatSpec with ChiselScalatestTester {
     test(new MemoryInterface(
       nCores = 4,
       nWays = 8,
+      nHalfMissCmds = 4,
       reqIdWidth = 16,
       tagWidth = 19,
       indexWidth = 8,
@@ -29,13 +30,10 @@ class MemoryInterfaceTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.io.wbFifo.popEntry.index.poke(0.U)
       dut.io.wbFifo.popEntry.wbData.poke(0.U)
       dut.io.missFifo.empty.poke(true.B)
-      dut.io.missFifo.popEntry.rw.poke(false.B)
-      dut.io.missFifo.popEntry.reqId.poke(0.U)
-      dut.io.missFifo.popEntry.coreId.poke(0.U)
+      dut.io.missFifo.cmdCnt.poke(0.U)
       dut.io.missFifo.popEntry.replaceWay.poke(0.U)
       dut.io.missFifo.popEntry.tag.poke(0.U)
       dut.io.missFifo.popEntry.index.poke(0.U)
-      dut.io.missFifo.popEntry.blockOffset.poke(0.U)
 
       dut.clock.step(2)
 

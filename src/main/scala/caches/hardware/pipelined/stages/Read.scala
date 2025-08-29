@@ -5,13 +5,13 @@ import caches.hardware.util.PipelineReg
 import chisel3._
 import chisel3.util._
 
-class ReadIO(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffWidth: Int, subBlockWidth: Int) extends Bundle() {
+class ReadIO(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffWidth: Int, blockWidth: Int, subBlockWidth: Int) extends Bundle() {
   val coreId = Input(UInt(log2Up(nCores).W))
   val reqValid = Input(Bool())
   val reqId = Input(UInt(reqIdWidth.W))
   val reqRw = Input(Bool())
   val wData = Input(UInt(subBlockWidth.W))
-  val byteEn = Input(UInt((subBlockWidth / 8).W))
+  val byteEn = Input(UInt((blockWidth / 8).W))
   val repValid = Input(Bool())
   val isHit = Input(Bool())
   val hitWay = Input(UInt(log2Up(nWays).W))
@@ -23,9 +23,9 @@ class ReadIO(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth
   val tag = Input(UInt(tagWidth.W))
 }
 
-class Read(memSizeInBytes: Int, nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffWidth: Int, blockWidth: Int, subBlockWidth: Int)  extends Module {
+class Read(memSizeInBytes: Int, nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffWidth: Int, blockWidth: Int, subBlockWidth: Int) extends Module {
   val io = IO(new Bundle {
-    val read = new ReadIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockOffWidth, subBlockWidth)
+    val read = new ReadIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockOffWidth, blockWidth, subBlockWidth)
     val memUpdate = Flipped(new CacheMemUpdateIO(nWays = nWays, indexWidth = indexWidth, nSubBlocks = blockWidth / subBlockWidth, subBlockWidth = subBlockWidth))
     val stall = Input(Bool())
     val wbQueue = Flipped(new WbFifoPushIO(tagWidth = tagWidth, indexWidth = indexWidth, blockWidth = blockWidth))
@@ -41,6 +41,7 @@ class Read(memSizeInBytes: Int, nCores: Int, nWays: Int, reqIdWidth: Int, tagWid
   dataMem.io.wrEn := io.memUpdate.wrEn
   dataMem.io.wrData := io.memUpdate.memWriteData
   dataMem.io.byteMask := io.memUpdate.byteMask
+  dataMem.io.stall := io.stall
 
   val coreIdReg = PipelineReg(io.read.coreId, 0.U, !io.stall)
   val reqValidReg = PipelineReg(io.read.reqValid, false.B, !io.stall)
@@ -64,7 +65,7 @@ class Read(memSizeInBytes: Int, nCores: Int, nWays: Int, reqIdWidth: Int, tagWid
   io.wbQueue.pushEntry.tag := dirtyTagReg
   io.wbQueue.pushEntry.index := indexReg
 
-  io.update.valid := reqValidReg // It is a valid response and if it is a hit or a rejection // TODO: If adding rejection queue this should not be the case
+  io.update.valid := reqValidReg
   io.update.isHit := isHitReg
   io.update.rw := reqRwReg
   io.update.coreId := coreIdReg

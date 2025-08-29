@@ -44,7 +44,7 @@ class CacheMemoryControllerIO(addrWidth: Int, beatSize: Int) extends Bundle {
  * @param beatSize Size of a single beat in bytes
  * @param burstLen Number of beats in a single transfer
  */
-class MemoryInterface(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, blockWidth: Int, subBlockWidth: Int, beatSize: Int, burstLen: Int) extends Module {
+class MemoryInterface(nCores: Int, nWays: Int, nHalfMissCmds: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, blockWidth: Int, subBlockWidth: Int, beatSize: Int, burstLen: Int) extends Module {
   require((blockWidth / 8) >= (beatSize * burstLen), "Block size must be greater or equal to the total size of a single memory command.")
 
   private val byteOffsetWidth = log2Up(subBlockWidth / 8)
@@ -54,7 +54,7 @@ class MemoryInterface(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, i
   private val nCommands = (blockWidth / 8) / bytesPerCmd
 
   val io = IO(new Bundle {
-    val missFifo = Flipped(new MissFifoPopIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, subBlockWidth))
+    val missFifo = Flipped(new MissFifoPopIO(nCores, nHalfMissCmds, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, blockWidth))
     val wbFifo = Flipped(new WbFifoPopIO(tagWidth, indexWidth, blockWidth))
     val updateLogic = Flipped(new MemInterfaceToUpdateIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockWidth, subBlockWidth))
     val memController = new CacheMemoryControllerIO(addressWidth, beatSize)
@@ -67,7 +67,8 @@ class MemoryInterface(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, i
   val memRDataReg = RegInit(VecInit(Seq.fill(blockWidth / (beatSize * 8))(0.U((beatSize * 8).W))))
   val totalBurstCount = RegInit(0.U(log2Up(blockWidth / (beatSize * 8)).W))
   val cmdBurstCount = RegInit(0.U(log2Up(beatSize).W))
-  val cmdCounter = RegInit(0.U((log2Up(nCommands)+1).W))
+  val cmdCounter = RegInit(0.U((log2Up(nCommands)+1).W)) // RAM command counter
+  val halfMissCmdCounter = RegInit(0.U((log2Up(nHalfMissCmds) + 1).W)) // Half of the miss command counter
 
   val reqIdx = WireDefault(0.U(indexWidth.W))
   val reqTag = WireDefault(0.U(tagWidth.W))
@@ -90,9 +91,9 @@ class MemoryInterface(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, i
   val wbFifoPop = WireDefault(false.B)
   val missFifoPop = WireDefault(false.B)
   val updateLogicValid = WireDefault(false.B)
+  val updateLogicValidCmd = WireDefault(false.B)
   val cacheRData = WireDefault(0.U(blockWidth.W))
   val cacheRespStatus = WireDefault(0.U(1.W))
-  val responseStatus = WireDefault(0.U(1.W))
 
   switch(stateReg) {
     is(sIdle) {
@@ -169,11 +170,17 @@ class MemoryInterface(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, i
     }
 
     is(sDoneRead) {
-      missFifoPop := true.B
-      updateLogicValid := true.B // NOTE: Response status can be different if for example memory was unable to perform a read
-      responseStatus := 1.U
-      stateReg := sIdle
-      totalBurstCount := 0.U
+      updateLogicValid := true.B
+
+      when(halfMissCmdCounter === io.missFifo.cmdCnt) {
+        halfMissCmdCounter := 0.U
+        missFifoPop := true.B
+        stateReg := sIdle
+        totalBurstCount := 0.U
+      } .otherwise {
+        updateLogicValidCmd := true.B
+        halfMissCmdCounter := halfMissCmdCounter + 1.U
+      }
     }
 
     is(sDoneWrite) {
@@ -187,14 +194,14 @@ class MemoryInterface(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, i
   io.missFifo.pop := missFifoPop
 
   io.updateLogic.valid := updateLogicValid
-  io.updateLogic.rw := io.missFifo.popEntry.rw
+  io.updateLogic.validCmd := updateLogicValidCmd
+  io.updateLogic.tag := io.missFifo.popEntry.tag
+  io.updateLogic.index := io.missFifo.popEntry.index
   io.updateLogic.wWay := io.missFifo.popEntry.replaceWay
   io.updateLogic.byteEn := io.missFifo.popEntry.byteEn
-  io.updateLogic.blockOffset := io.missFifo.popEntry.blockOffset
-  io.updateLogic.index := io.missFifo.popEntry.index
-  io.updateLogic.tag := io.missFifo.popEntry.tag
-  io.updateLogic.reqId := io.missFifo.popEntry.reqId
-  io.updateLogic.coreId := io.missFifo.popEntry.coreId
+  io.updateLogic.blockOffset := io.missFifo.cmds(halfMissCmdCounter).blockOffset
+  io.updateLogic.reqId := io.missFifo.cmds(halfMissCmdCounter).reqId
+  io.updateLogic.coreId := io.missFifo.cmds(halfMissCmdCounter).coreId
 
   for (i <- 0 until nSubBlocks) {
     io.updateLogic.memReadData(i) := memRDataRegAsUint((subBlockWidth - 1) + (i * subBlockWidth), i * subBlockWidth)

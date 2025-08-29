@@ -115,6 +115,7 @@ class SetAssociateCacheMemory(nWays: Int, nSets: Int, bytesPerBlock: Int, bytesP
       waysCacheLineMem(wayIdx)(wordIdx).io.writeData := wordwData
       waysCacheLineMem(wayIdx)(wordIdx).io.writeAddr := index
       waysCacheLineMem(wayIdx)(wordIdx).io.wrEn := wordwrEn
+      waysCacheLineMem(wayIdx)(wordIdx).io.stall := false.B
       // waysCacheLines(wayIdx)(wordIdx).io.wrMask := higherIO.dinMask // If adding support for byte masks
 
       waysData(wayIdx)(wordIdx) := waysCacheLineMem(wayIdx)(wordIdx).io.readData
@@ -125,6 +126,7 @@ class SetAssociateCacheMemory(nWays: Int, nSets: Int, bytesPerBlock: Int, bytesP
     waysTagMem(wayIdx).io.writeData := tag
     waysTagMem(wayIdx).io.writeAddr := index
     waysTagMem(wayIdx).io.wrEn := io.controller.replaceLine && (io.controller.replaceWay === wayIdx.asUInt)
+    waysTagMem(wayIdx).io.stall := false.B
 
     val tagReadData = waysTagMem(wayIdx).io.readData
     waysTags(wayIdx) := tagReadData

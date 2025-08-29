@@ -25,11 +25,13 @@ class LineAssignmentsArray(nWays: Int, nSets: Int, nCores: Int) extends Module()
   lineAssignments.io.readAddr := io.rSet
   lineAssignments.io.writeAddr := io.wrSet
   lineAssignments.io.writeData := io.wrLineAssign.asUInt
+  lineAssignments.io.stall := io.stall
 
   validLineAssignments.io.wrEn := io.wrEn
   validLineAssignments.io.readAddr := io.rSet
   validLineAssignments.io.writeAddr := io.wrSet
   validLineAssignments.io.writeData := io.wrValiAssign.asUInt
+  validLineAssignments.io.stall := io.stall
 
   // Break apart the read data into a VECs
   val rLineAssignments = VecInit(Seq.fill(nWays)(0.U(log2Up(nCores).W)))
@@ -49,11 +51,12 @@ class CoreContentionTable(nCores: Int) extends Module() {
     val schedCoreId = Input(UInt(log2Up(nCores).W))
     val setCritical = Input(Bool())
     val unsetCritical = Input(Bool())
-    val setContentionLimit = Input(UInt(CONTENTION_LIMIT_WIDTH.W))
+    val contentionLimit = Input(UInt(CONTENTION_LIMIT_WIDTH.W))
     val incrContention1 = Input(Valid(UInt(log2Up(nCores).W)))
     val incrContention2 = Input(Valid(UInt(log2Up(nCores).W)))
     val rLimits = Output(Vec(nCores, UInt(CONTENTION_LIMIT_WIDTH.W)))
     val rCritCores = Output(Vec(nCores, Bool()))
+    val freeRejectionQueue = Output(Bool())
   })
 
   // NOTE: There is no forwarding, if a core is set or unset as critical,
@@ -67,7 +70,7 @@ class CoreContentionTable(nCores: Int) extends Module() {
   for (coreTableIdx <- 0 until nCores) {
     when (io.setCritical && io.schedCoreId === coreTableIdx.U) {
       criticalCores(coreTableIdx) := true.B
-      contentionLimits(coreTableIdx) := io.setContentionLimit
+      contentionLimits(coreTableIdx) := io.contentionLimit
     } .elsewhen (io.unsetCritical && io.schedCoreId === coreTableIdx.U) {
       criticalCores(coreTableIdx) := false.B
       contentionLimits(coreTableIdx) := 0.U
@@ -86,8 +89,15 @@ class CoreContentionTable(nCores: Int) extends Module() {
     }
   }
 
+  // When a core is unset we empty the rejection queue
+  val freeRejQueue = WireDefault(false.B)
+  when (io.unsetCritical) {
+    freeRejQueue := criticalCores(io.schedCoreId) // Free the rejection queue if the request was critical
+  }
+
   io.rLimits := contentionLimits
   io.rCritCores := criticalCores
+  io.freeRejectionQueue := freeRejQueue
 }
 
 /**
@@ -133,7 +143,7 @@ class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolic
   coreTable.io.schedCoreId := io.scheduler.addr
   coreTable.io.setCritical := io.scheduler.cmd === SchedulerCmd.WR
   coreTable.io.unsetCritical := io.scheduler.cmd === SchedulerCmd.RD
-  coreTable.io.setContentionLimit := io.scheduler.wData
+  coreTable.io.contentionLimit := io.scheduler.wData
   io.scheduler.rData := 0.U
   coreTable.io.incrContention1 := contAlgorithm.io.updateCore
   coreTable.io.incrContention2 := contAlgorithm.io.updateCoreMim
@@ -151,6 +161,9 @@ class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolic
   io.control.replaceWay := contAlgorithm.io.replacementWay.bits
   io.control.isValid := contAlgorithm.io.replacementWay.valid
   io.control.replacementSet := VecInit(Seq.fill(nWays)(0.U(log2Up(nWays).W)))
+
+  io.control.popRejQueue.valid := coreTable.io.freeRejectionQueue
+  io.control.popRejQueue.bits := nCores.U // Free the entire rejection queue
 }
 
 object ContentionReplacementPolicy extends App {

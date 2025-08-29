@@ -18,7 +18,6 @@ class CoreRespDemux(nPorts: Int, dataWidth: Int, reqIdWidth: Int) extends Module
     io.resps(i).reqId.valid := false.B
     io.resps(i).reqId.bits := DontCare
     io.resps(i).rData := DontCare
-    io.resps(i).responseStatus := DontCare
 
     when(i.U === io.sel) {
       io.in <> io.resps(i)

@@ -64,7 +64,7 @@ class CacheMemToOcpBurstMasterAdapter(addrWidth: Int, dataWidth: Int, burstLen: 
     is(sWriteDelay) {
       mCmd := ocp.OcpCmd.WR
       mAddr := wAddrDelayReg
-      mDataByteEn := (math.pow(2, dataWidth / 8) - 1).toInt.U // TODO: For now the cache memory interface does not provide byte masks
+      mDataByteEn := (math.pow(2, dataWidth / 8) - 1).toInt.U
 
       when(io.ocpBurst.S.CmdAccept.asBool) {
         stateReg := sWriteBurst
@@ -82,7 +82,7 @@ class CacheMemToOcpBurstMasterAdapter(addrWidth: Int, dataWidth: Int, burstLen: 
       }
 
       wBurstCountReg := nextBurstCount
-      mDataByteEn := (math.pow(2, dataWidth / 8) - 1).toInt.U // TODO: For now the cache memory interface does not provide byte masks
+      mDataByteEn := (math.pow(2, dataWidth / 8) - 1).toInt.U
     }
 
     is(sWriteAccept) {

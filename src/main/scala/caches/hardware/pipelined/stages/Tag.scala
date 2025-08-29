@@ -6,6 +6,7 @@ import caches.hardware.util.{MemBlock, PipelineReg}
 
 class ValidMem(nWays: Int, nSets: Int) extends Module {
   val io = IO(new Bundle {
+    val stall = Input(Bool())
     val readIndex = Input(UInt(log2Up(nSets).W))
     val set = Input(Bool())
     val unset = Input(Bool())
@@ -29,6 +30,7 @@ class ValidMem(nWays: Int, nSets: Int) extends Module {
     validBits(wayIdx).io.readAddr := io.readIndex
     validBits(wayIdx).io.writeAddr := io.writeIndex
     validBits(wayIdx).io.writeData := writeData
+    validBits(wayIdx).io.stall := io.stall
     validBits(wayIdx).io.wrEn := wrEn && io.writeWay === wayIdx.U
 
     selValidBits(wayIdx) := validBits(wayIdx).io.readData // Read out all the valid bits
@@ -39,6 +41,7 @@ class ValidMem(nWays: Int, nSets: Int) extends Module {
 
 class DirtyRegisterFile (nWays: Int, nSets: Int) extends Module() {
   val io = IO(new Bundle {
+    val stall = Input(Bool())
     val readIndex = Input(UInt(log2Up(nSets).W))
     val writeIndex = Input(UInt(log2Up(nSets).W))
     val writeWay = Input(UInt(log2Up(nWays).W))
@@ -63,6 +66,7 @@ class DirtyRegisterFile (nWays: Int, nSets: Int) extends Module() {
     dirtyBits(wayIdx).io.readAddr := io.readIndex
     dirtyBits(wayIdx).io.writeAddr := io.writeIndex
     dirtyBits(wayIdx).io.writeData := writeData
+    dirtyBits(wayIdx).io.stall := io.stall
     dirtyBits(wayIdx).io.wrEn := wrEn && io.writeWay === wayIdx.U
 
     selDirtyBits(wayIdx) := dirtyBits(wayIdx).io.readData // Read out all the dirty bits
@@ -89,6 +93,8 @@ class Tag(nCores: Int, nSets: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, i
     val tag = new TagIO(nWays, nCores, reqIdWidth, tagWidth, indexWidth, blockOffWidth, subBlockWidth)
     val rep = Flipped(new RepIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockOffWidth, subBlockWidth))
     val update = Flipped(new TagUpdateIO(nWays, indexWidth, tagWidth))
+    val setValidLine = Flipped(new SetLineValidIO(nWays, indexWidth, tagWidth))
+    val invalidate = Flipped(new InvalidateLineIO(nWays = nWays, indexWidth = indexWidth))
     val stall = Input(Bool())
   })
 
@@ -105,37 +111,42 @@ class Tag(nCores: Int, nSets: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, i
     tagMem(wayIdx).io.writeData := io.update.tag
     tagMem(wayIdx).io.writeAddr := io.update.index
     tagMem(wayIdx).io.wrEn := io.update.refill && isUpdateWay
+    tagMem(wayIdx).io.stall := io.stall
 
     readTags(wayIdx) := tagMem(wayIdx).io.readData
   }
 
   validBitMem.io.readIndex := io.tag.readIndex
-  validBitMem.io.writeIndex := io.update.index
-  validBitMem.io.writeWay := io.update.way
+  validBitMem.io.writeIndex := Mux(io.update.refill, io.update.index, io.invalidate.index)
+  validBitMem.io.writeWay := Mux(io.update.refill, io.update.way, io.invalidate.way)
   validBitMem.io.set := io.update.refill
-  validBitMem.io.unset := io.update.invalidate
+  validBitMem.io.unset := io.invalidate.invalidate
+  validBitMem.io.stall := io.stall
 
   dirtyRegFile.io.readIndex := io.tag.readIndex
   dirtyRegFile.io.writeIndex := io.update.index
   dirtyRegFile.io.writeWay := io.update.way
   dirtyRegFile.io.refill := io.update.refill
   dirtyRegFile.io.update := io.update.update
+  dirtyRegFile.io.stall := io.stall
 
-  val validBitsForWay = validBitMem.io.rValid
-  val dirtyBitsForWay = dirtyRegFile.io.rDirtyBits
+  val validBitsForIndex = validBitMem.io.rValid
+  val dirtyBitsForIndex = dirtyRegFile.io.rDirtyBits
 
   // Compare tags and check if there is a hit and where
   val hits = Wire(Vec(nWays, Bool()))
   for (wayIdx <- 0 until nWays) {
-    hits(wayIdx) := validBitsForWay(wayIdx) && (io.tag.tag === readTags(wayIdx))
+    hits(wayIdx) := validBitsForIndex(wayIdx) && (io.tag.tag === readTags(wayIdx))
   }
 
   val hit = hits.reduce((x, y) => x || y)
   val hitWay = PriorityEncoder(hits)
 
-  // Check if the hit way is valid and if it is the same as the one being currently refilled
-  //  if so then turn this request into a miss
-  val isHitIntoEvictedLine = (io.update.invalidate || io.update.refill) && hit && (io.tag.index === io.update.index) && (hitWay === io.update.way)
+  // Check if a line has been either invalidated or has been set valid in the meantime
+  val isMissNowHit = io.setValidLine.tag === io.tag.tag && io.setValidLine.index === io.tag.index && io.setValidLine.refill && !hit
+  val isLineNowInvalid = io.invalidate.invalidate && hit && (io.invalidate.way === hitWay) && (io.invalidate.index === io.tag.index)
+  val isHit = !isLineNowInvalid && (isMissNowHit || hit)
+  val trueHitWay = Mux(isMissNowHit, io.setValidLine.way, hitWay)
 
   io.rep.coreId := PipelineReg(io.tag.coreId, 0.U, !io.stall)
   io.rep.reqValid := PipelineReg(io.tag.reqValid, false.B, !io.stall)
@@ -143,9 +154,9 @@ class Tag(nCores: Int, nSets: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, i
   io.rep.reqRw := PipelineReg(io.tag.reqRw, false.B, !io.stall)
   io.rep.wData := PipelineReg(io.tag.wData, 0.U, !io.stall)
   io.rep.byteEn := PipelineReg(io.tag.byteEn, 0.U, !io.stall)
-  io.rep.isHit := PipelineReg(Mux(isHitIntoEvictedLine, false.B, hit), false.B, !io.stall)
-  io.rep.hitWay := PipelineReg(hitWay, 0.U, !io.stall)
-  io.rep.dirtyBits := PipelineReg(dirtyBitsForWay, VecInit(Seq.fill(nWays)(false.B)), !io.stall)
+  io.rep.isHit := PipelineReg(isHit, false.B, !io.stall)
+  io.rep.hitWay := PipelineReg(trueHitWay, 0.U, !io.stall)
+  io.rep.dirtyBits := PipelineReg(dirtyBitsForIndex, VecInit(Seq.fill(nWays)(false.B)), !io.stall)
   io.rep.setTags := PipelineReg(readTags, VecInit(Seq.fill(nWays)(0.U(tagWidth.W))), !io.stall) // Need this to get the dirty tag later on
   io.rep.blockOffset := PipelineReg(io.tag.blockOffset, 0.U, !io.stall)
   io.rep.index := PipelineReg(io.tag.index, 0.U, !io.stall)

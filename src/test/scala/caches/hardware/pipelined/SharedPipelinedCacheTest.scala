@@ -2,26 +2,213 @@ package caches.hardware.pipelined
 
 import caches.hardware.reppol._
 import chisel3._
+import chisel3.util._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
 import scala.collection.mutable
 
+
 case class CacheRequest(
                          coreId: Int,
                          reqId: Int,
-                         addr: String,
                          rw: Boolean,
-                         expectedData: String,
-                         isExpectedMiss: Boolean = false,
-                         isExpectedWb: Boolean = false,
+                         tag: Int,
+                         index: Int,
+                         blockOffset: Int,
+                         byteOffset: Int = 0,
+                         rejected: Boolean = false,
+                         byteEn: Option[String] = None,
                          wData: Option[String] = None,
-                         okResponse: Boolean = true,
-                         responseCC: Int = 0,
-                         memoryEntryCC: Int = 0
+                         expectedData: Option[String] = None
                        )
 
-class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
+case class CacheResponse(
+                          receivedCC: Int,
+                          coreId: Int,
+                          reqId: Int,
+                          data: String
+                        )
+
+object Tests {
+  val requests1 = Array(
+    CacheRequest(coreId = 1, reqId = 0, tag = 0, index = 0, blockOffset = 0, rw = false, expectedData = Some("cafebabebabecafedeadbeefbeefdead")), // (tag = 0, idx = 0, blockOff = 0, way = 0)
+    CacheRequest(coreId = 1, reqId = 1, tag = 0, index = 0, blockOffset = 1, rw = false, expectedData = Some("deadbabebabedeadfeedfacefacefeed")), // (tag = 0, idx = 0, blockOff = 1, way = 0)
+    CacheRequest(coreId = 1, reqId = 2, tag = 0, index = 0, blockOffset = 2, rw = true, wData = Some("hd00dfeed0000000000000000"), byteEn = Some("b0000011000000000")), // (tag = 0, idx = 0, blockOff = 2, way = 0)
+    CacheRequest(coreId = 3, reqId = 3, tag = 3, index = 55, blockOffset = 0, rw = true, wData = Some("h000000000000000000000000deadba55"), byteEn = Some("b0000000000001111")),
+    CacheRequest(coreId = 3, reqId = 4, tag = 3, index = 55, blockOffset = 0, rw = true, wData = Some("h0000000000000000ba55d00d00000000"), byteEn = Some("b0000000011110000")),
+    CacheRequest(coreId = 3, reqId = 5, tag = 3, index = 55, blockOffset = 0, rw = true, wData = Some("h00000000f00df17e0000000000000000"), byteEn = Some("b0000111100000000")),
+    CacheRequest(coreId = 3, reqId = 6, tag = 3, index = 55, blockOffset = 0, rw = true, wData = Some("hb17ebabe0000000000000000deadba55"), byteEn = Some("b1111000000000000")),
+    CacheRequest(coreId = 3, reqId = 7, tag = 0, index = 2, blockOffset = 3, rw = false, expectedData = Some("6a8fdc4ede91ab230fabc9877c3a12ed")), // (tag = 0, idx = 2, blockOff = 3, way = 0)
+    CacheRequest(coreId = 2, reqId = 8, tag = 2, index = 0, blockOffset = 0, rw = false, expectedData = Some("013bb292b95895f88cde7faf55adaaba")), // (tag = 2, idx = 0, blockOff = 0, way = 1)
+    CacheRequest(coreId = 3, reqId = 9, tag = 3, index = 0, blockOffset = 3, rw = true, wData = Some("hbeefdead000000000000000000000000"), byteEn = Some("b0101000000000000")), // (tag = 3, idx = 0, blockOff = 3, way = 2)
+    CacheRequest(coreId = 0, reqId = 10, tag = 4, index = 0, blockOffset = 0, rw = false, expectedData = Some("7c7f2e45dab3dea3508d8aeec21e6aea")), // (tag = 4, idx = 0, blockOff = 0, way = 3)
+    CacheRequest(coreId = 1, reqId = 11, tag = 5, index = 0, blockOffset = 1, rw = false, expectedData = Some("cc5fd511c237a27e2451003dbc4d8025")), // (tag = 5, idx = 0, blockOff = 1, way = 4)
+    CacheRequest(coreId = 1, reqId = 12, tag = 3, index = 55, blockOffset = 2, rw = false, expectedData = Some("2fbcdc49bd5651eb531b4ef64e1393ed")),
+    CacheRequest(coreId = 2, reqId = 13, tag = 6, index = 0, blockOffset = 2, rw = false, expectedData = Some("b58d852edb0bf08973f52e36fcbf3fc4")), // (tag = 6, idx = 0, blockOff = 2, way = 5)
+    CacheRequest(coreId = 3, reqId = 14, tag = 3, index = 55, blockOffset = 0, rw = false, expectedData = Some("b17ebabef00df17eba55d00ddeadba55")),
+    CacheRequest(coreId = 3, reqId = 15, tag = 7, index = 0, blockOffset = 3, rw = false, expectedData = Some("ab59ff12bd819a95cf599088f0b54814")), // (tag = 7, idx = 0, blockOff = 3, way = 6)
+    CacheRequest(coreId = 0, reqId = 16, tag = 8, index = 0, blockOffset = 1, rw = false, expectedData = Some("094b46853d585cb5c0d488396f1c65fd")), // (tag = 8, idx = 0, blockOff = 1, way = 7)
+    CacheRequest(coreId = 1, reqId = 17, tag = 0, index = 0, blockOffset = 1, rw = false, expectedData = Some("deadbabebabedeadfeedfacefacefeed")), // (tag = 0, idx = 0, blockOff = 1, way = 0)
+    CacheRequest(coreId = 1, reqId = 18, tag = 3, index = 0, blockOffset = 3, rw = false, expectedData = Some("ddef31ad9e4ec895a20047db0a108d2d")), // (tag = 3, idx = 0, blockOff = 3, way = 1)
+    CacheRequest(coreId = 1, reqId = 19, tag = 9, index = 0, blockOffset = 0, rw = false, expectedData = Some("3e653a9dbf432147e4d0eef71a9d9897")), // (tag = 0, idx = 0, blockOff = 0, way = 2)
+    CacheRequest(coreId = 3, reqId = 20, tag = 3, index = 79, blockOffset = 2, rw = true, wData = Some("hfaceb00c0000000000000000"), byteEn = Some("b0000111100000000")), // (tag = 3, idx = 79, blockOff = 2, way = ???)
+    CacheRequest(coreId = 1, reqId = 21, tag = 10, index = 0, blockOffset = 2, rw = false, expectedData = Some("0cae4f56f5aad7083c53d5a9edc9e37c")), // (tag = 0, idx = 0, blockOff = 2, way = ???)
+    // Write to an existing line in the cache (HIT)
+    CacheRequest(coreId = 1, reqId = 22, tag = 0, index = 2, blockOffset = 0, rw = true, wData = Some("hd00dfeed"), byteEn = Some("b0000000000001111")), // (tag = 0, idx = 0, blockOff = 2, way = ???)
+    // MISS: WAY - 0, INDEX - 45, TAG - 2
+    CacheRequest(coreId = 3, reqId = 23, tag = 2, index = 45, blockOffset = 1, rw = true, wData = Some("hfaceb00c00000000"), byteEn = Some("b0000000011110000")), // (tag = 2, idx = 45, blockOff = 1, way = ???)
+    // MISS: WAY - 0, INDEX - 159, TAG - 5
+    CacheRequest(coreId = 2, reqId = 24, tag = 5, index = 159, blockOffset = 2, rw = true, wData = Some("hcafeface0000000000000000"), byteEn = Some("b0000111100000000")), // (tag = 5, idx = 159, blockOff = 1, way = ???)
+    // HIT: WAY - 1, INDEX - 0, TAG - 2
+    CacheRequest(coreId = 0, reqId = 25, tag = 2, index = 0, blockOffset = 1, rw = false, expectedData = Some("1338e010da28bd02c495ca7c6171db87")),
+    // MISS: WAY - 0, INDEX - 127, TAG - 8
+    CacheRequest(coreId = 0, reqId = 26, tag = 8, index = 127, blockOffset = 3, rw = true, wData = Some("hb00cface000000000000000000000000"), byteEn = Some("b1111000000000000")),
+    // MISS: WAY - 1, INDEX - 127, TAG - 5
+    CacheRequest(coreId = 0, reqId = 27, tag = 5, index = 127, blockOffset = 1, rw = true, wData = Some("hd15ea55500000000"), byteEn = Some("b0000000011110000")),
+    // MISS: WAY - 2, INDEX - 127, TAG - 7
+    CacheRequest(coreId = 3, reqId = 28, tag = 7, index = 127, blockOffset = 1, rw = false, expectedData = Some("68667763d4de48b2ec721696cf7b782f")),
+    // MISS: WAY - 3, INDEX - 127, TAG - 13
+    CacheRequest(coreId = 1, reqId = 29, tag = 13, index = 127, blockOffset = 3, rw = true, wData = Some("hfee1dead000000000000000000000000"), byteEn = Some("b1111000000000000")),
+    // MISS AND EVICT: WAY - 0, INDEX - 127, TAG - 11
+    CacheRequest(coreId = 0, reqId = 30, tag = 11, index = 127, blockOffset = 1, rw = true, wData = Some("hdeadfee100000000"), byteEn = Some("b0000000011110000")),
+    //MISS AND EVICT: WAY - 0, INDEX - 127, TAG - 11
+    CacheRequest(coreId = 0, reqId = 31, tag = 11, index = 127, blockOffset = 2, rw = false, expectedData = Some("a8f2ed21c6a55c1d9051b72d6422762a")),
+    CacheRequest(coreId = 0, reqId = 32, tag = 221, index = 62, blockOffset = 0, rw = false, expectedData = Some("1bc046d6a45fd8ac65676a660e8c3047")),
+    CacheRequest(coreId = 1, reqId = 33, tag = 221, index = 62, blockOffset = 0, rw = false, expectedData = Some("1bc046d6a45fd8ac65676a660e8c3047")),
+    CacheRequest(coreId = 2, reqId = 34, tag = 221, index = 62, blockOffset = 0, rw = false, expectedData = Some("1bc046d6a45fd8ac65676a660e8c3047")),
+    CacheRequest(coreId = 3, reqId = 35, tag = 221, index = 62, blockOffset = 0, rw = false, expectedData = Some("1bc046d6a45fd8ac65676a660e8c3047")),
+  )
+
+  val requests2 = Array(
+    CacheRequest(coreId = 1, reqId = 0, tag = 0, index = 0, blockOffset = 0, rw = false, expectedData = Some("cafebabebabecafedeadbeefbeefdead")), // Bring new line into the cache (put in way: 0, idx: 0)
+
+    CacheRequest(coreId = 1, reqId = 1, tag = 0, index = 4, blockOffset = 0, rw = false, expectedData = Some("8fb2741c9dea0137bc3f0e2a40cbde98")), // Bring new line into the cache (put in way: 0, idx: 4)
+
+    CacheRequest(coreId = 1, reqId = 2, tag = 1, index = 0, blockOffset = 0, rw = false, expectedData = Some("bbef1226751129196ede4c8a9dc4fbd4")), // Bring new line into the cache (put in way: 1, idx: 0)
+    CacheRequest(coreId = 3, reqId = 3, tag = 2, index = 0, blockOffset = 0, rw = false, expectedData = Some("013bb292b95895f88cde7faf55adaaba")), // Bring new line into the cache (put in way: 2, idx: 0)
+    CacheRequest(coreId = 1, reqId = 4, tag = 0, index = 0, blockOffset = 1, rw = false, expectedData = Some("deadbabebabedeadfeedfacefacefeed")), // (HIT)
+    CacheRequest(coreId = 1, reqId = 5, tag = 0, index = 0, blockOffset = 2, rw = true, wData = Some("hd00dfeed"), byteEn = Some("b0000000000001111")), // Write to an existing line in the cache (HIT)
+
+    CacheRequest(coreId = 1, reqId = 6, tag = 0, index = 4, blockOffset = 1, rw = false, expectedData = Some("ce28f9010fdabe34b93e1a7d7ac4d2f1")), // (HIT)
+
+    CacheRequest(coreId = 1, reqId = 7, tag = 1, index = 0, blockOffset = 3, rw = false, expectedData = Some("107709677fdfcc120da699175fad2fc1")), // (HIT)
+
+    CacheRequest(coreId = 1, reqId = 8, tag = 2, index = 4, blockOffset = 1, rw = false, expectedData = Some("a2cc291a987d1f7c4d0f31f40e755553")), // Bring new line into the cache (put in way: 1, idx: 4)
+
+    CacheRequest(coreId = 3, reqId = 9, tag = 3, index = 0, blockOffset = 2, rw = false, expectedData = Some("c70485594aeb67d9904d7f5fd0cbca8d")), // Bring new line into the cache (put in way: 3, idx: 0)
+
+    CacheRequest(coreId = 3, reqId = 10, tag = 3, index = 4, blockOffset = 3, rw = false, expectedData = Some("52c626535c92c204ebcdf992fdc70d3f")), // Bring new line into the cache (put in way: 2, idx: 4)
+    CacheRequest(coreId = 3, reqId = 11, tag = 1, index = 4, blockOffset = 3, rw = false, expectedData = Some("ba8c556a6162ff795bcfa1e8a6c78ad4")), // Bring new line into the cache (put in way: 3, idx: 4)
+
+    CacheRequest(coreId = 1, reqId = 12, tag = 0, index = 3, blockOffset = 2, rw = false, expectedData = Some("56789abcef01234593cd78aba1e2f8d0")), // Bring new line into the cache (put in way: 0, idx: 3)
+    CacheRequest(coreId = 2, reqId = 13, tag = 0, index = 2, blockOffset = 3, rw = false, expectedData = Some("6a8fdc4ede91ab230fabc9877c3a12ed")), // Bring new line into the cache (put in way: 0, idx: 2)
+
+    CacheRequest(coreId = 3, reqId = 14, tag = 4, index = 0, blockOffset = 1, rw = false, expectedData = Some("734ccecdbe11b44dae6eaf60cb218892")), // Bring new line into the cache (put in way: 4, idx: 0)
+
+    CacheRequest(coreId = 0, reqId = 15, tag = 4, index = 4, blockOffset = 3, rw = false, expectedData = Some("640df405821ff856a0436b31f624cd8b")), // (HIT)
+
+    CacheRequest(coreId = 3, reqId = 16, tag = 0, index = 0, blockOffset = 2, rw = false, expectedData = Some("fee1deaddeadfee1c00010ffd00dfeed")), // (HIT)
+    CacheRequest(coreId = 1, reqId = 17, tag = 5, index = 0, blockOffset = 1, rw = false, expectedData = Some("cc5fd511c237a27e2451003dbc4d8025")), // Bring new line into the cache (put in way: 5, idx: 0),
+
+    CacheRequest(coreId = 1, reqId = 18, tag = 1, index = 3, blockOffset = 1, rw = false, expectedData = Some("30464e5bf598385749afdfcfba3bae98")), // Bring new line into the cache (put in way: 1, idx: 3),
+
+    CacheRequest(coreId = 1, reqId = 19, tag = 5, index = 4, blockOffset = 3, rw = false, expectedData = Some("07b14887beaa396de0919c32e9127550")), // Bring new line into the cache (put in way: 4, idx: 4),
+
+    CacheRequest(coreId = 1, reqId = 20, tag = 6, index = 0, blockOffset = 0, rw = false, expectedData = Some("2888e103997223a9003bc584e091cc8a")), // Bring new line into the cache (put in way: 6, idx: 0),
+
+    CacheRequest(coreId = 3, reqId = 21, tag = 6, index = 4, blockOffset = 1, rw = false, expectedData = Some("3bc5171128c41fbfe21a727455ae40f9")), // Bring new line into the cache (put in way: 5, idx: 4),
+
+    CacheRequest(coreId = 3, reqId = 22, tag = 7, index = 0, blockOffset = 1, rw = false, expectedData = Some("040fd41d7771f0535a07ec451db97efb")), // Bring new line into the cache (put in way: 7, idx: 0),
+    CacheRequest(coreId = 0, reqId = 23, tag = 8, index = 0, blockOffset = 0, rw = false, expectedData = Some("39df6c998739192bae26debd84620423")), // Bring new line into the cache (put in way: 0, idx: 0),
+    CacheRequest(coreId = 2, reqId = 24, tag = 9, index = 0, blockOffset = 0, rw = false, expectedData = Some("3e653a9dbf432147e4d0eef71a9d9897")), // Bring new line into the cache (put in way: 1, idx: 0) reach contention limit for core 1,
+    CacheRequest(coreId = 0, reqId = 25, tag = 10, index = 0, blockOffset = 0, rw = false, expectedData = Some("af675aee062fe9dc7fcb9bda56a92dbc")), // Bring new line into the cache (put in way: 2, idx: 0),
+    CacheRequest(coreId = 2, reqId = 26, tag = 11, index = 0, blockOffset = 0, rw = false, expectedData = Some("03ca3d2c8469be21134a3cb1702b246e")), // Bring new line into the cache (put in way: 2, idx: 0),
+    CacheRequest(coreId = 1, reqId = 27, tag = 12, index = 0, blockOffset = 0, rw = false, expectedData = Some("56fc51c6be6e2e632bba17208a3b9cec")), // Bring new line into the cache (put in way: 0, idx: 0),
+    CacheRequest(coreId = 3, reqId = 28, tag = 13, index = 0, blockOffset = 0, rw = false, expectedData = Some("b97d19f32ca140ba54915eb145da4782")), // Bring new line into the cache (put in way: 1, idx: 0),
+    CacheRequest(coreId = 3, reqId = 29, tag = 14, index = 0, blockOffset = 0, rw = false, expectedData = Some("117e27b41fb7ac5b8ed5184c7f9453ae")), // Bring new line into the cache (put in way: 2, idx: 0),
+    CacheRequest(coreId = 3, reqId = 30, tag = 15, index = 0, blockOffset = 0, rw = false, expectedData = Some("dd27e4c14bf57c1ca196400c0e5d5ce7")), // Bring new line into the cache (put in way: 3, idx: 0),
+    CacheRequest(coreId = 2, reqId = 31, tag = 16, index = 0, blockOffset = 0, rw = false, expectedData = Some("40a13302ac635051b398eb9a4cec416c"), rejected = true), // Rejected response (once free, put in way: 4, idx: 0),
+  )
+
+  val requests3 = Array(
+    CacheRequest(coreId = 3, reqId = 0, tag = 8, index = 4, blockOffset = 0, rw = false, expectedData = Some("bf7ecefbef86e816b49f6740df6d0069")),
+    CacheRequest(coreId = 3, reqId = 1, tag = 0, index = 5, blockOffset = 2, rw = false, expectedData = Some("b7e1903f47db2c8efa81039b23a5f64e")),
+    CacheRequest(coreId = 3, reqId = 2, tag = 1, index = 3, blockOffset = 1, rw = false, expectedData = Some("30464e5bf598385749afdfcfba3bae98")),
+    CacheRequest(coreId = 0, reqId = 3, tag = 17, index = 0, blockOffset = 0, rw = false, expectedData = Some("d1f8fbeb63d88f19a2af35a0cd00f5ef")),
+    CacheRequest(coreId = 2, reqId = 4, tag = 0, index = 4, blockOffset = 2, rw = false, expectedData = Some("314a8f9cd7e40cb26f19de83a481b2dc")), // (HIT)
+  )
+
+  val requests4 = Array(
+    // Test sequential reads from different memory regions
+    CacheRequest(coreId = 0, reqId = 0, tag = 0, index = 0, blockOffset = 0, rw = false, expectedData = Some("cafebabebabecafedeadbeefbeefdead")), // Words 0-3: beefdead, deadbeef, babecafe, cafebabe
+    CacheRequest(coreId = 1, reqId = 1, tag = 0, index = 0, blockOffset = 1, rw = false, expectedData = Some("deadbabebabedeadfeedfacefacefeed")), // Words 4-7: facefeed, feedface, babedead, deadbabe
+    CacheRequest(coreId = 2, reqId = 2, tag = 0, index = 0, blockOffset = 2, rw = false, expectedData = Some("fee1deaddeadfee1c00010ff10ffc000")), // Words 8-11: 10ffc000, c00010ff, deadfee1, fee1dead
+    CacheRequest(coreId = 3, reqId = 3, tag = 0, index = 0, blockOffset = 3, rw = false, expectedData = Some("dead10cc10ccdeadd00d2bad2badd00d")), // Words 12-15: 2badd00d, d00d2bad, 10ccdead, dead10cc
+
+    // Test reads from mid-range addresses (around word 1000)
+    CacheRequest(coreId = 0, reqId = 4, tag = 1, index = 0, blockOffset = 0, rw = false, expectedData = Some("bbef1226751129196ede4c8a9dc4fbd4")), // Words 1000-1003 region
+    CacheRequest(coreId = 1, reqId = 5, tag = 1, index = 0, blockOffset = 1, rw = false, expectedData = Some("f8ab4690dd99254eb0eeda4a06a360bc")), // Words 1004-1007 region
+
+    // Test reads from higher addresses (around word 5000)
+    CacheRequest(coreId = 2, reqId = 6, tag = 5, index = 0, blockOffset = 0, rw = false, expectedData = Some("1172becdb246ca947b61e7da07672879")),
+    CacheRequest(coreId = 3, reqId = 7, tag = 5, index = 0, blockOffset = 1, rw = false, expectedData = Some("cc5fd511c237a27e2451003dbc4d8025")),
+
+    // Test interleaved reads and writes
+    CacheRequest(coreId = 0, reqId = 8, tag = 0, index = 1, blockOffset = 0, rw = false, expectedData = Some("bbadbeefbeefbbade0ddf00dbadc0ffe")), // Words 16-19
+    CacheRequest(coreId = 1, reqId = 9, tag = 0, index = 1, blockOffset = 1, rw = true, wData = Some("hdeadcafe00000000"), byteEn = Some("b0000000011110000")), // Partial write
+    CacheRequest(coreId = 2, reqId = 10, tag = 0, index = 1, blockOffset = 1, rw = false, expectedData = Some("0d15ea5eea5e0d15deadcafed00dcafe")), // Read back modified data
+
+    // Test cache conflicts and evictions with different tags, same index
+    CacheRequest(coreId = 3, reqId = 11, tag = 2, index = 1, blockOffset = 0, rw = false, expectedData = Some("5094fd4c8f779c01498c95738c2435e3")), // Force different tag, same index
+    CacheRequest(coreId = 0, reqId = 12, tag = 3, index = 1, blockOffset = 0, rw = false, expectedData = Some("30e2a17ee045d14ab58defac3308495e")), // Another different tag, same index
+    CacheRequest(coreId = 1, reqId = 13, tag = 4, index = 1, blockOffset = 0, rw = false, expectedData = Some("8c6cab16656b3baa17613c7518180499")), // Yet another different tag
+
+    // Test boundary conditions - end of memory regions
+    CacheRequest(coreId = 2, reqId = 14, tag = 10, index = 127, blockOffset = 0, rw = false, expectedData = Some("817b131959fd217505137e68dc457d74")), // High index
+    CacheRequest(coreId = 3, reqId = 15, tag = 10, index = 127, blockOffset = 3, rw = false, expectedData = Some("073645cb83479e5c4002236602d01f20")), // High index, high block offset
+
+    // Test mixed access patterns - read, write, read same location
+    CacheRequest(coreId = 0, reqId = 16, tag = 0, index = 2, blockOffset = 0, rw = false, expectedData = Some("beefcacecacebeeffeedfacefacefeed")), // Words 32-35
+    CacheRequest(coreId = 1, reqId = 17, tag = 0, index = 2, blockOffset = 0, rw = true, wData = Some("hcafebabe000000000000000000000000"), byteEn = Some("b1111000000000000")),
+    CacheRequest(coreId = 2, reqId = 18, tag = 0, index = 2, blockOffset = 0, rw = false, expectedData = Some("cafebabecacebeeffeedfacefacefeed")), // Read modified
+
+    // Test all cores accessing same cache line simultaneously
+    CacheRequest(coreId = 0, reqId = 19, tag = 0, index = 3, blockOffset = 0, rw = false, expectedData = Some("bd42f9c33e0b8a6ff71d24c989bc3e10")), // Words 36-39
+    CacheRequest(coreId = 1, reqId = 20, tag = 0, index = 3, blockOffset = 1, rw = false, expectedData = Some("d239c4fa41e0bc97caf3b2186f83d1a5")), // Words 40-43
+    CacheRequest(coreId = 2, reqId = 21, tag = 0, index = 3, blockOffset = 2, rw = false, expectedData = Some("56789abcef01234593cd78aba1e2f8d0")), // Words 44-47
+    CacheRequest(coreId = 3, reqId = 22, tag = 0, index = 3, blockOffset = 3, rw = false, expectedData = Some("e1d0a5f737ed5f90cbfae10310293abc")), // Words 48-51
+
+    // Test write-through behavior with byte enables
+    CacheRequest(coreId = 0, reqId = 23, tag = 0, index = 4, blockOffset = 0, rw = true, wData = Some("hdeadbeef0000000000000000"), byteEn = Some("b011000000000")), // 2-byte write
+    CacheRequest(coreId = 1, reqId = 24, tag = 0, index = 4, blockOffset = 0, rw = true, wData = Some("h000000000000000000000000cafebabe"), byteEn = Some("b0000000000001111")), // Different bytes
+    CacheRequest(coreId = 2, reqId = 25, tag = 0, index = 4, blockOffset = 0, rw = false, expectedData = Some("8fb2741c9adbe137bc3f0e2acafebabe")), // Read combined write
+
+    // Test large address space coverage
+    CacheRequest(coreId = 3, reqId = 26, tag = 15, index = 63, blockOffset = 2, rw = false, expectedData = Some("1e7ddd1da8695c92691e32ca820d4be5")), // Mid-range tag and index
+    CacheRequest(coreId = 0, reqId = 27, tag = 31, index = 31, blockOffset = 1, rw = false, expectedData = Some("db19b1635794a999575ef4b5da482462")), // Higher tag and index
+
+    // Test rapid sequential access pattern
+    CacheRequest(coreId = 1, reqId = 28, tag = 0, index = 10, blockOffset = 0, rw = false, expectedData = Some("feed123410badf00faceb00cc0ffeeee")), // Words around 640
+    CacheRequest(coreId = 1, reqId = 29, tag = 0, index = 10, blockOffset = 1, rw = false, expectedData = Some("fa11babebabefacec01dbabea11face1")),
+    CacheRequest(coreId = 1, reqId = 30, tag = 0, index = 10, blockOffset = 2, rw = false, expectedData = Some("ba5efacef005ba11d00dbabedeadfeed")),
+    CacheRequest(coreId = 1, reqId = 31, tag = 0, index = 10, blockOffset = 3, rw = false, expectedData = Some("c0dec0debaddbabedead1337bad15ead")),
+
+    // Test cross-core write conflicts
+    CacheRequest(coreId = 2, reqId = 32, tag = 0, index = 20, blockOffset = 0, rw = true, wData = Some("haaaaaaaa0000000000000000"), byteEn = Some("b0000011000000000")),
+    CacheRequest(coreId = 3, reqId = 33, tag = 0, index = 20, blockOffset = 0, rw = true, wData = Some("h00000000bbbbbbbb00000000"), byteEn = Some("b0000000011000000")),
+    CacheRequest(coreId = 0, reqId = 34, tag = 0, index = 20, blockOffset = 0, rw = false, expectedData = Some("aaaaaaaabbbbbbbb0000000000000000")), // Read combined
+
+    // Final stress test with high-frequency mixed operations
+    CacheRequest(coreId = 1, reqId = 35, tag = 100, index = 100, blockOffset = 0, rw = false, expectedData = Some("7bdce363af7a7d087b11f4d10c7df004")), // High addresses
+    CacheRequest(coreId = 2, reqId = 36, tag = 100, index = 100, blockOffset = 1, rw = true, wData = Some("hffffffff00000000"), byteEn = Some("b0000000011110000")),
+    CacheRequest(coreId = 3, reqId = 37, tag = 100, index = 100, blockOffset = 2, rw = false, expectedData = Some("35d4c8b68346564ff6448cbc036d040b")),
+    CacheRequest(coreId = 0, reqId = 38, tag = 100, index = 100, blockOffset = 3, rw = true, wData = Some("h000000000000000012345678"), byteEn = Some("b0000000000001111")),
+    CacheRequest(coreId = 1, reqId = 39, tag = 100, index = 100, blockOffset = 3, rw = false, expectedData = Some("21c7660216f71ee6e3f0f7c2b1feb075")) // Read final state
+  )
+}
+
+class SharedPipelinedCacheAltTest extends AnyFlatSpec with ChiselScalatestTester {
   def setCoreAsCritical(dut: SharedPipelinedCacheTestTop, coreID: Int, contentionLimit: Int): Unit = {
     dut.io.scheduler.cmd.poke(SchedulerCmd.WR)
     dut.io.scheduler.addr.poke(coreID.U)
@@ -46,110 +233,114 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     dut.io.scheduler.addr.poke(0.U)
   }
 
+  def expectCacheResponse(dut: SharedPipelinedCacheTestTop, coreId: Int, reqId: Int, expectedData: String): Unit = {
+    dut.io.requests.cores(coreId).resp.reqId.valid.expect(true.B, s"Did not receive a response for request: $reqId.")
+    dut.io.requests.cores(coreId).resp.reqId.bits.expect(reqId.U, s"Did not receive a response for request: $reqId.")
+    dut.io.requests.cores(coreId).resp.rData.expect(expectedData.U, s"Did not receive correct data for a request: $reqId.")
+  }
+
   def assertAccesses(
                       dut: SharedPipelinedCacheTestTop,
-                      instructions: Array[CacheRequest],
-                      hitLatency: Int,
-                      fullMissLatency: Int,
-                      stalledMissLatency: Int,
-                      memAccessLatency: Int,
-                      entryToWbLatency: Int,
-                      printInfo: Boolean = false
+                      nCores: Int,
+                      requests: Array[CacheRequest],
+                      indexWidth: Int,
+                      blockOffsetWidth: Int,
+                      byteOffsetWidth: Int,
+                      maxCCs: Int,
+                      printResults: Boolean = false
                     ): Unit = {
-    var currentCC = 0
-    var instructionIdx = 0
-    var done = false
-    var lastInstrIssued = false
+    val responses = mutable.Set[CacheResponse]()
+    var previousRequestCore: Option[Int] = None
+    var reqIdx = 0
 
-    var issuedRequests = mutable.Set[CacheRequest]()
+    for (currentCC <- 0 until maxCCs) {
 
-    while (!done) {
-      val currReq = instructions(instructionIdx)
-
-      val coreAlreadyHasPendingReq = issuedRequests.exists(req => req.coreId === currReq.coreId)
-      val firstExpectedResponse = if (issuedRequests.nonEmpty) Some(issuedRequests.minBy(req => req.responseCC)) else None
-
-      // Check if we need to expect a request in the current CC
-      if (firstExpectedResponse.isDefined) {
-        val firstExpectedResponseValue = firstExpectedResponse.get
-
-        if (firstExpectedResponseValue.responseCC === currentCC) {
-          expectCacheResponse(dut, coreId = firstExpectedResponseValue.coreId, reqId = firstExpectedResponseValue.reqId, expectedData = firstExpectedResponseValue.expectedData, rw = firstExpectedResponseValue.rw, okResponse = firstExpectedResponseValue.okResponse)
-
-          // Remove the request after we have received the response
-          issuedRequests.remove(firstExpectedResponseValue)
-          if (printInfo) println(s"Received response for request ${firstExpectedResponseValue.reqId} for core ${firstExpectedResponseValue.coreId} at CC: $currentCC.")
-        }
+      // Need to unset the request signals for the previous request
+      if (previousRequestCore.isDefined) {
+        val coreIdx = previousRequestCore.get
+        dut.io.requests.cores(coreIdx).req.reqId.valid.poke(false.B)
+        dut.io.requests.cores(coreIdx).req.reqId.bits.poke(0.U)
+        dut.io.requests.cores(coreIdx).req.addr.poke(0.U)
+        dut.io.requests.cores(coreIdx).req.rw.poke(false.B)
+        dut.io.requests.cores(coreIdx).req.wData.poke(0.U)
       }
 
-      val issueReq = !coreAlreadyHasPendingReq && !lastInstrIssued
+      if (reqIdx < requests.length) {
+        val req = requests(reqIdx)
 
-      def updateRequestsUponWB(requests: mutable.Set[CacheRequest], memAccessLatency: Int, wbEntryCC: Int): mutable.Set[CacheRequest] = {
-        // Find all misses after the WB and add the WB latency to them
-        requests.map(req => if (req.memoryEntryCC > wbEntryCC) req.copy(responseCC = req.responseCC + memAccessLatency) else req)
-      }
+        // Check if the cache is ready to accept a request
+        if (dut.io.requests.cores(req.coreId).req.reqId.ready.peekBoolean()) {
+          val addr = req.tag << (indexWidth + blockOffsetWidth + byteOffsetWidth) |
+            req.index << (blockOffsetWidth + byteOffsetWidth) |
+            req.blockOffset << byteOffsetWidth |
+            req.byteOffset
 
-      // Check if the current request can be issued: the corresponding core has no pending requests
-      if (issueReq) {
-        performCacheRequest(dut, coreId = currReq.coreId, reqId = currReq.reqId, addr = currReq.addr, rw = currReq.rw, wData = currReq.wData)
+          println(s"Issued request at CC $currentCC: Core: ${req.coreId}, ReqId: ${req.reqId}, Addr: ${addr.toHexString}, RW: ${req.rw}, WData: ${req.wData.getOrElse("None")}, ByteEn: ${req.byteEn.getOrElse((math.pow(2, dut.subBlockDataWidth / 8).toInt - 1).toBinaryString)}")
 
-        // If we issue a request we add the request to the issuedRequest queue and compute it's expected response time
-        // If it is a miss the delay will depend on other previous misses
-        var respCC: Int = (currReq.isExpectedWb, currReq.isExpectedMiss, issuedRequests.count(req => req.isExpectedMiss) > 0) match {
-          case (true, true, true) => issuedRequests.filter(req => req.isExpectedMiss).maxBy(req => req.responseCC).responseCC + stalledMissLatency + memAccessLatency // If Miss under a miss causes a WB
-          case (false, true, true) => issuedRequests.filter(req => req.isExpectedMiss).maxBy(req => req.responseCC).responseCC + stalledMissLatency // If Miss under a Miss
-          case (false, true, false) => currentCC + fullMissLatency // If first miss
-          case (_, false, _) => currentCC + hitLatency // If hit
-          case (_, _, _) => 0
+          performCacheRequest(dut, coreId = req.coreId, reqId = req.reqId, addr = addr, rw = req.rw, wData = req.wData, byteEn = req.byteEn)
+          previousRequestCore = Some(req.coreId)
+
+          reqIdx += 1
+        } else {
+          previousRequestCore = None
         }
-
-        // If there is a request already issued with the same response CC, we must delay the current
-        // requests response CC by one cycle, since the WB will stall any hit request
-        val matchingRequest = issuedRequests.find(req => req.responseCC === respCC)
-        if (matchingRequest.isDefined) {
-          respCC += 1
-        }
-
-        if (currReq.isExpectedWb) {
-          issuedRequests = updateRequestsUponWB(issuedRequests, memAccessLatency = memAccessLatency, wbEntryCC = currentCC + entryToWbLatency)
-        }
-
-        if (printInfo) println(s"Pushed request ${currReq.reqId} with expected response CC: $respCC for core ${currReq.coreId}.")
-        issuedRequests.add(currReq.copy(responseCC = respCC, memoryEntryCC = respCC - memAccessLatency))
-
-        if (instructionIdx === instructions.length - 1) {
-          lastInstrIssued = true
-        }
-
-        if (instructionIdx < instructions.length - 1) {
-          instructionIdx = instructionIdx + 1
-        }
-      }
-
-      // If we did not issue a request, and we still have pending requests we step to the first expected response
-      val clockSteps = (issueReq, firstExpectedResponse.isDefined) match {
-        case (false, true) => firstExpectedResponse.get.responseCC - currentCC
-        case (_, _) => 0
-      }
-
-      dut.clock.step(clockSteps)
-
-      // Either move on to issuing a new request or step to the CC of the first expected response
-      currentCC = if (!issueReq && firstExpectedResponse.isDefined) {
-        firstExpectedResponse.get.responseCC
       } else {
-        currentCC + 1
+        previousRequestCore = None
       }
 
-      if (printInfo) println()
+      val response = checkForResponse(dut, currentCC, nCores)
 
-      if (instructionIdx === (instructions.length - 1) && issuedRequests.isEmpty) {
-        done = true
+      if (response.isDefined) {
+        responses.add(response.get)
       }
+
+      dut.clock.step(1)
+    }
+
+    if (printResults) {
+      println("")
+      val sortedResponse = responses.toSeq.sortBy(req => req.receivedCC)
+      println(s"Received ${sortedResponse.size} responses in total.")
+      for (resp <- sortedResponse) {
+        println(s"Response: CC: ${resp.receivedCC}, Core: ${resp.coreId}, ReqId: ${resp.reqId}, Data: ${resp.data}")
+      }
+    }
+
+    // Assert the number of responses matches expected number of responses
+    val requestsWithExpectedResponse = requests.filter(req => !req.rw && !req.rejected)
+
+    // Assert the received data
+    for (req <- requestsWithExpectedResponse) {
+      val response = responses.find(resp => resp.coreId == req.coreId && resp.reqId == req.reqId)
+
+      assert(response.isDefined, s"Did not receive a response for request: ${req.reqId} from core: ${req.coreId}.")
+      assert(response.get.data == req.expectedData.get, s"Received data: ${response.get.data} does not match expected data: ${req.expectedData.get} for request: ${req.reqId} from core: ${req.coreId}.")
+    }
+
+    if (printResults) {
+      println("")
     }
   }
 
-  def performCacheRequest(dut: SharedPipelinedCacheTestTop, coreId: Int, reqId: Int, addr: String, rw: Boolean, wData: Option[String] = None, byteEn: Option[String] = None): Unit = {
+  def checkForResponse(dut: SharedPipelinedCacheTestTop, clockCycle: Int, nCores: Int): Option[CacheResponse] = {
+    for (i <- 0 until nCores) {
+      if (dut.io.requests.cores(i).resp.reqId.valid.peek().litToBoolean) {
+        val reqId = dut.io.requests.cores(i).resp.reqId.bits.peek().litValue.toInt
+        val data = dut.io.requests.cores(i).resp.rData.peek().litValue.toString(16).reverse.padTo(dut.subBlockDataWidth / 4, '0').reverse
+
+        return Some(CacheResponse(
+          receivedCC = clockCycle,
+          coreId = i,
+          reqId = reqId,
+          data = data
+        ))
+      }
+    }
+
+    None
+  }
+
+  def performCacheRequest(dut: SharedPipelinedCacheTestTop, coreId: Int, reqId: Int, addr: Int, rw: Boolean, wData: Option[String] = None, byteEn: Option[String] = None): Unit = {
     // Expect the cache to be ready to accept a request
     dut.io.requests.cores(coreId).req.reqId.ready.expect(true.B)
 
@@ -171,38 +362,26 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
 
     dut.io.requests.cores(coreId).req.wData.poke(wDataValue)
     dut.io.requests.cores(coreId).req.byteEn.poke(byteEnValue)
-
-    // TODO: Extend this function to handle the case when the arbiter is not ready to accept the request
-    dut.clock.step(1)
-
-    dut.io.requests.cores(coreId).req.reqId.valid.poke(false.B)
-    dut.io.requests.cores(coreId).req.reqId.bits.poke(0.U)
-    dut.io.requests.cores(coreId).req.addr.poke(0.U)
-    dut.io.requests.cores(coreId).req.rw.poke(false.B)
-    dut.io.requests.cores(coreId).req.wData.poke(0.U)
   }
 
-  def expectCacheResponse(dut: SharedPipelinedCacheTestTop, coreId: Int, reqId: Int, expectedData: String, rw: Boolean = false, okResponse: Boolean = true): Unit = {
-    if(!rw) dut.io.requests.cores(coreId).resp.reqId.valid.expect(true.B, s"Did not receive a response for request: $reqId.")
-    dut.io.requests.cores(coreId).resp.reqId.bits.expect(reqId.U, s"Did not receive a response for request: $reqId.")
-    dut.io.requests.cores(coreId).resp.rData.expect(expectedData.U, s"Did not receive correct data for a request: $reqId.")
-    dut.io.requests.cores(coreId).resp.responseStatus.expect(okResponse.asBool, s"Did receive correct response for a request: $reqId.")
-  }
-
-  "SharedPipelinedCache" should "work with lru replacement policy and 8 ways and 4 sets" in {
-    val sizeInBytes = 512
+  "SharedPipelinedCache" should "process pipelined requests for 8 ways, 128 sets, and plru policy configuration" in {
+    val sizeInBytes = 65536 // 64 KiB
     val nCores = 4
     val nWays = 8
-    val addressWidth = 16
-    val reqIdWidth = 6
-    val bytesPerBlock = 16
-    val bytesPerSubBlock = 4
+    val addressWidth = 25
+    val reqIdWidth = 16
+    val bytesPerBlock = 64
+    val bytesPerSubBlock = 16
     val nSets = sizeInBytes / (nWays * bytesPerBlock)
     val l2RepPolicy = () => new BitPlruReplacementPolicy(nWays, nSets, nCores)
     val memFile = "./hex/test_mem_32w.hex"
 
-    val fullMissLatency = 11
-    val hitLatency = 4
+    val memBeatSize = 4
+    val memBurstLen = 4
+
+    val byteOffsetWidth = log2Up(bytesPerSubBlock)
+    val blockOffsetWidth = log2Up(bytesPerBlock / bytesPerSubBlock)
+    val indexWidth = log2Up(nSets)
 
     test(new SharedPipelinedCacheTestTop(
       sizeInBytes = sizeInBytes,
@@ -212,120 +391,8 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       addressWidth = addressWidth,
       bytesPerBlock = bytesPerBlock,
       bytesPerSubBlock = bytesPerSubBlock,
-      memBeatSize = bytesPerSubBlock,
-      memBurstLen = bytesPerBlock / bytesPerSubBlock,
-      l2RepPolicy,
-      Some(memFile)
-    )).withAnnotations(Seq(WriteVcdAnnotation, WriteFstAnnotation)) { dut =>
-      // Default inputs
-      for (i <- 0 until nCores) {
-        dut.io.requests.cores(i).req.reqId.valid.poke(false.B)
-        dut.io.requests.cores(i).req.reqId.bits.poke(0.U)
-        dut.io.requests.cores(i).req.addr.poke(0.U)
-        dut.io.requests.cores(i).req.rw.poke(false.B)
-        dut.io.requests.cores(i).req.wData.poke(0.U)
-      }
-
-      dut.io.scheduler.cmd.poke(SchedulerCmd.NULL)
-      dut.io.scheduler.addr.poke(0.U)
-
-      dut.clock.step(5)
-
-      // NOTE:
-      //  addr is assumed to be byte addressable
-      //  first two bits in addr are for byte offset
-      //  second two bits in addr are for block offset
-      //  third two bits in addr are for index
-      //  remaining bits are for the tag
-
-      // Access data that is not yet in the cache (put in way: 0)
-      performCacheRequest(dut, coreId = 1, reqId = 0, addr = "b000000000", rw = false)
-      dut.clock.step(fullMissLatency - 1) // Pipeline delay due to cache miss
-      expectCacheResponse(dut, coreId = 1, reqId = 0, expectedData = "hbeefdead")
-
-      // Access data that is already in the cache
-      performCacheRequest(dut, coreId = 1, reqId = 1, addr = "b000000100", rw = false)
-      dut.clock.step(hitLatency - 1)
-      expectCacheResponse(dut, coreId = 1, reqId = 1, expectedData = "hdeadbeef")
-
-      // Write to an existing line in the cache
-      performCacheRequest(dut, coreId = 1, reqId = 2, addr = "b000001000", rw = true, wData = Some("hd00dfeed"), byteEn = Some("b1010"))
-      dut.clock.step(hitLatency - 1)
-//      expectCacheResponse(dut, coreId = 1, reqId = 2, expectedData = "hbabecafe")
-
-      // Bring in another line into the cache (put in way: 1)
-      performCacheRequest(dut, coreId = 3, reqId = 3, addr = "b001001100", rw = false)
-      dut.clock.step(fullMissLatency - 1)
-      expectCacheResponse(dut, coreId = 3, reqId = 3, expectedData = "hbbadbeef")
-
-      // Bring in another line into the cache (put in way: 2)
-      performCacheRequest(dut, coreId = 2, reqId = 4, addr = "b010000000", rw = false)
-      dut.clock.step(fullMissLatency - 1)
-      expectCacheResponse(dut, coreId = 2, reqId = 4, expectedData = "hfacefeed")
-
-      // Bring in another line into the cache (put in way: 3) and write some data to it too
-      performCacheRequest(dut, coreId = 3, reqId = 5, addr = "b011001100", rw = true, wData = Some("hbeefdead"))
-      dut.clock.step(fullMissLatency - 1)
-//      expectCacheResponse(dut, coreId = 3, reqId = 5, expectedData = "hbd42f9c3")
-
-      // Bring in another line into the cache (put in way: 4)
-      performCacheRequest(dut, coreId = 0, reqId = 6, addr = "b100000000", rw = false)
-      dut.clock.step(fullMissLatency - 1)
-      expectCacheResponse(dut, coreId = 0, reqId = 6, expectedData = "h40cbde98")
-
-      // Bring in another line into the cache (put in way: 5)
-      performCacheRequest(dut, coreId = 1, reqId = 7, addr = "b101000100", rw = false)
-      dut.clock.step(fullMissLatency - 1)
-      expectCacheResponse(dut, coreId = 1, reqId = 7, expectedData = "haf10c5be")
-
-      // Bring in another line into the cache (put in way: 6)
-      performCacheRequest(dut, coreId = 2, reqId = 8, addr = "b110001000", rw = false)
-      dut.clock.step(fullMissLatency - 1)
-      expectCacheResponse(dut, coreId = 2, reqId = 8, expectedData = "hace04f29")
-
-      // Bring in another line into the cache (put in way: 7)
-      performCacheRequest(dut, coreId = 3, reqId = 9, addr = "b111001100", rw = false)
-      dut.clock.step(fullMissLatency - 1)
-      expectCacheResponse(dut, coreId = 3, reqId = 9, expectedData = "hf01c27ae")
-
-      // Bring in the first cache line that will result in eviction of way 0 (put in way: 0)
-      performCacheRequest(dut, coreId = 0, reqId = 10, addr = "b1000000100", rw = false)
-      dut.clock.step(fullMissLatency - 1)
-      expectCacheResponse(dut, coreId = 0, reqId = 10, expectedData = "h49e1af73")
-
-      // Try to refetch the evicted cache and check if the written data was written to main memory
-      // (put in way: 1)
-      performCacheRequest(dut, coreId = 1, reqId = 11, addr = "b000001000", rw = false)
-      dut.clock.step(15) // Since a write back starts at the same time as the request we have to wait for a wb before we can fetch the line back
-      expectCacheResponse(dut, coreId = 1, reqId = 11, expectedData = "hd00dfeed")
-    }
-  }
-
-  "SharedPipelinedCache" should "work with lru replacement policy and 4 ways 256 sets" in {
-    val sizeInBytes = 32768
-    val nCores = 4
-    val nWays = 4
-    val addressWidth = 16
-    val reqIdWidth = 6
-    val bytesPerBlock = 32
-    val bytesPerSubBlock = 8
-    val nSets = sizeInBytes / (nWays * bytesPerBlock)
-    val l2RepPolicy = () => new BitPlruReplacementPolicy(nWays, nSets, nCores)
-    val memFile = "./hex/test_mem_32w.hex"
-
-    val fullMissLatency = 11
-    val hitLatency = 4
-
-    test(new SharedPipelinedCacheTestTop(
-      sizeInBytes = sizeInBytes,
-      nWays = nWays,
-      nCores = nCores,
-      reqIdWidth = reqIdWidth,
-      addressWidth = addressWidth,
-      bytesPerBlock = bytesPerBlock,
-      bytesPerSubBlock = bytesPerSubBlock,
-      memBeatSize = bytesPerSubBlock,
-      memBurstLen = bytesPerBlock / bytesPerSubBlock,
+      memBeatSize = memBeatSize,
+      memBurstLen = memBurstLen,
       l2RepPolicy,
       Some(memFile)
     )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
@@ -337,97 +404,45 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
         dut.io.requests.cores(i).req.rw.poke(false.B)
         dut.io.requests.cores(i).req.wData.poke(0.U)
       }
-
       dut.io.scheduler.cmd.poke(SchedulerCmd.NULL)
       dut.io.scheduler.addr.poke(0.U)
 
       dut.clock.step(5)
 
-      // NOTE:
-      //  addr is assumed to be byte addressable
-      //  first two bits in addr are for byte offset
-      //  second two bits in addr are for block offset
-      //  third three bits in addr are for index
-      //  remaining bits are for the tag
-
-      // MISS: WAY - 0, INDEX - 0, TAG - 0
-      performCacheRequest(dut, coreId = 1, reqId = 0, addr = "b000000000000", rw = false)
-      dut.clock.step(fullMissLatency - 1) // Pipeline delay due to cache miss
-      expectCacheResponse(dut, coreId = 1, reqId = 0, expectedData = "hbeefdead")
-
-      // MISS: WAY - 0, INDEX - 79, TAG - 3
-      performCacheRequest(dut, coreId = 3, reqId = 1, addr = "b11010011111100", rw = true, wData = Some("hfaceb00c"))
-//      dut.clock.step(fullMissLatency - 1)
-//      expectCacheResponse(dut, coreId = 3, reqId = 9, expectedData = "hf01c27ae")
-
-      // Access data that is already in the cache (HIT)
-      performCacheRequest(dut, coreId = 1, reqId = 2, addr = "b00000000000100", rw = false)
-//      dut.clock.step(hitLatency - 1)
-//      expectCacheResponse(dut, coreId = 1, reqId = 1, expectedData = "hdeadbeef")
-
-      // Write to an existing line in the cache (HIT)
-      performCacheRequest(dut, coreId = 1, reqId = 3, addr = "b000000001000", rw = true, wData = Some("hd00dfeed"))
-//      dut.clock.step(hitLatency - 1)
-//      expectCacheResponse(dut, coreId = 1, reqId = 2, expectedData = "hbabecafe")
-
-      // MISS: WAY - 0, INDEX - 45, TAG - 2
-      performCacheRequest(dut, coreId = 3, reqId = 4, addr = "b10001011010100", rw = true, wData = Some("hfaceb00c"))
-//      dut.clock.step(fullMissLatency - 1)
-
-      // MISS: WAY - 0, INDEX - 159, TAG - 5
-      performCacheRequest(dut, coreId = 2, reqId = 5, addr = "b101100111111000", rw = true, wData = Some("hcafeface"))
-      dut.clock.step(fullMissLatency)
-
-      // MISS: WAY - 0, INDEX - 255, TAG - 8
-      performCacheRequest(dut, coreId = 0, reqId = 6, addr = "b1000111111111100", rw = true, wData = Some("hb00cface"))
-//      dut.clock.step(fullMissLatency - 1)
-
-      // MISS: WAY - 1, INDEX - 255, TAG - 5
-      performCacheRequest(dut, coreId = 2, reqId = 7, addr = "b101111111110100", rw = true, wData = Some("hd15ea555"))
-//      dut.clock.step(fullMissLatency - 1)
-
-      // MISS: WAY - 2, INDEX - 255, TAG - 7
-      performCacheRequest(dut, coreId = 3, reqId = 8, addr = "b101111111110100", rw = false)
-      dut.clock.step(fullMissLatency)
-
-      // MISS: WAY - 3, INDEX - 255, TAG - 13
-      performCacheRequest(dut, coreId = 1, reqId = 9, addr = "b1101111111111100", rw = true, wData = Some("hfee1dead"))
-
-      dut.clock.step(fullMissLatency)
-
-      // MISS AND EVICT: WAY - 0, INDEX - 255, TAG - 11
-      performCacheRequest(dut, coreId = 0, reqId = 10, addr = "b1011111111110100", rw = true, wData = Some("hdeadfee1"))
-
-      dut.clock.step(40)
-
-      // MISS AND EVICT: WAY - 0, INDEX - 255, TAG - 11
-      performCacheRequest(dut, coreId = 0, reqId = 11, addr = "b1011111111111000", rw = false)
-      dut.clock.step(5)
-
-//      performCacheRequest(dut, coreId = 3, reqId = 7, addr = "b101 11111111 0100", rw = true, wData = Some("hb00cface"))
+      assertAccesses(
+        dut,
+        nCores,
+        Tests.requests1,
+        indexWidth,
+        blockOffsetWidth,
+        byteOffsetWidth,
+        550,
+        printResults = true
+      )
     }
   }
 
-  "SharedPipelinedCache" should "work with contention replacement policy and 8 ways with pipelined requests" in {
-    val sizeInBytes = 512
+  "SharedPipelinedCache" should "process pipelined requests for 8 ways, 128 sets, and contention policy configuration" in {
+    val sizeInBytes = 65536 // 64 KiB
     val nCores = 4
     val nWays = 8
+    val addressWidth = 25
     val reqIdWidth = 16
-    val addressWidth = 16
-    val bytesPerBlock = 16
-    val bytesPerSubBlock = 4
+    val bytesPerBlock = 64
+    val bytesPerSubBlock = 16
     val nSets = sizeInBytes / (nWays * bytesPerBlock)
     val basePolicy = () => new BitPlruReplacementPolicy(nWays, nSets, nCores)
     val l2RepPolicy = () => new ContentionReplacementPolicy(nWays, nSets, nCores, basePolicy)
     val memFile = "./hex/test_mem_32w.hex"
 
-    val fullMissLatency = 11
-    val stalledMissLatency = 8
-    val hitLatency = 4
-    val memAccessLatency = 8
-    val entryToWbLatency = 4
+    val printResults = true
 
-    val printInfo = true
+    val memBeatSize = 4
+    val memBurstLen = 4
+
+    val byteOffsetWidth = log2Up(bytesPerSubBlock)
+    val blockOffsetWidth = log2Up(bytesPerBlock / bytesPerSubBlock)
+    val indexWidth = log2Up(nSets)
 
     test(new SharedPipelinedCacheTestTop(
       sizeInBytes = sizeInBytes,
@@ -437,8 +452,8 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       addressWidth = addressWidth,
       bytesPerBlock = bytesPerBlock,
       bytesPerSubBlock = bytesPerSubBlock,
-      memBeatSize = bytesPerSubBlock,
-      memBurstLen = bytesPerBlock / bytesPerSubBlock,
+      memBeatSize = memBeatSize,
+      memBurstLen = memBurstLen,
       l2RepPolicy,
       Some(memFile)
     )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
@@ -450,78 +465,93 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
         dut.io.requests.cores(i).req.rw.poke(false.B)
         dut.io.requests.cores(i).req.wData.poke(0.U)
       }
-
       dut.io.scheduler.cmd.poke(SchedulerCmd.NULL)
       dut.io.scheduler.addr.poke(0.U)
       dut.io.scheduler.wData.poke(0.U)
 
       dut.clock.step(5)
 
+      // Set the second core as critical
       setCoreAsCritical(dut, coreID = 1, contentionLimit = 2)
 
       dut.clock.step(1)
 
+      // Set the fourth core as critical
       setCoreAsCritical(dut, coreID = 3, contentionLimit = 2)
 
       dut.clock.step(1)
 
-      // NOTE:
-      //  addr is assumed to be byte addressable
-      //  first two bits in addr are for byte offset
-      //  second two bits in addr are for block offset
-      //  third two bits in addr are for index
-      //  remaining bits are for the tag
-
-      val firstSetOfInstructions = Array(
-        CacheRequest(coreId = 1, reqId = 0, addr = "b0000000000", rw = false, expectedData = "hbeefdead", isExpectedMiss = true), // Bring new line into the cache (put in way: 0, idx: 0)
-        CacheRequest(coreId = 1, reqId = 1, addr = "b0001000000", rw = false, expectedData = "hbadc0ffe", isExpectedMiss = true), // Bring new line into the cache (put in way: 1, idx: 0)
-        CacheRequest(coreId = 1, reqId = 2, addr = "b0010000000", rw = false, expectedData = "hfacefeed", isExpectedMiss = true), // Bring new line into the cache (put in way: 2, idx: 0)
-        CacheRequest(coreId = 0, reqId = 3, addr = "b0100000000", rw = false, expectedData = "h40cbde98", isExpectedMiss = true), // Bring new line into the cache (put in way: 3, idx: 0)
-        CacheRequest(coreId = 1, reqId = 4, addr = "b0000000100", rw = false, expectedData = "hdeadbeef"),
-        CacheRequest(coreId = 1, reqId = 5, addr = "b0000001000", rw = true, expectedData = "hbabecafe", wData = Some("hd00dfeed")),
-        CacheRequest(coreId = 1, reqId = 6, addr = "b0001000100", rw = false, expectedData = "he0ddf00d"),
-        CacheRequest(coreId = 1, reqId = 7, addr = "b0010001100", rw = false, expectedData = "hbeefcace"),
-        CacheRequest(coreId = 1, reqId = 8, addr = "b0101000100", rw = false, expectedData = "haf10c5be", isExpectedMiss = true), // Bring new line into the cache (put in way: 4, idx: 0)
-        CacheRequest(coreId = 2, reqId = 9, addr = "b0110001000", rw = false, expectedData = "hace04f29", isExpectedMiss = true), // Bring new line into the cache (put in way: 5, idx: 0)
-        CacheRequest(coreId = 3, reqId = 10, addr = "b0111001100", rw = false, expectedData = "hf01c27ae", isExpectedMiss = true), // Bring new line into the cache (put in way: 6, idx: 0)
-        CacheRequest(coreId = 3, reqId = 11, addr = "b0011001100", rw = false, expectedData = "hbd42f9c3", isExpectedMiss = true), // Bring new line into the cache (put in way: 7, idx: 0)
-
-        CacheRequest(coreId = 1, reqId = 12, addr = "b000111000", rw = false, expectedData = "h10ccdead", isExpectedMiss = true), // Bring new line into the cache (put in way: 0, idx: 3)
-        CacheRequest(coreId = 2, reqId = 13, addr = "b000101100", rw = false, expectedData = "hfee1dead", isExpectedMiss = true), // Bring new line into the cache (put in way: 0, idx: 2)
-
-        CacheRequest(coreId = 3, reqId = 14, addr = "b1000000100", rw = false, expectedData = "h49e1af73", isExpectedMiss = true, isExpectedWb = true), // Bring new line into the cache (put in way: 0, idx: 0)
-        CacheRequest(coreId = 0, reqId = 15, addr = "b1001001100", rw = false, expectedData = "h5ca1ab1e", isExpectedMiss = true), // Bring new line into the cache (put in way: 1, idx: 0), reach contention limit for core 1
-        CacheRequest(coreId = 3, reqId = 16, addr = "b0000001000", rw = false, expectedData = "hd00dfeed", isExpectedMiss = true), // Bring new line into the cache (put in way: 3, idx: 0),
-        CacheRequest(coreId = 1, reqId = 17, addr = "b1010000100", rw = false, expectedData = "hfaceb00c", isExpectedMiss = true), // Bring new line into the cache (put in way: 5, idx: 0),
-
-        CacheRequest(coreId = 1, reqId = 18, addr = "b0010110100", rw = false, expectedData = "h0fabc987", isExpectedMiss = true), // Bring new line into the cache (put in way: 1, idx: 3),
-
-        CacheRequest(coreId = 1, reqId = 19, addr = "b1011001100", rw = false, expectedData = "hcafef00d", isExpectedMiss = true), // Bring new line into the cache (put in way: 6, idx: 0),
-        CacheRequest(coreId = 1, reqId = 20, addr = "b1100000000", rw = false, expectedData = "hdeafbabe", isExpectedMiss = true), // Bring new line into the cache (put in way: 7, idx: 0), reach contention limit for core 3
-        CacheRequest(coreId = 3, reqId = 21, addr = "b1101000100", rw = false, expectedData = "hca11fade", isExpectedMiss = true), // Bring new line into the cache (put in way: 1, idx: 0),
-        CacheRequest(coreId = 2, reqId = 22, addr = "b1110000100", rw = false, expectedData = "h49e1af73", okResponse = false), // Perform an eviction request by a non-critical core, expect rejection
-        CacheRequest(coreId = 1, reqId = 23, addr = "b0100000000", rw = false, expectedData = "h40cbde98", isExpectedMiss = true), // Bring new line into the cache (put in way: 0, idx: 0), expect a critical core to evict another critical core
-      )
-
-      assertAccesses(dut, firstSetOfInstructions, hitLatency, fullMissLatency, stalledMissLatency, memAccessLatency, entryToWbLatency, printInfo)
+      // Issue the first set of requests
+      assertAccesses(dut, nCores, Tests.requests2, indexWidth, blockOffsetWidth, byteOffsetWidth, 870, printResults = printResults)
 
       dut.clock.step(1)
 
+      // Unset the second core as critical
       unsetCoreAsCritical(dut, coreID = 1)
 
       dut.clock.step(1)
 
-      val secondSetOfInstructions = Array(
-        CacheRequest(coreId = 3, reqId = 24, addr = "b1000110000", rw = false, expectedData = "hbaddc0de", isExpectedMiss = true), // Bring new line into the cache (put in way: 2, idx: 3)
-        CacheRequest(coreId = 3, reqId = 25, addr = "b0001011000", rw = false, expectedData = "hea5e0d15", isExpectedMiss = true), // Bring new line into the cache (put in way: 0, idx: 1)
-        CacheRequest(coreId = 3, reqId = 26, addr = "b0010110100", rw = false, expectedData = "h0fabc987"),
-
-        CacheRequest(coreId = 0, reqId = 27, addr = "b0110000000", rw = false, expectedData = "h39be471d", isExpectedMiss = true), // Bring new line into the cache (put in way: 2, idx: 0)
-        CacheRequest(coreId = 2, reqId = 28, addr = "b0001001000", rw = false, expectedData = "hbeefbbad", isExpectedMiss = true), // Bring new line into the cache (put in way: 4, idx: 0)
-      )
-
       // Evict some previously critical caches
-      assertAccesses(dut, secondSetOfInstructions, hitLatency, fullMissLatency, stalledMissLatency, memAccessLatency, entryToWbLatency, printInfo)
+      assertAccesses(dut, nCores, Tests.requests3, indexWidth, blockOffsetWidth, byteOffsetWidth, 100, printResults = printResults)
+    }
+  }
+
+  "SharedPipelinedCache" should "handle stress test with plru policy" in {
+    val sizeInBytes = 65536 // 64 KiB
+    val nCores = 4
+    val nWays = 8
+    val addressWidth = 25
+    val reqIdWidth = 16
+    val bytesPerBlock = 64
+    val bytesPerSubBlock = 16
+    val nSets = sizeInBytes / (nWays * bytesPerBlock)
+    val l2RepPolicy = () => new BitPlruReplacementPolicy(nWays, nSets, nCores)
+    val memFile = "./hex/test_mem_32w.hex"
+
+    val memBeatSize = 4
+    val memBurstLen = 4
+
+    val byteOffsetWidth = log2Up(bytesPerSubBlock)
+    val blockOffsetWidth = log2Up(bytesPerBlock / bytesPerSubBlock)
+    val indexWidth = log2Up(nSets)
+
+    test(new SharedPipelinedCacheTestTop(
+      sizeInBytes = sizeInBytes,
+      nWays = nWays,
+      nCores = nCores,
+      reqIdWidth = reqIdWidth,
+      addressWidth = addressWidth,
+      bytesPerBlock = bytesPerBlock,
+      bytesPerSubBlock = bytesPerSubBlock,
+      memBeatSize = memBeatSize,
+      memBurstLen = memBurstLen,
+      l2RepPolicy,
+      Some(memFile)
+    )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+      // Default inputs
+      for (i <- 0 until nCores) {
+        dut.io.requests.cores(i).req.reqId.valid.poke(false.B)
+        dut.io.requests.cores(i).req.reqId.bits.poke(0.U)
+        dut.io.requests.cores(i).req.addr.poke(0.U)
+        dut.io.requests.cores(i).req.rw.poke(false.B)
+        dut.io.requests.cores(i).req.wData.poke(0.U)
+      }
+      dut.io.scheduler.cmd.poke(SchedulerCmd.NULL)
+      dut.io.scheduler.addr.poke(0.U)
+
+      dut.clock.step(5)
+
+      // Execute the elaborate stress test
+      assertAccesses(
+        dut,
+        nCores,
+        Tests.requests4,
+        indexWidth,
+        blockOffsetWidth,
+        byteOffsetWidth,
+        800, // Increased cycles to handle more complex test patterns
+        printResults = true
+      )
     }
   }
 }
