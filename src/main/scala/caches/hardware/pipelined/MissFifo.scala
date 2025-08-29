@@ -35,7 +35,7 @@ class MissFifoPushIO(nCores: Int, nMshrs: Int, nWays: Int, reqIdWidth: Int, tagW
   val pushReqEntry = new LineRequestIO(nWays, tagWidth, indexWidth, subBlockWidth)
   // For pushing new command into MSHR entry
   val pushCmd = Input(Bool())
-  val mshrIdx = Input(UInt(log2Up(nCores).W))
+  val mshrIdx = Input(UInt(log2Up(nMshrs).W))
   val pushCmdEntry = new CacheCmdIO(nCores, reqIdWidth, blockOffsetWidth)
   // For updating the byte enable mask of the MSHR entry
   val updateByteEn = Input(Bool())
