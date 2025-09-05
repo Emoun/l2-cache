@@ -20,6 +20,7 @@ class SchedulerControlIO(nCores: Int, dataWidth: Int) extends Bundle {
 
 class ReplacementPolicyIO(nWays: Int, nSets: Int, nCores: Int) extends Bundle {
   val update = Input(Valid(UInt(log2Up(nWays).W)))
+  val updateCoreId = Input(UInt(log2Up(nCores).W))
   val stall = Input(Bool())
   val evict = Input(Bool()) // Some policies may need to know if when the line is being evicted
   val setIdx = Input(UInt(log2Up(nSets).W))

@@ -69,6 +69,7 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
 
   // ---------------- Compute Replace Way ----------------
   io.repPol.setIdx := io.rep.repPolReadIndex
+  io.repPol.coreId := io.rep.coreId
   io.repPol.stall := io.stall
   io.repPol.missActive := io.missActive
 
@@ -131,8 +132,8 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   // Update the rejection policy
   io.repPol.update.valid := reqValidReg && !io.stall && !isHalfMissReg  // We update the replacement policy even on a miss, since this miss later turns into a hit anyway
   io.repPol.update.bits := Mux(isHitUpdate, hitWayUpdate, repWay)
+  io.repPol.updateCoreId := coreIdReg
   io.repPol.evict := evict
-  io.repPol.coreId := coreIdReg
 
   // Push request or a command to the miss fifo
   io.missFifo.pushReq := evict
