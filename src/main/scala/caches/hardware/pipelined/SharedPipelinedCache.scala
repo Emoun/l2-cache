@@ -118,7 +118,7 @@ class SharedPipelinedCache(
   val tagLogic = Module(new Tag(nCores = nCores, nSets = nSets, nWays = nWays, reqIdWidth = reqIdWidth, tagWidth = tagWidth, indexWidth = indexWidth, blockOffWidth = blockOffsetWidth, subBlockWidth = bytesPerSubBlock * 8))
   tagLogic.io.stall := pipeStall
   tagLogic.io.tag <> decLogic.io.tag
-  tagLogic.io.update <> updateLogic.io.tagUpdate
+  tagLogic.io.tagCtrl <> updateLogic.io.tagUpdate
   tagLogic.io.invalidate.invalidate := invalidateLine
   tagLogic.io.invalidate.way := invalidateWay
   tagLogic.io.invalidate.index := invalidateIndex
@@ -147,6 +147,7 @@ class SharedPipelinedCache(
   readLogic.io.read <> repLogic.io.read
   readLogic.io.wbQueue <> wbQueue.io.push
   readLogic.io.memUpdate <> updateLogic.io.memUpdate
+  readLogic.io.dirtyCtrl <> tagLogic.io.dirtyCtrl
 
   // ---------------- Update ----------------
 

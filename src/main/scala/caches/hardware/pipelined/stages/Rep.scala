@@ -171,7 +171,7 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   io.read.reqRw := reqRwReg
   io.read.wData := wDataReg
   io.read.byteEn := blockByteMask((blockWidth / 8) -1, 0)
-  io.read.repValid := repWayValid // TODO: Either store a dirty bit for each sub-block or combine this with the valid bit of the replacement block
+  io.read.repValid := repWayValid
   io.read.repWay := Mux(isHalfMissReg, io.missFifo.info.replacementWays(halfMissIdxReg), repWay) // If it is a half miss we give the replacement way of the full miss for a write request
   io.read.isHit := isHitUpdate
   io.read.hitWay := hitWayUpdate

@@ -5,6 +5,13 @@ import caches.hardware.util.PipelineReg
 import chisel3._
 import chisel3.util._
 
+class DirtyCtrlIO(nWays: Int, indexWidth: Int) extends Bundle {
+  val set = Output(Bool())
+  val unset = Output(Bool())
+  val wWay = Output(UInt(log2Up(nWays).W))
+  val wIndex = Output(UInt(indexWidth.W))
+}
+
 class ReadIO(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffWidth: Int, blockWidth: Int, subBlockWidth: Int) extends Bundle() {
   val coreId = Input(UInt(log2Up(nCores).W))
   val reqValid = Input(Bool())
@@ -30,6 +37,7 @@ class Read(memSizeInBytes: Int, nCores: Int, nWays: Int, reqIdWidth: Int, tagWid
     val stall = Input(Bool())
     val wbQueue = Flipped(new WbFifoPushIO(tagWidth = tagWidth, indexWidth = indexWidth, blockWidth = blockWidth))
     val update = Flipped(new UpdateIO(nCores = nCores, nWays = nWays, reqIdWidth = reqIdWidth, tagWidth = tagWidth, indexWidth = indexWidth, blockWidth = blockWidth, subBlockWidth = subBlockWidth))
+    val dirtyCtrl = new DirtyCtrlIO(nWays = nWays, indexWidth = indexWidth)
   })
 
   val dataMem = Module(new CacheMemory(memSizeInBytes, nWays, blockWidth / 8, subBlockWidth / 8))
@@ -59,11 +67,17 @@ class Read(memSizeInBytes: Int, nCores: Int, nWays: Int, reqIdWidth: Int, tagWid
   val indexReg = PipelineReg(io.read.index, 0.U, !io.stall)
   val tagReg = PipelineReg(io.read.tag, 0.U, !io.stall)
 
-  // TODO: Add dirty bits per sub-block and use these as the writeback mask
-  io.wbQueue.push := isRepDirtyReg && !isHitReg && reqValidReg && repValidReg
+  val wb = reqValidReg && !isHitReg && isRepDirtyReg && repValidReg
+
+  io.wbQueue.push := wb && !io.stall
   io.wbQueue.pushEntry.wbData := dataMem.io.rData.asUInt
   io.wbQueue.pushEntry.tag := dirtyTagReg
   io.wbQueue.pushEntry.index := indexReg
+
+  io.dirtyCtrl.unset := wb
+  io.dirtyCtrl.set := reqValidReg && reqRwReg && (isHitReg || repValidReg)
+  io.dirtyCtrl.wIndex := indexReg
+  io.dirtyCtrl.wWay := Mux(isHitReg, hitWayReg, repWayReg)
 
   io.update.valid := reqValidReg
   io.update.isHit := isHitReg

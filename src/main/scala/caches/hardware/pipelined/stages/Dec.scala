@@ -19,7 +19,7 @@ class Dec(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: I
 
   val io = IO(new Bundle{
     val dec = new DecIO(nCores, reqIdWidth, addrWidth, subBlockWidth)
-    val tag = Flipped(new TagIO(nWays, nCores, reqIdWidth, tagWidth, indexWidth, blockOffWidth, subBlockWidth))
+    val tag = Flipped(new TagIO(nCores, reqIdWidth, tagWidth, indexWidth, blockOffWidth, subBlockWidth))
     val stall = Input(Bool())
   })
 

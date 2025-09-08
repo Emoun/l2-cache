@@ -50,9 +50,7 @@ class SetLineValidIO(nWays: Int, indexWidth: Int, tagWidth: Int) extends Bundle 
 /**
  * IO interface from the update stage to the tag stage
  */
-class TagUpdateIO(nWays: Int, indexWidth: Int, tagWidth: Int) extends SetLineValidIO(nWays, indexWidth, tagWidth) {
-  val update = Output(Bool()) // For setting the line as dirty
-}
+class TagUpdateIO(nWays: Int, indexWidth: Int, tagWidth: Int) extends SetLineValidIO(nWays, indexWidth, tagWidth) {}
 
 /**
  * IO interface for control signals from the update stage to the cache memory
@@ -80,7 +78,6 @@ class UpdateUnit(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexW
   })
 
   val refill = WireDefault(false.B)
-  val update = WireDefault(false.B)
   val stall = WireDefault(false.B)
   val wrEn = WireDefault(false.B)
 
@@ -128,7 +125,6 @@ class UpdateUnit(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexW
       coreRespValid := true.B
 
       when(io.readStage.rw) {
-        update := true.B
         wrEn := true.B
 
         updateWriteByteMask := io.readStage.byteEn
@@ -142,7 +138,6 @@ class UpdateUnit(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexW
       // If it is a wr request and a miss we invalidate the cache line, store the wData, and
       // wait for the remainder of the line to be brought in
       when(io.readStage.rw && (io.readStage.responseStatus === 1.U)) { // Disallow writing when rejected
-        update := true.B
         wrEn := true.B
 
         updateWriteByteMask := io.readStage.byteEn
@@ -161,7 +156,6 @@ class UpdateUnit(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexW
   io.tagUpdate.index := updateIndex
   io.tagUpdate.way := updateWay
   io.tagUpdate.refill := refill
-  io.tagUpdate.update := update
 
   io.setValidLine.tag := RegNext(updateTag)
   io.setValidLine.index := RegNext(updateIndex)
