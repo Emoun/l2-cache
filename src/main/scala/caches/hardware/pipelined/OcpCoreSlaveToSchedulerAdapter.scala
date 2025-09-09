@@ -38,7 +38,7 @@ class OcpCoreSlaveToSchedulerAdapter(nCores: Int, dataWidth: Int) extends Module
   io.scheduler.cmd := schCmd
   io.scheduler.addr := addr
   io.scheduler.wData := wData
-  sData := io.scheduler.rData // If the scheduler configuration is memory the timing might not be right
+  sData := io.scheduler.rData // If the scheduler configuration is memory based then the timing might not be correct
 
   io.core.S.Resp := sResp
   io.core.S.Data := sData

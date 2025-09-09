@@ -26,6 +26,8 @@ case class CacheRequest(
 
 case class Stall(stallCycles: Int = 0) extends TestAction()
 
+case class ExpectFinishedRejectedResponse(coreId: Int, reqId: Int, expectedData: String) extends TestAction()
+
 case class CacheResponse(
                           receivedCC: Int,
                           coreId: Int,
@@ -135,14 +137,18 @@ object Tests {
     CacheRequest(coreId = 3, reqId = 29, tag = 14, index = 0, blockOffset = 0, rw = false, expectedData = Some("117e27b41fb7ac5b8ed5184c7f9453ae")), // Bring new line into the cache (put in way: 2, idx: 0),
     CacheRequest(coreId = 3, reqId = 30, tag = 15, index = 0, blockOffset = 0, rw = false, expectedData = Some("dd27e4c14bf57c1ca196400c0e5d5ce7")), // Bring new line into the cache (put in way: 3, idx: 0),
     CacheRequest(coreId = 2, reqId = 31, tag = 16, index = 0, blockOffset = 0, rw = false, expectedData = Some("40a13302ac635051b398eb9a4cec416c"), rejected = true), // Rejected response (once free, put in way: 4, idx: 0),
+    CacheRequest(coreId = 0, reqId = 32, tag = 17, index = 0, blockOffset = 0, rw = false, expectedData = Some("d1f8fbeb63d88f19a2af35a0cd00f5ef"), rejected = true), // Rejected response (once free, put in way: 4, idx: 0),
+    CacheRequest(coreId = 1, reqId = 33, tag = 18, index = 0, blockOffset = 0, rw = false, expectedData = Some("ca065d4eea469633ab2fd69681debb57")), // Critical core can evict any other core
   )
 
   val testActions3: Array[TestAction] = Array(
-    CacheRequest(coreId = 3, reqId = 0, tag = 8, index = 4, blockOffset = 0, rw = false, expectedData = Some("bf7ecefbef86e816b49f6740df6d0069")),
-    CacheRequest(coreId = 3, reqId = 1, tag = 0, index = 5, blockOffset = 2, rw = false, expectedData = Some("b7e1903f47db2c8efa81039b23a5f64e")),
-    CacheRequest(coreId = 3, reqId = 2, tag = 1, index = 3, blockOffset = 1, rw = false, expectedData = Some("30464e5bf598385749afdfcfba3bae98")),
-    CacheRequest(coreId = 0, reqId = 3, tag = 17, index = 0, blockOffset = 0, rw = false, expectedData = Some("d1f8fbeb63d88f19a2af35a0cd00f5ef")),
-    CacheRequest(coreId = 2, reqId = 4, tag = 0, index = 4, blockOffset = 2, rw = false, expectedData = Some("314a8f9cd7e40cb26f19de83a481b2dc")), // (HIT)
+    ExpectFinishedRejectedResponse(coreId = 2, reqId = 31, expectedData = "40a13302ac635051b398eb9a4cec416c"),
+    ExpectFinishedRejectedResponse(coreId = 0, reqId = 32, expectedData = "d1f8fbeb63d88f19a2af35a0cd00f5ef"),
+    CacheRequest(coreId = 3, reqId = 34, tag = 8, index = 4, blockOffset = 0, rw = false, expectedData = Some("bf7ecefbef86e816b49f6740df6d0069")),
+    CacheRequest(coreId = 3, reqId = 35, tag = 0, index = 5, blockOffset = 2, rw = false, expectedData = Some("b7e1903f47db2c8efa81039b23a5f64e")),
+    CacheRequest(coreId = 3, reqId = 36, tag = 1, index = 3, blockOffset = 1, rw = false, expectedData = Some("30464e5bf598385749afdfcfba3bae98")),
+    CacheRequest(coreId = 0, reqId = 37, tag = 17, index = 0, blockOffset = 0, rw = false, expectedData = Some("d1f8fbeb63d88f19a2af35a0cd00f5ef")),
+    CacheRequest(coreId = 2, reqId = 38, tag = 0, index = 4, blockOffset = 2, rw = false, expectedData = Some("314a8f9cd7e40cb26f19de83a481b2dc")), // (HIT)
   )
 
   val testActions4: Array[TestAction] = Array(
@@ -302,6 +308,8 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
             previousRequestCore = None
             currentCC += cycles - 1
             actionIdx += 1
+          case ExpectFinishedRejectedResponse(_, _, _) =>
+            actionIdx += 1
           case t => throw new Exception(s"Received unexpected action type: ${t.getClass.getSimpleName}")
         }
 
@@ -331,6 +339,7 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     // Assert the number of responses matches expected number of responses
     val requestsWithExpectedResponse = testActions.filter{
       case CacheRequest(_, _, rw, _, _, _, _, rejected, _, _, _) if !rejected && !rw => true
+      case ExpectFinishedRejectedResponse(_, _, _) => true
       case _ => false
     }
 
@@ -342,6 +351,11 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
 
           assert(response.isDefined, s"Did not receive a response for request: $reqId from core: $coreId.")
           assert(response.get.data == expectedData.get, s"Received data: ${response.get.data} does not match expected data: ${expectedData.get} for request: $reqId from core: $coreId.")
+        case ExpectFinishedRejectedResponse(coreId, reqId, expectedData) =>
+          val response = responses.find(resp => resp.coreId == coreId && resp.reqId == reqId)
+
+          assert(response.isDefined, s"Did not receive a response for a previously rejected request: $reqId from core: $coreId.")
+          assert(response.get.data == expectedData, s"Received data: ${response.get.data} does not match expected data: $expectedData for rejected request: $reqId from core: $coreId.")
         case t => throw new Exception(s"Received action type other than ${CacheRequest.getClass.getSimpleName}: ${t.getClass.getSimpleName}")
       }
     }

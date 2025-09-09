@@ -20,7 +20,7 @@ class SharedPipelinedCacheSynthTop(
   private val coreDataWidth = 32
   private val coreBurstLen = bytesPerSubBlock / (coreDataWidth / 8)
 
-  val io = IO(new OcpCacheWrapperMultiCorePort(nCores, addrWidth, coreDataWidth, coreBurstLen, memBeatSize * 8, memBurstLen))
+  val io = IO(new OcpCacheWrapperPort(nCores, addrWidth, coreDataWidth, coreBurstLen, memBeatSize * 8, memBurstLen))
 
   val l2CacheGen = () => new SharedPipelinedCache(
     sizeInBytes = sizeInBytes,
@@ -35,7 +35,7 @@ class SharedPipelinedCacheSynthTop(
     l2RepPolicy = l2RepPolicyGen
   )
 
-  val l2Cache = Module(new OcpCacheWrapperMultiCore(
+  val l2Cache = Module(new OcpCacheWrapper(
     nCores = nCores,
     addrWidth = addrWidth,
     coreDataWidth = coreDataWidth,
@@ -47,7 +47,7 @@ class SharedPipelinedCacheSynthTop(
 
   l2Cache.io.mem <> io.mem
   l2Cache.io.scheduler <> io.scheduler
-  l2Cache.io.core <> io.core
+  l2Cache.io.cores <> io.cores
 }
 
 object SharedPipelinedCacheSynthTop extends App {
@@ -80,7 +80,7 @@ object SharedPipelinedCacheSynthTop extends App {
       bytesPerSubBlock = bytesPerSubBlock,
       memBeatSize = memBeatSize,
       memBurstLen = memBurstLen,
-      l2RepPolicyGen = plruL2RepPolicy
+      l2RepPolicyGen = contL2RepPolicy
     ),
     Array("--target-dir", "generated")
   )

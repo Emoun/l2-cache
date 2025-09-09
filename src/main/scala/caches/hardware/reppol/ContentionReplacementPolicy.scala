@@ -54,6 +54,7 @@ class CoreContentionTable(nCores: Int) extends Module() {
     val contentionLimit = Input(UInt(CONTENTION_LIMIT_WIDTH.W))
     val incrContention1 = Input(Valid(UInt(log2Up(nCores).W)))
     val incrContention2 = Input(Valid(UInt(log2Up(nCores).W)))
+    val readData = Output(UInt(CONTENTION_LIMIT_WIDTH.W)) // Returns the current core limit if it is unset as critical
     val rLimits = Output(Vec(nCores, UInt(CONTENTION_LIMIT_WIDTH.W)))
     val rCritCores = Output(Vec(nCores, Bool()))
     val freeRejectionQueue = Output(Bool())
@@ -95,9 +96,15 @@ class CoreContentionTable(nCores: Int) extends Module() {
     freeRejQueue := criticalCores(io.schedCoreId) // Free the rejection queue if the request was critical
   }
 
+  val readData = WireDefault(0.U(CONTENTION_LIMIT_WIDTH.W))
+  when (io.unsetCritical) {
+    readData := contentionLimits(io.schedCoreId)
+  }
+
   io.rLimits := contentionLimits
   io.rCritCores := criticalCores
   io.freeRejectionQueue := freeRejQueue
+  io.readData := readData
 }
 
 /**
@@ -144,7 +151,7 @@ class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolic
   coreTable.io.setCritical := io.scheduler.cmd === SchedulerCmd.WR
   coreTable.io.unsetCritical := io.scheduler.cmd === SchedulerCmd.RD
   coreTable.io.contentionLimit := io.scheduler.wData
-  io.scheduler.rData := 0.U
+  io.scheduler.rData := coreTable.io.readData
   coreTable.io.incrContention1 := contAlgorithm.io.updateCore
   coreTable.io.incrContention2 := contAlgorithm.io.updateCoreMim
 
