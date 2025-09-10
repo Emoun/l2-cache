@@ -86,6 +86,11 @@ object Tests {
     CacheRequest(coreId = 1, reqId = 36, tag = 221, index = 62, blockOffset = 0, rw = false, expectedData = Some("1bc046d6a45fd8ac65676a660e8c3047")),
     CacheRequest(coreId = 2, reqId = 37, tag = 221, index = 62, blockOffset = 0, rw = false, expectedData = Some("1bc046d6a45fd8ac65676a660e8c3047")),
     CacheRequest(coreId = 3, reqId = 38, tag = 221, index = 62, blockOffset = 0, rw = false, expectedData = Some("1bc046d6a45fd8ac65676a660e8c3047")),
+    Stall(stallCycles = 100),
+    CacheRequest(coreId = 0, reqId = 39, tag = 16, index = 113, blockOffset = 0, rw = false, expectedData = Some("a4d868e8605871a722f93960ce9195c6")),
+    Stall(stallCycles = 21),
+    CacheRequest(coreId = 0, reqId = 40, tag = 16, index = 113, blockOffset = 1, rw = false, expectedData = Some("18d3be76d8a863e9b85207e7cac5155b")),
+    CacheRequest(coreId = 0, reqId = 41, tag = 16, index = 113, blockOffset = 2, rw = false, expectedData = Some("358958f999ddee22de0082b374f1b3f5")),
   )
 
   val testActions2: Array[TestAction] = Array(
@@ -270,6 +275,7 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     var previousRequestCore: Option[Int] = None
     var actionIdx = 0
     var currentCC = 0
+    var stallCycle: Option[Int] = None
 
     while (currentCC < maxCCs) {
 
@@ -284,35 +290,40 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       }
 
       if (actionIdx < testActions.length) {
-        val action = testActions(actionIdx)
+        if(stallCycle.isEmpty) { // If we are stalling, we do not perform any actions
+          val action = testActions(actionIdx)
 
-        action match {
-          case CacheRequest(coreId, reqId, rw, tag, index, blockOffset, byteOffset, _, byteEn, wData, _) =>
-            if (dut.io.requests.cores(coreId).req.reqId.ready.peekBoolean()) {
-              val addr = tag << (indexWidth + blockOffsetWidth + byteOffsetWidth) |
-                index << (blockOffsetWidth + byteOffsetWidth) |
-                blockOffset << byteOffsetWidth |
-                byteOffset
+          action match {
+            case CacheRequest(coreId, reqId, rw, tag, index, blockOffset, byteOffset, _, byteEn, wData, _) =>
+              if (dut.io.requests.cores(coreId).req.reqId.ready.peekBoolean()) {
+                val addr = tag << (indexWidth + blockOffsetWidth + byteOffsetWidth) |
+                  index << (blockOffsetWidth + byteOffsetWidth) |
+                  blockOffset << byteOffsetWidth |
+                  byteOffset
 
-              println(s"Issued request at CC $currentCC: Core: $coreId, ReqId: $reqId, Addr: ${addr.toHexString}, RW: $rw, WData: ${wData.getOrElse("None")}, ByteEn: ${byteEn.getOrElse((math.pow(2, dut.subBlockDataWidth / 8).toInt - 1).toBinaryString)}")
+                println(s"Issued request at CC $currentCC: Core: $coreId, ReqId: $reqId, Addr: ${addr.toHexString}, RW: $rw, WData: ${wData.getOrElse("None")}, ByteEn: ${byteEn.getOrElse((math.pow(2, dut.subBlockDataWidth / 8).toInt - 1).toBinaryString)}")
 
-              performCacheRequest(dut, coreId = coreId, reqId = reqId, addr = addr, rw = rw, wData = wData, byteEn = byteEn)
-              previousRequestCore = Some(coreId)
+                performCacheRequest(dut, coreId = coreId, reqId = reqId, addr = addr, rw = rw, wData = wData, byteEn = byteEn)
+                previousRequestCore = Some(coreId)
 
-              actionIdx += 1
-            } else {
+                actionIdx += 1
+              } else {
+                previousRequestCore = None
+              }
+            case Stall(cycles) =>
+              println(s"Waiting for $cycles cycles at CC $currentCC, before issuing next request.")
               previousRequestCore = None
-            }
-          case Stall(cycles) =>
-            println(s"Waiting for $cycles cycles at CC $currentCC, before issuing next request.")
-            previousRequestCore = None
-            currentCC += cycles - 1
-            actionIdx += 1
-          case ExpectFinishedRejectedResponse(_, _, _) =>
-            actionIdx += 1
-          case t => throw new Exception(s"Received unexpected action type: ${t.getClass.getSimpleName}")
+              stallCycle = Some(currentCC + cycles)
+              actionIdx += 1
+            case ExpectFinishedRejectedResponse(_, _, _) =>
+              actionIdx += 1
+            case t => throw new Exception(s"Received unexpected action type: ${t.getClass.getSimpleName}")
+          }
+        } else {
+          if (stallCycle.get == currentCC) { // Once we reached the stall cycle, we can clear it
+            stallCycle = None
+          }
         }
-
       } else {
         previousRequestCore = None
       }

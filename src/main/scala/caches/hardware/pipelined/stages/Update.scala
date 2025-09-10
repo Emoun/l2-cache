@@ -108,7 +108,8 @@ class UpdateUnit(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexW
 
     when(io.memoryInterface.validCmd) {
       coreRespValid := true.B // Respond to the request if it is a valid command
-    } .otherwise{
+    } .otherwise {
+      stall := true.B
       refill := true.B
       wrEn := true.B
     }

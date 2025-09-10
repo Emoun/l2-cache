@@ -49,6 +49,7 @@ class MissFifoPushIO(nCores: Int, nMshrs: Int, nWays: Int, reqIdWidth: Int, tagW
 
 class MissFifoPopIO(nCores: Int, nCmds: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, blockWidth: Int) extends Bundle() {
   val pop = Input(Bool())
+  val reading = Input(Bool()) // Indicate that the memory interface is reading the pop entry and that no new data should be added to it
   val popEntry = Flipped(new LineRequestIO(nWays, tagWidth, indexWidth, blockWidth))
   val cmds = Output(Vec(nCmds, new CacheCmdIO(nCores, reqIdWidth, blockOffsetWidth)))
   val cmdCnt = Output(UInt((log2Up(nCmds) + 1).W))
@@ -220,9 +221,16 @@ class MissFifo(nCores: Int, nCmds: Int, nMshrs: Int, nWays: Int, reqIdWidth: Int
   cmdQueue.io.updtPtr := io.push.mshrIdx
   cmdQueue.io.updtData := Cat(io.push.pushCmdEntry.reqId, io.push.pushCmdEntry.coreId, io.push.pushCmdEntry.blockOffset)
 
+  val validMshrs = VecInit(Seq.fill(nMshrs)(false.B))
+  validMshrs := reqQueue.io.validMSHRs
+
+  when(io.pop.reading) {
+    validMshrs(reqQueue.io.rdPtr) := false.B
+  }
+
   io.push.full := reqQueue.io.full
   io.push.info.wrPtr := reqQueue.io.wrPtr
-  io.push.info.validMSHRs := reqQueue.io.validMSHRs
+  io.push.info.validMSHRs := validMshrs
   io.push.info.currentTags := reqQueue.io.currentTags
   io.push.info.currentIndexes := reqQueue.io.currentIndexes
   io.push.info.replacementWays := reqQueue.io.replacementWays
