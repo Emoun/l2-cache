@@ -80,7 +80,7 @@ object SharedPipelinedCacheSynthTop extends App {
       bytesPerSubBlock = bytesPerSubBlock,
       memBeatSize = memBeatSize,
       memBurstLen = memBurstLen,
-      l2RepPolicyGen = plruL2RepPolicy
+      l2RepPolicyGen = contL2RepPolicy
     ),
     Array("--target-dir", "generated")
   )

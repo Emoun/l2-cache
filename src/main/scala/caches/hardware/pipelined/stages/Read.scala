@@ -74,23 +74,27 @@ class Read(memSizeInBytes: Int, nCores: Int, nWays: Int, reqIdWidth: Int, tagWid
   io.wbQueue.pushEntry.tag := dirtyTagReg
   io.wbQueue.pushEntry.index := indexReg
 
+  // TODO: Move this to the Rep stage, and forward this signal to earlier stages, since if the number of mshr entries is increased,
+  //  a request might not be able to see that the line that it is evicting is dirty, thus would not trigger a writeback
   io.dirtyCtrl.unset := wb
   io.dirtyCtrl.set := reqValidReg && reqRwReg && (isHitReg || repValidReg)
   io.dirtyCtrl.wIndex := indexReg
   io.dirtyCtrl.wWay := Mux(isHitReg, hitWayReg, repWayReg)
 
-  io.update.valid := reqValidReg
-  io.update.isHit := isHitReg
-  io.update.rw := reqRwReg
-  io.update.coreId := coreIdReg
-  io.update.reqId := reqIdReg
-  io.update.wData := wDataReg
-  io.update.byteEn := byteEnReg
-  io.update.wWay := hitWayReg
-  io.update.repWay := repWayReg
-  io.update.responseStatus := repValidReg
-  io.update.blockOffset := blockOffsetReg
-  io.update.index := indexReg
-  io.update.tag := tagReg
-  io.update.memReadData := dataMem.io.rData
+  io.update.valid := PipelineReg(reqValidReg, false.B, !io.stall)
+  io.update.isHit := PipelineReg(isHitReg, false.B, !io.stall)
+  io.update.rw := PipelineReg(reqRwReg, false.B, !io.stall)
+  io.update.coreId := PipelineReg(coreIdReg, 0.U, !io.stall)
+  io.update.reqId := PipelineReg(reqIdReg, 0.U, !io.stall)
+  io.update.wData := PipelineReg(wDataReg, 0.U, !io.stall)
+  io.update.byteEn := PipelineReg(byteEnReg, 0.U, !io.stall)
+  io.update.wWay := PipelineReg(hitWayReg, 0.U, !io.stall)
+  io.update.repWay := PipelineReg(repWayReg, 0.U, !io.stall)
+  io.update.responseStatus := PipelineReg(repValidReg, false.B, !io.stall)
+  io.update.blockOffset := PipelineReg(blockOffsetReg, 0.U, !io.stall)
+  io.update.index := PipelineReg(indexReg, 0.U, !io.stall)
+  io.update.tag := PipelineReg(tagReg, 0.U, !io.stall)
+
+  private val nSubBlocks = blockWidth / subBlockWidth
+  io.update.memReadData := PipelineReg(dataMem.io.rData, VecInit(Seq.fill(nSubBlocks)(0.U(subBlockWidth.W))), !io.stall)
 }

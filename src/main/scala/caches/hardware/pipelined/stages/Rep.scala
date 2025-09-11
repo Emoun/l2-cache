@@ -123,7 +123,6 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   val evict = reqValidReg && (!isHitUpdate && repWayValid && !isHalfMissReg) && !io.stall
 
   // TODO: If the replacement way is dirty but the line is not valid---stall the pipeline
-  //  Can use the wrEn signal from update stage to set the
   invalidate := evict
   invalidateWay := repWay
   invalidateIndex := indexReg

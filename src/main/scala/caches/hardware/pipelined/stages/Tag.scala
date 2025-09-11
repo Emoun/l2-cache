@@ -50,6 +50,7 @@ class DirtyRegisterFile (nWays: Int, nSets: Int) extends Module() {
     val rDirtyBits = Output(Vec(nWays, Bool()))
   })
 
+  // NOTE: Consider if maybe it is worth storing a dirty bit per each sub-block instead of a block
   val dirtyBits = Array.fill(nWays)(Module(new MemBlock(nSets, 1)))
   val writeData = WireDefault(0.U(1.W))
   val wrEn = io.unset || io.set

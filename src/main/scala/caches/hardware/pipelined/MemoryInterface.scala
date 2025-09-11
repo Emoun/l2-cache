@@ -156,7 +156,7 @@ class MemoryInterface(nCores: Int, nWays: Int, nHalfMissCmds: Int, reqIdWidth: I
       memWDataValid := true.B
       memWData := wbFifoWDataAsVec(totalBurstCount)
       memWStrb := (math.pow(2, subBlockWidth / 8).toInt - 1).U // Set all bytes in the sub-block to be written
-      // TODO: set this to all ones or zeros based on whether the sub-block is dirty or not
+      // NOTE: set this to all ones or zeros based on whether the sub-block is dirty or not
 
       when(io.memController.wChannel.wData.ready) {
         totalBurstCount := totalBurstCount + 1.U
