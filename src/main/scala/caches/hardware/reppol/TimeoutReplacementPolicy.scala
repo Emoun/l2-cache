@@ -70,8 +70,8 @@ class TimeoutReplacementPolicy (ways: Int, sets: Int, nCores: Int, basePolicy: (
 
   val anyTimedOutWays = timedoutWays.reduce((x, y) => x || y)
 
-  io.control.isValid := anyTimedOutWays || isCritical(io.control.coreId)
-  when(!anyTimedOutWays && isCritical(io.control.coreId)) {
+  io.control.isValid := anyTimedOutWays || isCritical(io.control.updateCoreId) // Can be switched out with update core id once more pipeline registers are added
+  when(!anyTimedOutWays && isCritical(io.control.updateCoreId)) {
     io.control.replaceWay := baseCandidates(0)
   }.otherwise {
     io.control.replaceWay := firstTimedoutWay

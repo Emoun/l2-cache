@@ -68,7 +68,7 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   val updateStageIsHit = WireDefault(0.U(false.B))
 
   // ---------------- Compute Replace Way ----------------
-  io.repPol.setIdx := io.rep.repPolReadIndex
+  io.repPol.setIdx := io.rep.repPolReadIndex // This value is not delayed by on CC since, it is used to read the PLRU bits form the memory
   io.repPol.coreId := io.rep.coreId
   io.repPol.stall := io.stall
   io.repPol.missActive := io.missActive
@@ -128,7 +128,7 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   invalidateWay := repWay
   invalidateIndex := indexReg
 
-  // Update the rejection policy
+  // Update the rejection policy // TODO: Should the base policy only be updated if the eviction candidate is valid
   io.repPol.update.valid := reqValidReg && !io.stall && !isHalfMissReg  // We update the replacement policy even on a miss, since this miss later turns into a hit anyway
   io.repPol.update.bits := Mux(isHitUpdate, hitWayUpdate, repWay)
   io.repPol.updateCoreId := coreIdReg

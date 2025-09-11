@@ -144,7 +144,7 @@ class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolic
   assignArr.io.wrEn := io.control.evict
   assignArr.io.rSet := setIdxDelayReg
   assignArr.io.wrSet := setIdxPipeReg
-  assignArr.io.wrLineAssign := UpdateSingleVecElem(assignArr.io.rLineAssign, io.control.coreId, contAlgorithm.io.replacementWay.bits)
+  assignArr.io.wrLineAssign := UpdateSingleVecElem(assignArr.io.rLineAssign, io.control.updateCoreId, contAlgorithm.io.replacementWay.bits)
   assignArr.io.wrValiAssign := UpdateSingleVecElem(assignArr.io.rValidAssign, true.B, contAlgorithm.io.replacementWay.bits)
 
   val coreTable = Module(new CoreContentionTable(nCores))
@@ -158,7 +158,7 @@ class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolic
 
   // Compute the eviction for each set
   contAlgorithm.io.evict := io.control.evict
-  contAlgorithm.io.reqCore := io.control.coreId
+  contAlgorithm.io.reqCore := io.control.updateCoreId
   contAlgorithm.io.baseCandidates := basePolicyInst.io.control.replacementSet
   contAlgorithm.io.lineAssignments := assignArr.io.rLineAssign
   contAlgorithm.io.validLineAssignments := assignArr.io.rValidAssign

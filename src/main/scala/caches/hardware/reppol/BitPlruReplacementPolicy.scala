@@ -25,6 +25,8 @@ class BitPlruReplacementPolicy(nWays: Int, nSets: Int, nCores: Int) extends Shar
     rMruBits
   }
 
+  // ---------------- Pre-Read stage ----------------
+
   val updateStageSetIdx = WireDefault(0.U(log2Up(nSets).W))
   val updatedStageMruBits = VecInit(Seq.fill(nWays)(false.B))
 

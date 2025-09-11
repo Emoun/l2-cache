@@ -1,6 +1,5 @@
 package caches.hardware.reppol
 
-import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 import caches.hardware.reppol.ReplacementPolicyTest._

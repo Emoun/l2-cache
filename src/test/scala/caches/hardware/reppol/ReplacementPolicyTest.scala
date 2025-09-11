@@ -41,12 +41,15 @@ object ReplacementPolicyTest {
 
     // Make a request on behalf of the requesting core
     dut.io.control.setIdx.poke(setIdx.U)
-    dut.io.control.coreId.poke(coreId.U)
 
-    dut.clock.step(2) // Need tro clock cycle delay here since the base policy is separated from contention logic by two pipeline stage
+    dut.clock.step() // Need tro clock cycle delay here since the base policy is separated from contention logic by two pipeline stage
+
+    dut.io.control.setIdx.poke(0.U)
+
+    dut.clock.step()
 
     dut.io.control.evict.poke(true.B)
-    dut.io.control.coreId.poke(coreId.U)
+    dut.io.control.updateCoreId.poke(coreId.U)
 
     dut.io.control.isValid.expect(evictionSetEmpty)
     if(expectedEvictionCandidate.isDefined) {
@@ -62,12 +65,10 @@ object ReplacementPolicyTest {
 
   def performUpdateRequest(dut: SharedCacheReplacementPolicyType, coreId: Int, setIdx: Int, hitWay: Int): Unit = {
     dut.io.control.setIdx.poke(setIdx.U)
-    dut.io.control.coreId.poke(coreId.U)
 
     dut.clock.step()
 
     dut.io.control.setIdx.poke(0.U)
-    dut.io.control.coreId.poke(0.U)
 
     dut.clock.step()
 
