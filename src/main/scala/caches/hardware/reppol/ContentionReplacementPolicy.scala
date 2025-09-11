@@ -127,6 +127,7 @@ class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolic
   basePolicyInst.io.control.evict := io.control.evict
   basePolicyInst.io.control.update.valid := io.control.update.valid
   basePolicyInst.io.control.update.bits := io.control.update.bits
+  basePolicyInst.io.control.updateCoreId := io.control.update.bits
   basePolicyInst.io.control.stall := io.control.stall
   basePolicyInst.io.control.missActive := io.control.missActive
   basePolicyInst.io.scheduler <> io.scheduler
