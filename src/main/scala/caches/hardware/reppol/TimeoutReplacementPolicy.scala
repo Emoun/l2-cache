@@ -11,6 +11,7 @@ class TimeoutReplacementPolicy (ways: Int, sets: Int, nCores: Int, basePolicy: (
   val basePolicyInst = Module(basePolicy())
 
   // Update base policy
+  basePolicyInst.io.control.isHit := io.control.isHit
   basePolicyInst.io.control.setIdx := io.control.setIdx
   basePolicyInst.io.control.coreId := io.control.coreId
   basePolicyInst.io.control.evict := io.control.evict

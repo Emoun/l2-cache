@@ -146,8 +146,6 @@ object Tests {
     CacheRequest(coreId = 1, reqId = 33, tag = 18, index = 0, blockOffset = 0, rw = false, expectedData = Some("ca065d4eea469633ab2fd69681debb57")), // Critical core can evict any other core
   )
 
-  // TODO: Add test case for a line being evicted by a write and then this line being evicted and brought back in later on
-
   val testActions3: Array[TestAction] = Array(
     ExpectFinishedRejectedResponse(coreId = 2, reqId = 31, expectedData = "40a13302ac635051b398eb9a4cec416c"),
     ExpectFinishedRejectedResponse(coreId = 0, reqId = 32, expectedData = "d1f8fbeb63d88f19a2af35a0cd00f5ef"),
@@ -229,6 +227,20 @@ object Tests {
     CacheRequest(coreId = 0, reqId = 38, tag = 100, index = 100, blockOffset = 3, rw = true, wData = Some("h000000000000000012345678"), byteEn = Some("b0000000000001111")),
     Stall(5),
 //    CacheRequest(coreId = 1, reqId = 39, tag = 100, index = 100, blockOffset = 3, rw = false, expectedData = Some("21c7660216f71ee6e3f0f7c2b1feb075")) // Read final state
+  )
+
+  val testActions5: Array[TestAction] = Array(
+    CacheRequest(coreId = 0, reqId = 0, tag = 60, index = 74, blockOffset = 0, rw = false, expectedData = Some("ae51ffbe61691f90541ac32810690f94")), // MISS, way: 0
+    CacheRequest(coreId = 3, reqId = 1, tag = 54, index = 74, blockOffset = 1, rw = false, expectedData = Some("cafebabebabecafedeadbeefbeefdead")), // MISS, way: 1
+    CacheRequest(coreId = 2, reqId = 2, tag = 22, index = 74, blockOffset = 0, rw = false, expectedData = Some("cafebabebabecafedeadbeefbeefdead")), // MISS, way: 2, mim event
+    CacheRequest(coreId = 2, reqId = 3, tag = 23, index = 74, blockOffset = 2, rw = false, expectedData = Some("cafebabebabecafedeadbeefbeefdead")), // MISS, way: 3, mim event
+    CacheRequest(coreId = 2, reqId = 4, tag = 31, index = 74, blockOffset = 3, rw = false, expectedData = Some("cafebabebabecafedeadbeefbeefdead")), // MISS, way: 4, mim event
+    CacheRequest(coreId = 2, reqId = 5, tag = 44, index = 74, blockOffset = 1, rw = false, expectedData = Some("cafebabebabecafedeadbeefbeefdead")), // MISS, way: 5, mim event
+    CacheRequest(coreId = 2, reqId = 6, tag = 47, index = 74, blockOffset = 1, rw = false, expectedData = Some("cafebabebabecafedeadbeefbeefdead")), // MISS, way: 6, mim event
+    CacheRequest(coreId = 2, reqId = 10, tag = 60, index = 74, blockOffset = 0, rw = false, expectedData = Some("ae51ffbe61691f90541ac32810690f94")), // HIT, way: 0, precedent event
+    CacheRequest(coreId = 2, reqId = 7, tag = 43, index = 74, blockOffset = 0, rw = false, expectedData = Some("cafebabebabecafedeadbeefbeefdead")), // MISS, way: 7, mim event
+    CacheRequest(coreId = 2, reqId = 8, tag = 12, index = 74, blockOffset = 2, rw = false, expectedData = Some("cafebabebabecafedeadbeefbeefdead")), // MISS, way: 0, mim event
+    CacheRequest(coreId = 2, reqId = 9, tag = 18, index = 74, blockOffset = 0, rw = false, expectedData = Some("cafebabebabecafedeadbeefbeefdead")), // MISS, way: 1, mim event
   )
 }
 
@@ -549,6 +561,79 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
 
       // Evict some previously critical caches
       assertAccesses(dut, nCores, Tests.testActions3, indexWidth, blockOffsetWidth, byteOffsetWidth, 100, printResults = printResults)
+    }
+  }
+
+  "SharedPipelinedCache" should "work with miss in miss events for 8 ways, 128 sets" in {
+    val sizeInBytes = 65536 // 64 KiB
+    val nCores = 4
+    val nWays = 8
+    val addressWidth = 25
+    val reqIdWidth = 16
+    val bytesPerBlock = 64
+    val bytesPerSubBlock = 16
+    val nSets = sizeInBytes / (nWays * bytesPerBlock)
+    val basePolicy = () => new BitPlruReplacementPolicy(nWays, nSets, nCores)
+    val l2RepPolicy = () => new ContentionReplacementPolicy(nWays, nSets, nCores, basePolicy, enableMissInMiss = true, enablePrecedentEvents = true)
+    val memFile = "./hex/test_mem_32w.hex"
+
+    val printResults = true
+
+    val memBeatSize = 4
+    val memBurstLen = 4
+
+    val byteOffsetWidth = log2Up(bytesPerSubBlock)
+    val blockOffsetWidth = log2Up(bytesPerBlock / bytesPerSubBlock)
+    val indexWidth = log2Up(nSets)
+
+    test(new SharedPipelinedCacheTestTop(
+      sizeInBytes = sizeInBytes,
+      nWays = nWays,
+      nCores = nCores,
+      reqIdWidth = reqIdWidth,
+      addressWidth = addressWidth,
+      bytesPerBlock = bytesPerBlock,
+      bytesPerSubBlock = bytesPerSubBlock,
+      memBeatSize = memBeatSize,
+      memBurstLen = memBurstLen,
+      l2RepPolicy,
+      Some(memFile)
+    )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+      cancel("Not finished test")
+
+      // Default inputs
+      for (i <- 0 until nCores) {
+        dut.io.requests.cores(i).req.reqId.valid.poke(false.B)
+        dut.io.requests.cores(i).req.reqId.bits.poke(0.U)
+        dut.io.requests.cores(i).req.addr.poke(0.U)
+        dut.io.requests.cores(i).req.rw.poke(false.B)
+        dut.io.requests.cores(i).req.wData.poke(0.U)
+      }
+      dut.io.scheduler.cmd.poke(SchedulerCmd.NULL)
+      dut.io.scheduler.addr.poke(0.U)
+      dut.io.scheduler.wData.poke(0.U)
+
+      dut.clock.step(5)
+
+      // Set the third core as critical
+      setCoreAsCritical(dut, coreID = 2, contentionLimit = 60)
+
+      dut.clock.step(1)
+
+      // Set the second core as critical
+      setCoreAsCritical(dut, coreID = 1, contentionLimit = 60)
+
+      dut.clock.step(1)
+
+      // Issue the first set of requests
+      assertAccesses(dut, nCores, Tests.testActions5, indexWidth, blockOffsetWidth, byteOffsetWidth, 250, printResults = printResults)
+
+      dut.clock.step(1)
+
+      // Unset the second core as critical
+      unsetCoreAsCritical(dut, coreID = 1)
+
+      dut.clock.step(1)
     }
   }
 

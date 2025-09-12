@@ -1,9 +1,9 @@
 package caches.hardware.reppol
 
-import caches.hardware.util.Constants.CONTENTION_LIMIT_WIDTH
-import caches.hardware.util.{MemBlock, PipelineReg, UpdateSingleVecElem}
 import chisel3._
 import chisel3.util._
+import caches.hardware.util.Constants.CONTENTION_LIMIT_WIDTH
+import caches.hardware.util.{MemBlock, PipelineReg, UpdateSingleVecElem}
 
 class LineAssignmentsArray(nWays: Int, nSets: Int, nCores: Int) extends Module() {
   val io = IO(new Bundle {
@@ -47,13 +47,14 @@ class LineAssignmentsArray(nWays: Int, nSets: Int, nCores: Int) extends Module()
 }
 
 class CoreContentionTable(nCores: Int) extends Module() {
-  val io = IO(new Bundle{
+  val io = IO(new Bundle {
     val schedCoreId = Input(UInt(log2Up(nCores).W))
     val setCritical = Input(Bool())
     val unsetCritical = Input(Bool())
     val contentionLimit = Input(UInt(CONTENTION_LIMIT_WIDTH.W))
-    val incrContention1 = Input(Valid(UInt(log2Up(nCores).W)))
-    val incrContention2 = Input(Valid(UInt(log2Up(nCores).W)))
+    val decrContention1 = Input(Valid(UInt(log2Up(nCores).W)))
+    val decrContention2 = Input(Valid(UInt(log2Up(nCores).W)))
+    val incrContention = Input(Valid(UInt(log2Up(nCores).W)))
     val readData = Output(UInt(CONTENTION_LIMIT_WIDTH.W)) // Returns the current core limit if it is unset as critical
     val rLimits = Output(Vec(nCores, UInt(CONTENTION_LIMIT_WIDTH.W)))
     val rCritCores = Output(Vec(nCores, Bool()))
@@ -69,35 +70,39 @@ class CoreContentionTable(nCores: Int) extends Module() {
 
   // Set and unset cores as critical
   for (coreTableIdx <- 0 until nCores) {
-    when (io.setCritical && io.schedCoreId === coreTableIdx.U) {
+    when(io.setCritical && io.schedCoreId === coreTableIdx.U) {
       criticalCores(coreTableIdx) := true.B
       contentionLimits(coreTableIdx) := io.contentionLimit
-    } .elsewhen (io.unsetCritical && io.schedCoreId === coreTableIdx.U) {
+    }.elsewhen(io.unsetCritical && io.schedCoreId === coreTableIdx.U) {
       criticalCores(coreTableIdx) := false.B
       contentionLimits(coreTableIdx) := 0.U
     }
 
-    when(io.incrContention1.valid) {
-      when(io.incrContention1.bits === coreTableIdx.U){
-        when(io.incrContention2.valid && io.incrContention1.bits === io.incrContention2.bits) {
+    val reachedLimit = contentionLimits(coreTableIdx) === 0.U
+
+    when(io.decrContention1.valid) {
+      when(io.decrContention1.bits === coreTableIdx.U && !reachedLimit) {
+        when(io.decrContention2.valid && io.decrContention1.bits === io.decrContention2.bits) {
           contentionLimits(coreTableIdx) := contentionLimits(coreTableIdx) - 2.U
-        }.otherwise{
+        }.otherwise {
           contentionLimits(coreTableIdx) := contentionLimits(coreTableIdx) - 1.U
         }
       }
-    }.elsewhen(io.incrContention2.valid && io.incrContention2.bits === coreTableIdx.U) {
+    }.elsewhen(io.decrContention2.valid && io.decrContention2.bits === coreTableIdx.U && !reachedLimit) {
       contentionLimits(coreTableIdx) := contentionLimits(coreTableIdx) - 1.U
+    }.elsewhen(io.incrContention.valid && io.incrContention.bits === coreTableIdx.U) {
+      contentionLimits(coreTableIdx) := contentionLimits(coreTableIdx) + 1.U
     }
   }
 
   // When a core is unset we empty the rejection queue
   val freeRejQueue = WireDefault(false.B)
-  when (io.unsetCritical) {
+  when(io.unsetCritical) {
     freeRejQueue := criticalCores(io.schedCoreId) // Free the rejection queue if the request was critical
   }
 
   val readData = WireDefault(0.U(CONTENTION_LIMIT_WIDTH.W))
-  when (io.unsetCritical) {
+  when(io.unsetCritical) {
     readData := contentionLimits(io.schedCoreId)
   }
 
@@ -110,18 +115,19 @@ class CoreContentionTable(nCores: Int) extends Module() {
 /**
  * On a hit we update only the base policy, on an eviction we update the contention policy.
  *
- * @param nWays number of ways in a cache set
- * @param nSets number of sets in a cache
- * @param nCores number of cores sharing the cache
+ * @param nWays      number of ways in a cache set
+ * @param nSets      number of sets in a cache
+ * @param nCores     number of cores sharing the cache
  * @param basePolicy the base replacement policy module generating function
  */
-class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolicy: () => SharedCacheReplacementPolicyType, enableMissInMiss: Boolean = false) extends SharedCacheReplacementPolicyType(nWays, nSets, nCores, CONTENTION_LIMIT_WIDTH) {
+class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolicy: () => SharedCacheReplacementPolicyType, enableMissInMiss: Boolean = false, enablePrecedentEvents: Boolean = false) extends SharedCacheReplacementPolicyType(nWays, nSets, nCores, CONTENTION_LIMIT_WIDTH) {
   // ---------------- Base policy stage ----------------
 
   // Base policy instantiation
   val basePolicyInst = Module(basePolicy())
 
   // Update base policy
+  basePolicyInst.io.control.isHit := io.control.isHit
   basePolicyInst.io.control.setIdx := io.control.setIdx
   basePolicyInst.io.control.coreId := io.control.coreId
   basePolicyInst.io.control.evict := io.control.evict
@@ -137,7 +143,7 @@ class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolic
   val setIdxPipeReg = PipelineReg(setIdxDelayReg, 0.U, !io.control.stall)
 
   // ---------------- Eviction stage ----------------
-  val contAlgorithm = Module(new ContentionReplacementAlgorithm(nWays, nCores, enableMissInMiss))
+  val contAlgorithm = Module(new ContentionReplacementAlgorithm(nWays, nCores, enableMissInMiss, enablePrecedentEvents))
 
   val assignArr = Module(new LineAssignmentsArray(nWays, nSets, nCores))
   assignArr.io.stall := io.control.stall
@@ -147,17 +153,22 @@ class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolic
   assignArr.io.wrLineAssign := UpdateSingleVecElem(assignArr.io.rLineAssign, io.control.updateCoreId, contAlgorithm.io.replacementWay.bits)
   assignArr.io.wrValiAssign := UpdateSingleVecElem(assignArr.io.rValidAssign, true.B, contAlgorithm.io.replacementWay.bits)
 
+  // ---------------------------------------------------
+
   val coreTable = Module(new CoreContentionTable(nCores))
   coreTable.io.schedCoreId := io.scheduler.addr
   coreTable.io.setCritical := io.scheduler.cmd === SchedulerCmd.WR
   coreTable.io.unsetCritical := io.scheduler.cmd === SchedulerCmd.RD
   coreTable.io.contentionLimit := io.scheduler.wData
   io.scheduler.rData := coreTable.io.readData
-  coreTable.io.incrContention1 := contAlgorithm.io.updateCore
-  coreTable.io.incrContention2 := contAlgorithm.io.updateCoreMim
+  coreTable.io.decrContention1 := contAlgorithm.io.updateCore
+  coreTable.io.decrContention2 := contAlgorithm.io.updateCoreMim
+  coreTable.io.incrContention := contAlgorithm.io.updateCorePrecedent
 
   // Compute the eviction for each set
   contAlgorithm.io.evict := io.control.evict
+  contAlgorithm.io.update := io.control.update.valid && io.control.isHit
+  contAlgorithm.io.hitWayIdx := io.control.update.bits
   contAlgorithm.io.reqCore := io.control.updateCoreId
   contAlgorithm.io.baseCandidates := basePolicyInst.io.control.replacementSet
   contAlgorithm.io.lineAssignments := assignArr.io.rLineAssign
@@ -175,8 +186,8 @@ class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolic
 }
 
 object ContentionReplacementPolicy extends App {
-//  val l2Size = 262144 // 256 KiB
-//  val l2Size = 16384 // 16 KiB
+  //  val l2Size = 262144 // 256 KiB
+  //  val l2Size = 16384 // 16 KiB
   val l2Size = 131072 // 128 KiB
   val l2Ways = 8
   val nCores = 4

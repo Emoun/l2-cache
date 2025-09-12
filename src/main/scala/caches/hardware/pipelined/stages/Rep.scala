@@ -133,6 +133,7 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   io.repPol.update.bits := Mux(isHitUpdate, hitWayUpdate, repWay)
   io.repPol.updateCoreId := coreIdReg
   io.repPol.evict := evict
+  io.repPol.isHit := isHitUpdate
 
   // Push request or a command to the miss fifo
   io.missFifo.pushReq := evict

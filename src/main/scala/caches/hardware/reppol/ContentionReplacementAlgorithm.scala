@@ -1,12 +1,14 @@
 package caches.hardware.reppol
 
+import caches.hardware.util.Constants._
 import chisel3._
 import chisel3.util._
-import caches.hardware.util.Constants._
 
-class ContentionReplacementAlgorithm(nWays: Int, nCores: Int, enableMissInMiss: Boolean = false) extends Module {
+class ContentionReplacementAlgorithm(nWays: Int, nCores: Int, enableMissInMiss: Boolean = false, enablePrecedentEvents: Boolean = false) extends Module {
   val io = IO(new Bundle {
     val evict = Input(Bool())
+    val update = Input(Bool())
+    val hitWayIdx = Input(UInt(log2Up(nWays).W))
     val reqCore = Input(UInt(log2Up(nCores).W))
     val baseCandidates = Input(Vec(nWays, UInt(log2Up(nWays).W)))
     val validLineAssignments = Input(Vec(nWays, Bool()))
@@ -15,6 +17,7 @@ class ContentionReplacementAlgorithm(nWays: Int, nCores: Int, enableMissInMiss: 
     val criticalCores = Input(Vec(nCores, Bool()))
     val updateCore = Output(Valid(UInt(log2Up(nCores).W)))
     val updateCoreMim = Output(Valid(UInt(log2Up(nCores).W)))
+    val updateCorePrecedent = Output(Valid(UInt(log2Up(nCores).W)))
     val replacementWay = Output(Valid(UInt(log2Up(nWays).W)))
     val missActive = Input(Bool())
   })
@@ -24,14 +27,16 @@ class ContentionReplacementAlgorithm(nWays: Int, nCores: Int, enableMissInMiss: 
   val replaceWay = WireDefault(0.U(log2Up(nWays).W))
   val isValidReplaceWay = WireDefault(false.B)
 
-  val coreAssignments = VecInit(Seq.fill(nWays)(0.U(log2Up(nCores).W)))
   val criticalWays = VecInit(Seq.fill(nWays)(false.B))
   val unlimitedWays = VecInit(Seq.fill(nWays)(false.B))
+  val coreAssignments = VecInit(Seq.fill(nWays)(0.U(log2Up(nCores).W)))
 
   val updateCore = WireDefault(false.B)
   val updateCoreId = WireDefault(0.U(log2Up(nCores).W))
   val updateCoreMim = WireDefault(false.B)
   val updateCoreIdMim = WireDefault(0.U(log2Up(nCores).W))
+  val updateCorePrecedent = WireDefault(false.B)
+  val updateCoreIdPrecedent = WireDefault(0.U(log2Up(nCores).W))
 
   // Determine critical and unlimited ways
   for (i <- 0 until nWays) {
@@ -57,10 +62,20 @@ class ContentionReplacementAlgorithm(nWays: Int, nCores: Int, enableMissInMiss: 
   val missInMissEvent = isReqCoreCritical && io.evict && io.missActive
 
   // Trigger Miss-In-Miss event
-  if(enableMissInMiss) {
+  if (enableMissInMiss) {
     when(missInMissEvent) {
       updateCoreMim := true.B
       updateCoreIdMim := io.reqCore
+    }
+  }
+
+  // Check if it is a precedent event
+  if (enablePrecedentEvents) {
+    // If the core whose way we hit is not critical and the requesting core is critical, then we increment the contention limit
+    val precedentEvent = isReqCoreCritical && !io.criticalCores(io.lineAssignments(io.hitWayIdx)) && io.update
+    when(precedentEvent) {
+      updateCorePrecedent := true.B
+      updateCoreIdPrecedent := io.reqCore
     }
   }
 
@@ -69,12 +84,12 @@ class ContentionReplacementAlgorithm(nWays: Int, nCores: Int, enableMissInMiss: 
     val evictionEvent = firstUCSetWayCoreCritical && anyNonCriticalWays
     val replacementEvent = firstUCSetWayCoreCritical && !isReqCoreCritical
     when(io.evict && (evictionEvent || replacementEvent)) {
-        updateCore := true.B
-        updateCoreId := firstUCSetWayCore
+      updateCore := true.B
+      updateCoreId := firstUCSetWayCore
     }
     replaceWay := io.baseCandidates(firstUCSetIdx)
     isValidReplaceWay := true.B
-  } .elsewhen(isReqCoreCritical) {
+  }.elsewhen(isReqCoreCritical) {
     replaceWay := io.baseCandidates(0)
     isValidReplaceWay := true.B
   }
@@ -83,6 +98,8 @@ class ContentionReplacementAlgorithm(nWays: Int, nCores: Int, enableMissInMiss: 
   io.updateCore.bits := updateCoreId
   io.updateCoreMim.valid := updateCoreMim
   io.updateCoreMim.bits := updateCoreIdMim
+  io.updateCorePrecedent.valid := updateCorePrecedent
+  io.updateCorePrecedent.bits := updateCoreIdPrecedent
   io.replacementWay.valid := isValidReplaceWay
   io.replacementWay.bits := replaceWay
 }

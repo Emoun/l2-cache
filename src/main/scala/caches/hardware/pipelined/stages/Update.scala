@@ -72,6 +72,7 @@ class UpdateUnit(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexW
     val coreResp = new CacheResponseIO(subBlockWidth, reqIdWidth)
     val memUpdate = new CacheMemUpdateIO(nWays, indexWidth, nSubBlocks, subBlockWidth)
     val tagUpdate = new TagUpdateIO(nWays, indexWidth, tagWidth)
+    val pipeStall = Input(Bool())
     val outCoreId = Output(UInt(log2Up(nCores).W))
     val stall = Output(Bool())
     val setValidLine = new SetLineValidIO(nWays, indexWidth, tagWidth)
@@ -123,7 +124,7 @@ class UpdateUnit(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexW
       coreRespCoreId := io.readStage.coreId
       coreRespData := io.readStage.memReadData(io.readStage.blockOffset)
       coreRespStatus := io.readStage.responseStatus
-      coreRespValid := true.B
+      coreRespValid := true.B && !io.pipeStall
 
       when(io.readStage.rw) {
         wrEn := true.B

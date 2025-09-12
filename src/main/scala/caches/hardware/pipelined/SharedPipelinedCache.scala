@@ -158,6 +158,7 @@ class SharedPipelinedCache(
 
   updateLogic.io.readStage <> readLogic.io.update
   updateLogic.io.memoryInterface <> memInterface.io.updateLogic
+  updateLogic.io.pipeStall := pipeStall
   io.core.resp <> updateLogic.io.coreResp
   io.outCoreId := updateLogic.io.outCoreId
 }
