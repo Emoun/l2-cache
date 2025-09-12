@@ -146,6 +146,8 @@ object Tests {
     CacheRequest(coreId = 1, reqId = 33, tag = 18, index = 0, blockOffset = 0, rw = false, expectedData = Some("ca065d4eea469633ab2fd69681debb57")), // Critical core can evict any other core
   )
 
+  // TODO: Add test case for a line being evicted by a write and then this line being evicted and brought back in later on
+
   val testActions3: Array[TestAction] = Array(
     ExpectFinishedRejectedResponse(coreId = 2, reqId = 31, expectedData = "40a13302ac635051b398eb9a4cec416c"),
     ExpectFinishedRejectedResponse(coreId = 0, reqId = 32, expectedData = "d1f8fbeb63d88f19a2af35a0cd00f5ef"),

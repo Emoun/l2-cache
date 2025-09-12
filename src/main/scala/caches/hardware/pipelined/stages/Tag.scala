@@ -55,10 +55,10 @@ class DirtyRegisterFile (nWays: Int, nSets: Int) extends Module() {
   val writeData = WireDefault(0.U(1.W))
   val wrEn = io.unset || io.set
 
-  when(io.unset) {
-    writeData := false.B
-  } .elsewhen(io.set) {
+  when(io.set) {
     writeData := true.B
+  } .elsewhen(io.unset) {
+    writeData := false.B
   }
 
   val selDirtyBits = Wire(Vec(nWays, Bool()))
