@@ -3,6 +3,7 @@ package caches.hardware.reppol
 import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
+import caches.hardware.reppol.ReplacementPolicyTest._
 
 class BitPlruReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTester {
   def assertPlruSet(dut: BitPlruReplacementPolicy, expectedSet: Array[Int], printActual: Boolean = false): Unit = {
@@ -33,12 +34,7 @@ class BitPlruReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTeste
     val (nWays, nSets, nCores) = (4, 2, 1)
     test(new BitPlruReplacementPolicy(nWays = nWays, nSets = nSets, nCores = nCores)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default assignments
-      dut.io.control.update.valid.poke(false.B)
-      dut.io.control.update.bits.poke(0.U)
-      dut.io.control.stall.poke(false.B)
-      dut.io.control.evict.poke(false.B)
-      dut.io.control.setIdx.poke(0.U)
-      dut.io.control.coreId.poke(0.U)
+      defaultAssignments(dut)
 
       dut.clock.step(1)
 
@@ -94,12 +90,7 @@ class BitPlruReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTeste
     val (nWays, nSets, nCores) = (2, 2, 1)
     test(new BitPlruReplacementPolicy(nWays = nWays, nSets = nSets, nCores = nCores)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default assignments
-      dut.io.control.update.valid.poke(false.B)
-      dut.io.control.update.bits.poke(0.U)
-      dut.io.control.stall.poke(false.B)
-      dut.io.control.evict.poke(false.B)
-      dut.io.control.setIdx.poke(0.U)
-      dut.io.control.coreId.poke(0.U)
+      defaultAssignments(dut)
 
       dut.clock.step(1)
 
@@ -159,12 +150,7 @@ class BitPlruReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTeste
     val (nWays, nSets, nCores) = (8, 2, 1)
     test(new BitPlruReplacementPolicy(nWays = nWays, nSets = nSets, nCores = nCores)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default assignments
-      dut.io.control.update.valid.poke(false.B)
-      dut.io.control.update.bits.poke(0.U)
-      dut.io.control.stall.poke(false.B)
-      dut.io.control.evict.poke(false.B)
-      dut.io.control.setIdx.poke(0.U)
-      dut.io.control.coreId.poke(0.U)
+      defaultAssignments(dut)
 
       dut.clock.step(1)
 

@@ -564,7 +564,7 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     }
   }
 
-  "SharedPipelinedCache" should "work with miss in miss events for 8 ways, 128 sets" in {
+  "SharedPipelinedCache" should "work with miss-q and precedent events for 8 ways and 128 sets" in {
     val sizeInBytes = 65536 // 64 KiB
     val nCores = 4
     val nWays = 8

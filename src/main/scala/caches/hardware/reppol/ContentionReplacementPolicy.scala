@@ -54,6 +54,7 @@ class CoreContentionTable(nCores: Int) extends Module() {
     val contentionLimit = Input(UInt(CONTENTION_LIMIT_WIDTH.W))
     val decrContention1 = Input(Valid(UInt(log2Up(nCores).W)))
     val decrContention2 = Input(Valid(UInt(log2Up(nCores).W)))
+    val decrContention2Val = Input(UInt(2.W)) // TODO: Figure out the limit of this one
     val incrContention = Input(Valid(UInt(log2Up(nCores).W)))
     val readData = Output(UInt(CONTENTION_LIMIT_WIDTH.W)) // Returns the current core limit if it is unset as critical
     val rLimits = Output(Vec(nCores, UInt(CONTENTION_LIMIT_WIDTH.W)))
@@ -78,19 +79,31 @@ class CoreContentionTable(nCores: Int) extends Module() {
       contentionLimits(coreTableIdx) := 0.U
     }
 
+    // To avoid overflow and underflow
     val reachedLimit = contentionLimits(coreTableIdx) === 0.U
+    val reachedMax = contentionLimits(coreTableIdx) === ((1 << CONTENTION_LIMIT_WIDTH) - 1).U
 
-    when(io.decrContention1.valid) {
-      when(io.decrContention1.bits === coreTableIdx.U && !reachedLimit) {
-        when(io.decrContention2.valid && io.decrContention1.bits === io.decrContention2.bits) {
-          contentionLimits(coreTableIdx) := contentionLimits(coreTableIdx) - 2.U
-        }.otherwise {
-          contentionLimits(coreTableIdx) := contentionLimits(coreTableIdx) - 1.U
+    when(io.decrContention1.valid && io.decrContention1.bits === coreTableIdx.U && !reachedLimit) {
+      when(io.decrContention2.valid && io.decrContention1.bits === io.decrContention2.bits) {
+        val decrAmount = io.decrContention2Val + 1.U
+
+        when (decrAmount <= contentionLimits(coreTableIdx)) {
+          contentionLimits(coreTableIdx) := contentionLimits(coreTableIdx) - decrAmount
+        } .otherwise {
+          contentionLimits(coreTableIdx) := 0.U
         }
+      }.otherwise {
+        contentionLimits(coreTableIdx) := contentionLimits(coreTableIdx) - 1.U
       }
-    }.elsewhen(io.decrContention2.valid && io.decrContention2.bits === coreTableIdx.U && !reachedLimit) {
-      contentionLimits(coreTableIdx) := contentionLimits(coreTableIdx) - 1.U
-    }.elsewhen(io.incrContention.valid && io.incrContention.bits === coreTableIdx.U) {
+    }.elsewhen(io.decrContention2.valid && io.decrContention2.bits === coreTableIdx.U) {
+      val decrAmount = io.decrContention2Val
+
+      when (decrAmount <= contentionLimits(coreTableIdx)) {
+        contentionLimits(coreTableIdx) := contentionLimits(coreTableIdx) - decrAmount
+      } .otherwise {
+        contentionLimits(coreTableIdx) := 0.U
+      }
+    }.elsewhen(io.incrContention.valid && io.incrContention.bits === coreTableIdx.U && !reachedMax) {
       contentionLimits(coreTableIdx) := contentionLimits(coreTableIdx) + 1.U
     }
   }
@@ -120,7 +133,7 @@ class CoreContentionTable(nCores: Int) extends Module() {
  * @param nCores     number of cores sharing the cache
  * @param basePolicy the base replacement policy module generating function
  */
-class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolicy: () => SharedCacheReplacementPolicyType, enableMissInMiss: Boolean = false, enablePrecedentEvents: Boolean = false) extends SharedCacheReplacementPolicyType(nWays, nSets, nCores, CONTENTION_LIMIT_WIDTH) {
+class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolicy: () => SharedCacheReplacementPolicyType, missQueueDepth: Int = 4, enableMissInMiss: Boolean = false, enablePrecedentEvents: Boolean = false) extends SharedCacheReplacementPolicyType(nWays, nSets, nCores, CONTENTION_LIMIT_WIDTH, missQueueDepth) {
   // ---------------- Base policy stage ----------------
 
   // Base policy instantiation
@@ -129,13 +142,12 @@ class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolic
   // Update base policy
   basePolicyInst.io.control.isHit := io.control.isHit
   basePolicyInst.io.control.setIdx := io.control.setIdx
-  basePolicyInst.io.control.coreId := io.control.coreId
+  basePolicyInst.io.control.missQueue := io.control.missQueue
   basePolicyInst.io.control.evict := io.control.evict
   basePolicyInst.io.control.update.valid := io.control.update.valid
   basePolicyInst.io.control.update.bits := io.control.update.bits
   basePolicyInst.io.control.updateCoreId := io.control.update.bits
   basePolicyInst.io.control.stall := io.control.stall
-  basePolicyInst.io.control.missActive := io.control.missActive
   basePolicyInst.io.scheduler <> io.scheduler
 
   // Need to delay this signal by two CCs since the bit plru uses memory to store the MRU bits
@@ -143,7 +155,7 @@ class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolic
   val setIdxPipeReg = PipelineReg(setIdxDelayReg, 0.U, !io.control.stall)
 
   // ---------------- Eviction stage ----------------
-  val contAlgorithm = Module(new ContentionReplacementAlgorithm(nWays, nCores, enableMissInMiss, enablePrecedentEvents))
+  val contAlgorithm = Module(new ContentionReplacementAlgorithm(nWays, nCores, nMshrs = missQueueDepth, enableMissInMiss, enablePrecedentEvents))
 
   val assignArr = Module(new LineAssignmentsArray(nWays, nSets, nCores))
   assignArr.io.stall := io.control.stall
@@ -160,14 +172,16 @@ class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolic
   coreTable.io.setCritical := io.scheduler.cmd === SchedulerCmd.WR
   coreTable.io.unsetCritical := io.scheduler.cmd === SchedulerCmd.RD
   coreTable.io.contentionLimit := io.scheduler.wData
-  io.scheduler.rData := coreTable.io.readData
   coreTable.io.decrContention1 := contAlgorithm.io.updateCore
   coreTable.io.decrContention2 := contAlgorithm.io.updateCoreMim
+  coreTable.io.decrContention2Val := contAlgorithm.io.updateCoreMimEventCnt
   coreTable.io.incrContention := contAlgorithm.io.updateCorePrecedent
+  io.scheduler.rData := coreTable.io.readData
 
   // Compute the eviction for each set
   contAlgorithm.io.evict := io.control.evict
-  contAlgorithm.io.update := io.control.update.valid && io.control.isHit
+  contAlgorithm.io.update := io.control.update.valid
+  contAlgorithm.io.hit := io.control.isHit
   contAlgorithm.io.hitWayIdx := io.control.update.bits
   contAlgorithm.io.reqCore := io.control.updateCoreId
   contAlgorithm.io.baseCandidates := basePolicyInst.io.control.replacementSet
@@ -175,7 +189,7 @@ class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolic
   contAlgorithm.io.validLineAssignments := assignArr.io.rValidAssign
   contAlgorithm.io.coreLimits := coreTable.io.rLimits
   contAlgorithm.io.criticalCores := coreTable.io.rCritCores
-  contAlgorithm.io.missActive := io.control.missActive
+  contAlgorithm.io.missQueue := io.control.missQueue
 
   io.control.replaceWay := contAlgorithm.io.replacementWay.bits
   io.control.isValid := contAlgorithm.io.replacementWay.valid
@@ -183,6 +197,7 @@ class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolic
 
   io.control.popRejQueue.valid := coreTable.io.freeRejectionQueue
   io.control.popRejQueue.bits := nCores.U // Free the entire rejection queue
+  io.control.pushReqToCritQueue := coreTable.io.rCritCores(io.control.updateCoreId) && (coreTable.io.rLimits(io.control.updateCoreId) === 0.U)
 }
 
 object ContentionReplacementPolicy extends App {

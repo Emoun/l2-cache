@@ -54,10 +54,11 @@ class MemoryInterface(nCores: Int, nWays: Int, nHalfMissCmds: Int, reqIdWidth: I
   private val nCommands = (blockWidth / 8) / bytesPerCmd
 
   val io = IO(new Bundle {
-    val missFifo = Flipped(new MissFifoPopIO(nCores, nHalfMissCmds, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, blockWidth))
+    val missFifo = Flipped(new MshrPopIO(nCores, nHalfMissCmds, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, blockWidth))
     val wbFifo = Flipped(new WbFifoPopIO(tagWidth, indexWidth, blockWidth))
     val updateLogic = Flipped(new MemInterfaceToUpdateIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockWidth, subBlockWidth))
     val memController = new CacheMemoryControllerIO(addressWidth, beatSize)
+    val idle = Output(Bool())
   })
 
   val sIdle :: sRead :: sWrite :: sReadBurst :: sWriteBurst :: sDoneRead :: sDoneWrite :: Nil = Enum(7)
@@ -84,6 +85,7 @@ class MemoryInterface(nCores: Int, nWays: Int, nHalfMissCmds: Int, reqIdWidth: I
   val memWStrb = WireDefault(0.U(beatSize.W))
   val memRDataRegAsUint = memRDataReg.asUInt
   val wbFifoWDataAsVec = VecInit(Seq.fill(blockWidth / (beatSize * 8))(0.U((beatSize * 8).W)))
+  val idle = WireDefault(false.B)
 
   for (i <- 0 until wbFifoWDataAsVec.length) {
     wbFifoWDataAsVec(i) := io.wbFifo.popEntry.wbData(((beatSize * 8) - 1) + (i * (beatSize * 8)), i * (beatSize * 8))
@@ -99,6 +101,7 @@ class MemoryInterface(nCores: Int, nWays: Int, nHalfMissCmds: Int, reqIdWidth: I
   switch(stateReg) {
     is(sIdle) {
 
+      idle := true.B
       // Perform a write-back
       when(!io.wbFifo.empty) {
         stateReg := sWrite
@@ -225,4 +228,6 @@ class MemoryInterface(nCores: Int, nWays: Int, nHalfMissCmds: Int, reqIdWidth: I
   io.memController.wChannel.wData.bits := memWData
   io.memController.wChannel.wStrb := memWStrb
   io.memController.wChannel.wLast := memWLast
+
+  io.idle := idle
 }

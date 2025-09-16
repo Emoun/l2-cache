@@ -47,5 +47,6 @@ class TreePlruReplacementPolicy(nWays: Int, nSets: Int, nCores: Int) extends Sha
   io.scheduler.rData := DontCare
   io.control.popRejQueue.valid := DontCare
   io.control.popRejQueue.bits := DontCare
+  io.control.pushReqToCritQueue := DontCare
 }
 

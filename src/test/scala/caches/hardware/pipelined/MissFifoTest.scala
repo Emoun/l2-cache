@@ -8,11 +8,11 @@ case class ExpectedCmd(reqId: Int, coreId: Int, blockOffset: Int)
 case class ExpectedMshrStatus(tags: Array[String], indexes: Array[String], validMSHRs: Array[Boolean], fullSignals: Array[Boolean])
 
 class MissFifoTest extends AnyFlatSpec with ChiselScalatestTester {
-  def assertMshrStatus(dut: MissFifo, expectedStatus: ExpectedMshrStatus): Unit = {
-    val currentTags = dut.io.push.info.currentTags
-    val currentIndexes = dut.io.push.info.currentIndexes
-    val validMSHRs = dut.io.push.info.validMSHRs
-    val fullSignals = dut.io.push.info.fullCmds
+  def assertMshrStatusInNonCritQueue(dut: MissFifo, expectedStatus: ExpectedMshrStatus): Unit = {
+    val currentTags = dut.io.nonCritInfo.currentTags
+    val currentIndexes = dut.io.nonCritInfo.currentIndexes
+    val validMSHRs = dut.io.nonCritInfo.validMSHRs
+    val fullSignals = dut.io.nonCritInfo.fullCmds
 
     for (i <- expectedStatus.indexes.indices) {
         currentTags(i).expect(expectedStatus.tags(i).U)
@@ -51,7 +51,7 @@ class MissFifoTest extends AnyFlatSpec with ChiselScalatestTester {
     println("")
   }
 
-  "MissFifo" should "push and pop entries correctly" in {
+  "MissFifo" should "push and pop entries correctly for non critical queue" in {
     val blockWidth = 64
     val subBlockWidth = 16
 
@@ -197,11 +197,11 @@ class MissFifoTest extends AnyFlatSpec with ChiselScalatestTester {
 
       dut.io.push.full.expect(true.B)
       dut.io.pop.empty.expect(false.B)
-      dut.io.push.info.fullCmds(0).expect(true.B)
+      dut.io.nonCritInfo.fullCmds(0).expect(true.B)
 
       assertCmds(dut, Array(Some(ExpectedCmd(1, 2, 0)), Some(ExpectedCmd(11, 3, 3)), Some(ExpectedCmd(13, 1, 0)), Some(ExpectedCmd(5, 2, 2))), print = true)
 
-      assertMshrStatus(
+      assertMshrStatusInNonCritQueue(
         dut,
         ExpectedMshrStatus(
           tags = Array("h12", "h44", "haa", "hbb"),
@@ -261,11 +261,11 @@ class MissFifoTest extends AnyFlatSpec with ChiselScalatestTester {
 
       dut.io.push.full.expect(false.B)
       dut.io.pop.empty.expect(false.B)
-      dut.io.push.info.fullCmds(1).expect(false.B)
+      dut.io.nonCritInfo.fullCmds(1).expect(false.B)
 
       assertCmds(dut, Array(Some(ExpectedCmd(2, 2, 0)), Some(ExpectedCmd(7, 2, 1)), None, None), print = true)
 
-      assertMshrStatus(
+      assertMshrStatusInNonCritQueue(
         dut,
         ExpectedMshrStatus(
           tags = Array("h12", "h44", "haa", "hbb"),
@@ -287,11 +287,11 @@ class MissFifoTest extends AnyFlatSpec with ChiselScalatestTester {
 
       dut.io.push.full.expect(false.B)
       dut.io.pop.empty.expect(false.B)
-      dut.io.push.info.fullCmds(2).expect(false.B)
+      dut.io.nonCritInfo.fullCmds(2).expect(false.B)
 
       assertCmds(dut, Array(None, None, None, None), print = true)
 
-      assertMshrStatus(
+      assertMshrStatusInNonCritQueue(
         dut,
         ExpectedMshrStatus(
           tags = Array("h12", "h44", "haa", "hbb"),
@@ -313,11 +313,11 @@ class MissFifoTest extends AnyFlatSpec with ChiselScalatestTester {
 
       dut.io.push.full.expect(false.B)
       dut.io.pop.empty.expect(false.B)
-      dut.io.push.info.fullCmds(3).expect(false.B)
+      dut.io.nonCritInfo.fullCmds(3).expect(false.B)
 
       assertCmds(dut, Array(Option(ExpectedCmd(4, 3, 3)), None, None, None), print = true)
 
-      assertMshrStatus(
+      assertMshrStatusInNonCritQueue(
         dut,
         ExpectedMshrStatus(
           tags = Array("h12", "h44", "haa", "hbb"),
@@ -332,7 +332,7 @@ class MissFifoTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.io.push.full.expect(false.B)
       dut.io.pop.empty.expect(true.B)
 
-      assertMshrStatus(
+      assertMshrStatusInNonCritQueue(
         dut,
         ExpectedMshrStatus(
           tags = Array("h12", "h44", "haa", "hbb"),
@@ -367,7 +367,7 @@ class MissFifoTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.io.push.pushCmdEntry.coreId.poke(0.U)
       dut.io.push.pushCmdEntry.blockOffset.poke(0.U)
 
-      assertMshrStatus(
+      assertMshrStatusInNonCritQueue(
         dut,
         ExpectedMshrStatus(
           tags = Array("ha", "h44", "haa", "hbb"),

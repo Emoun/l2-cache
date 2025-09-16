@@ -1,8 +1,8 @@
 package caches.hardware.pipelined
 
+import caches.hardware.util._
 import chisel3._
 import chisel3.util._
-import caches.hardware.util._
 
 class CacheCmdIO(nCores: Int, reqIdWidth: Int, blockOffsetWidth: Int) extends Bundle {
   val coreIdWidth = log2Up(nCores)
@@ -26,9 +26,10 @@ class MshrInfoIO(nMshrs: Int, nWays: Int, indexWidth: Int, tagWidth: Int) extend
   val validMSHRs = Output(Vec(nMshrs, Bool()))
   val fullCmds = Output(Vec(nMshrs, Bool()))
   val wrPtr = Output(UInt(log2Ceil(nMshrs).W))
+  val elementCnt = Output(UInt(log2Up(nMshrs).W))
 }
 
-class MissFifoPushIO(nCores: Int, nMshrs: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, subBlockWidth: Int) extends Bundle() {
+class MshrPushIO(nCores: Int, nMshrs: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, subBlockWidth: Int) extends Bundle() {
   // For inserting a new MSHR entry
   val pushReq = Input(Bool())
   val withCmd = Input(Bool()) // If true, the pushReqEntry will be pushed with a command
@@ -43,11 +44,10 @@ class MissFifoPushIO(nCores: Int, nMshrs: Int, nWays: Int, reqIdWidth: Int, tagW
   val updateByteEnCol = Input(UInt(blockOffsetWidth.W))
   val updateByteEnVal = Input(UInt((subBlockWidth / 8).W))
   // Info about the current state of the MSHR array
-  val info = new MshrInfoIO(nMshrs, nWays, indexWidth, tagWidth)
   val full = Output(Bool())
 }
 
-class MissFifoPopIO(nCores: Int, nCmds: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, blockWidth: Int) extends Bundle() {
+class MshrPopIO(nCores: Int, nCmds: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, blockWidth: Int) extends Bundle() {
   val pop = Input(Bool())
   val reading = Input(Bool()) // Indicate that the memory interface is reading the pop entry and that no new data should be added to it
   val popEntry = Flipped(new LineRequestIO(nWays, tagWidth, indexWidth, blockWidth))
@@ -56,9 +56,69 @@ class MissFifoPopIO(nCores: Int, nCmds: Int, nWays: Int, reqIdWidth: Int, tagWid
   val empty = Output(Bool())
 }
 
+class MshrIO(nCores: Int, nMSHRs: Int, nCmds: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, blockWidth: Int, subBlockWidth: Int) extends Bundle {
+  val info = new MshrInfoIO(nMSHRs, nWays, indexWidth, tagWidth)
+  val push = new MshrPushIO(nCores, nMSHRs, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, subBlockWidth)
+  val pop = new MshrPopIO(nCores, nCmds, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, blockWidth)
+}
+
 class MissFifoIO(nCores: Int, nMSHRs: Int, nCmds: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, blockWidth: Int, subBlockWidth: Int) extends Bundle {
-  val push = new MissFifoPushIO(nCores, nMSHRs, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, subBlockWidth)
-  val pop = new MissFifoPopIO(nCores, nCmds, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, blockWidth)
+  val memIntIdle = Input(Bool())
+  val nonCritInfo = new MshrInfoIO(nMSHRs, nWays, indexWidth, tagWidth)
+  val critInfo = new MshrInfoIO(nMSHRs, nWays, indexWidth, tagWidth)
+  val isCrit = Input(Bool()) // Indicate if the current request should be pushed to the critical queue
+  val push = new MshrPushIO(nCores, nMSHRs, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, subBlockWidth)
+  val pop = new MshrPopIO(nCores, nCmds, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, blockWidth)
+  val full = Output(Bool())
+}
+
+class MshrPushDemux(nCores: Int, nCmds: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, blockWidth: Int) extends Module {
+  val io = IO(new Bundle {
+    val sel = Input(UInt(1.W))
+    val in = new MshrPushIO(nCores, nCmds, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, blockWidth)
+    val out1 = Flipped(new MshrPushIO(nCores, nCmds, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, blockWidth))
+    val out2 = Flipped(new MshrPushIO(nCores, nCmds, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, blockWidth))
+  })
+
+  io.out2 <> 0.U.asTypeOf(io.out2)
+  io.out1 <> 0.U.asTypeOf(io.out1)
+
+  when (io.sel === 0.U) {
+    io.out1 <> io.in
+  } .otherwise {
+    io.out2 <> io.in
+  }
+}
+
+class MshrPopMux(nCores: Int, nCmds: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, blockWidth: Int) extends Module {
+  val io = IO(new Bundle {
+    val sel = Input(UInt(1.W))
+    val in1 = Flipped(new MshrPopIO(nCores, nCmds, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, blockWidth))
+    val in2 = Flipped(new MshrPopIO(nCores, nCmds, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, blockWidth))
+    val out = new MshrPopIO(nCores, nCmds, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, blockWidth)
+  })
+
+  when (io.sel === 0.U) {
+    io.in1.pop := io.out.pop
+    io.in1.reading := io.out.reading
+    io.out.popEntry := io.in1.popEntry
+    io.out.cmds := io.in1.cmds
+    io.out.cmdCnt := io.in1.cmdCnt
+    io.out.empty := io.in1.empty
+
+    io.in2.pop := false.B
+    io.in2.reading := false.B
+  } .otherwise {
+    io.in2.pop := io.out.pop
+    io.in2.reading := io.out.reading
+    io.out.popEntry := io.in2.popEntry
+    io.out.cmds := io.in2.cmds
+    io.out.cmdCnt := io.in2.cmdCnt
+    io.out.empty := io.in2.empty
+
+    io.in1.pop := false.B
+    io.in1.reading := false.B
+  }
 }
 
 class RequestMshrQueue(nMshrs: Int, nWays: Int, tagWidth: Int, indexWidth: Int, blockWidth: Int, subBlockWidth: Int) extends Module {
@@ -168,7 +228,7 @@ class CmdMshrQueue(nCmds: Int, nCores: Int, nMshrs: Int, reqIdWidth: Int, blockO
 
   when(io.push) {
     cntRegs(io.wrPtr) := Mux(io.withCmd, 1.U, 0.U)
-  } .elsewhen(io.update) {
+  }.elsewhen(io.update) {
     cntRegs(io.updtPtr) := cntRegs(io.updtPtr) + 1.U
   }
 
@@ -197,8 +257,8 @@ class CmdMshrQueue(nCmds: Int, nCores: Int, nMshrs: Int, reqIdWidth: Int, blockO
   io.cmdCnt := cntRegs(io.rdPtr)
 }
 
-class MissFifo(nCores: Int, nCmds: Int, nMshrs: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, subBlockWidth: Int, blockWidth: Int) extends Module {
-  val io = IO(new MissFifoIO(nCores, nMshrs, nCmds, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, blockWidth, subBlockWidth))
+class MshrQueue(nCores: Int, nCmds: Int, nMshrs: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, subBlockWidth: Int, blockWidth: Int) extends Module {
+  val io = IO(new MshrIO(nCores = nCores, nMSHRs = nMshrs, nCmds = nCmds, nWays = nWays, reqIdWidth = reqIdWidth, tagWidth = tagWidth, indexWidth = indexWidth, blockOffsetWidth = blockOffsetWidth, blockWidth = blockWidth, subBlockWidth = subBlockWidth))
 
   val reqQueue = Module(new RequestMshrQueue(nMshrs, nWays, tagWidth, indexWidth, blockWidth, subBlockWidth))
   val cmdQueue = Module(new CmdMshrQueue(nCmds, nCores, nMshrs, reqIdWidth, blockOffsetWidth))
@@ -221,6 +281,13 @@ class MissFifo(nCores: Int, nCmds: Int, nMshrs: Int, nWays: Int, reqIdWidth: Int
   cmdQueue.io.updtPtr := io.push.mshrIdx
   cmdQueue.io.updtData := Cat(io.push.pushCmdEntry.reqId, io.push.pushCmdEntry.coreId, io.push.pushCmdEntry.blockOffset)
 
+  val queueElementCntReg = RegInit(0.U(log2Up(nMshrs).W))
+  when(io.push.pushReq && !io.pop.pop) {
+    queueElementCntReg := queueElementCntReg + 1.U
+  }.elsewhen(!io.push.pushReq && io.pop.pop && !io.pop.reading) {
+    queueElementCntReg := queueElementCntReg - 1.U
+  }
+
   val validMshrs = VecInit(Seq.fill(nMshrs)(false.B))
   validMshrs := reqQueue.io.validMSHRs
 
@@ -229,12 +296,14 @@ class MissFifo(nCores: Int, nCmds: Int, nMshrs: Int, nWays: Int, reqIdWidth: Int
   }
 
   io.push.full := reqQueue.io.full
-  io.push.info.wrPtr := reqQueue.io.wrPtr
-  io.push.info.validMSHRs := validMshrs
-  io.push.info.currentTags := reqQueue.io.currentTags
-  io.push.info.currentIndexes := reqQueue.io.currentIndexes
-  io.push.info.replacementWays := reqQueue.io.replacementWays
-  io.push.info.fullCmds := cmdQueue.io.full
+
+  io.info.wrPtr := reqQueue.io.wrPtr
+  io.info.validMSHRs := validMshrs
+  io.info.currentTags := reqQueue.io.currentTags
+  io.info.currentIndexes := reqQueue.io.currentIndexes
+  io.info.replacementWays := reqQueue.io.replacementWays
+  io.info.fullCmds := cmdQueue.io.full
+  io.info.elementCnt := queueElementCntReg
 
   io.pop.empty := reqQueue.io.empty
   io.pop.cmdCnt := cmdQueue.io.cmdCnt
@@ -243,4 +312,42 @@ class MissFifo(nCores: Int, nCmds: Int, nMshrs: Int, nWays: Int, reqIdWidth: Int
   io.pop.popEntry.replaceWay := reqQueue.io.popEntry.replaceWay
   io.pop.popEntry.byteEn := reqQueue.io.popEntry.byteEn
   io.pop.cmds := cmdQueue.io.rdCmds
+}
+
+class MissFifo(nCores: Int, nCmds: Int, nMshrs: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, subBlockWidth: Int, blockWidth: Int) extends Module {
+  val io = IO(new MissFifoIO(nCores, nMshrs, nCmds, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, blockWidth, subBlockWidth))
+
+  val critQueue = Module(new MshrQueue(nCores, nCmds, nMshrs, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, subBlockWidth, blockWidth))
+  val nonCritQueue = Module(new MshrQueue(nCores, nCmds, nMshrs, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, subBlockWidth, blockWidth))
+
+  // De-multiplex the push interface to the two queues
+  val mshrPushDemux = Module(new MshrPushDemux(nCores, nCmds, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, blockWidth))
+
+  mshrPushDemux.io.sel := io.isCrit
+  mshrPushDemux.io.in <> io.push
+  nonCritQueue.io.push <> mshrPushDemux.io.out1
+  critQueue.io.push <> mshrPushDemux.io.out2
+
+  // Multiplex between the two queues for popping
+  val mshrPopDemux = Module(new MshrPopMux(nCores, nCmds, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, blockWidth))
+
+  val mshrPopSelReg = RegInit(0.U(1.W))
+  when(io.memIntIdle) {
+    mshrPopSelReg := Mux(!critQueue.io.pop.empty, 1.U, 0.U)
+  }
+
+  // Choose to always pop the critical queue as long as it is not empty
+  mshrPopDemux.io.sel := mshrPopSelReg
+  mshrPopDemux.io.in1 <> nonCritQueue.io.pop
+  mshrPopDemux.io.in2 <> critQueue.io.pop
+  io.pop <> mshrPopDemux.io.out
+
+  io.critInfo <> critQueue.io.info
+  io.nonCritInfo <> nonCritQueue.io.info
+
+  // TODO: half misses can always go to either or
+  //  but requests can be pushed to critical queue only if it is a reqeust made by a critical core
+  //  that has reached its contention limit
+
+  io.full := critQueue.io.push.full || nonCritQueue.io.push.full
 }

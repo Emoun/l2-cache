@@ -13,13 +13,12 @@ class TimeoutReplacementPolicy (ways: Int, sets: Int, nCores: Int, basePolicy: (
   // Update base policy
   basePolicyInst.io.control.isHit := io.control.isHit
   basePolicyInst.io.control.setIdx := io.control.setIdx
-  basePolicyInst.io.control.coreId := io.control.coreId
   basePolicyInst.io.control.evict := io.control.evict
   basePolicyInst.io.control.update.valid := io.control.update.valid
   basePolicyInst.io.control.update.bits := io.control.update.bits
   basePolicyInst.io.control.updateCoreId := io.control.update.bits
   basePolicyInst.io.control.stall := io.control.stall
-  basePolicyInst.io.control.missActive := io.control.missActive
+  basePolicyInst.io.control.missQueue := io.control.missQueue
   basePolicyInst.io.scheduler <> io.scheduler
 
   // Need to delay this signal by two CCs because PLRU has 2 stages
@@ -115,6 +114,8 @@ class TimeoutReplacementPolicy (ways: Int, sets: Int, nCores: Int, basePolicy: (
     timers(refreshSetIdx) := Cat(updatedWays.reverse)
   }
 
+  // TODO: These need correct assignments
   io.control.popRejQueue.valid := false.B
   io.control.popRejQueue.bits := 0.U
+  io.control.pushReqToCritQueue := DontCare
 }

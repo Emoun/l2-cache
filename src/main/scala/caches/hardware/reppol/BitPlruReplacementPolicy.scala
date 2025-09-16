@@ -61,4 +61,5 @@ class BitPlruReplacementPolicy(nWays: Int, nSets: Int, nCores: Int) extends Shar
   io.scheduler.rData := DontCare // Bit PLRU does not use scheduler control
   io.control.popRejQueue.valid := DontCare
   io.control.popRejQueue.bits := DontCare
+  io.control.pushReqToCritQueue := DontCare
 }

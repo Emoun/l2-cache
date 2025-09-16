@@ -88,7 +88,7 @@ class SharedPipelinedCache(
   val rejectionQueue = Module(new RejectionQueue(nCores = nCores, addrWidth = addressWidth, dataWidth = bytesPerSubBlock * 8, reqIdWidth = reqIdWidth, depth = nCores))
   val coreReqMux = Module(new CoreReqMux(nCores = nCores, addrWidth = addressWidth, dataWidth = bytesPerSubBlock * 8, reqIdWidth = reqIdWidth))
 
-  val pipeStall = updateLogic.io.stall || missQueue.io.push.full // || missFifoCmdCapacity
+  val pipeStall = updateLogic.io.stall || missQueue.io.full // || missFifoCmdCapacity
   val reqAccept = !pipeStall
 
   // Connect core request and rejection queue to the core request multiplexer that feeds into the cache pipeline
@@ -129,7 +129,10 @@ class SharedPipelinedCache(
   val repLogic = Module(new Rep(nCores = nCores, nSets = nSets, nWays = nWays, nMshrs = nMshrs, reqIdWidth = reqIdWidth, tagWidth = tagWidth, indexWidth = indexWidth, blockOffWidth = blockOffsetWidth, blockWidth = bytesPerBlock * 8, subBlockWidth = bytesPerSubBlock * 8))
   repLogic.io.stall := pipeStall
   repLogic.io.rep <> tagLogic.io.rep
-  repLogic.io.missFifo <> missQueue.io.push
+  repLogic.io.missFifoPush <> missQueue.io.push
+  repLogic.io.missCritInfo <> missQueue.io.critInfo
+  repLogic.io.missNonCritInfo <> missQueue.io.nonCritInfo
+  missQueue.io.isCrit := repLogic.io.isMissPushCrit
   repLogic.io.repPol <> repPol.io.control
   repLogic.io.setLineValid := updateLogic.io.setValidLine
   invalidateLine := repLogic.io.invalidate.invalidate
@@ -138,7 +141,6 @@ class SharedPipelinedCache(
   missFifoCmdCapacity := repLogic.io.halfMissCapacity
   rejectionQueue.io.push := repLogic.io.pushReject
   rejectionQueue.io.pushEntry := repLogic.io.pushRejectEntry
-  repLogic.io.missActive := !missQueue.io.pop.empty
 
   // ---------------- Read ----------------
 
@@ -155,6 +157,7 @@ class SharedPipelinedCache(
   memInterface.io.missFifo <> missQueue.io.pop
   memInterface.io.wbFifo <> wbQueue.io.pop
   memInterface.io.memController <> io.mem
+  missQueue.io.memIntIdle := memInterface.io.idle
 
   updateLogic.io.readStage <> readLogic.io.update
   updateLogic.io.memoryInterface <> memInterface.io.updateLogic

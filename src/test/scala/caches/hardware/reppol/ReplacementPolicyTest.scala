@@ -58,7 +58,7 @@ object ReplacementPolicyTest {
 
     dut.clock.step(1)
 
-    dut.io.control.coreId.poke(0.U)
+    dut.io.control.updateCoreId.poke(0.U)
     dut.io.control.evict.poke(false.B)
     dut.io.control.setIdx.poke(0.U)
   }
@@ -86,9 +86,11 @@ object ReplacementPolicyTest {
   def defaultAssignments(dut: SharedCacheReplacementPolicyType): Unit = {
     dut.io.control.update.valid.poke(false.B)
     dut.io.control.update.bits.poke(0.U)
+    dut.io.control.stall.poke(false.B)
+    dut.io.control.evict.poke(false.B)
     dut.io.control.updateCoreId.poke(0.U)
     dut.io.control.setIdx.poke(0.U)
-    dut.io.control.coreId.poke(0.U)
+
     dut.io.scheduler.cmd.poke(SchedulerCmd.NULL)
     dut.io.scheduler.addr.poke(0.U)
     dut.io.scheduler.wData.poke(0.U)

@@ -142,7 +142,7 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
       performUpdateRequest(dut, coreId = 1, setIdx = workingSet, hitWay = 0)
       dut.clock.step()
 
-      // Now try to again to evict.
+      // Now try again to evict.
       // Because the most recently used is the only non-critical (and non-limited) it should be evicted
       performEvictionRequest(dut, coreId = 1, setIdx = workingSet, expectedEvictionCandidate = Some(0))
     }
@@ -183,7 +183,7 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
 
   "ContentionReplacementPolicy" should "Miss-in-Miss" in {
     val (nWays, nSets, nCores) = (4, 2, 3)
-    test(new ContentionReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores), true)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+    test(new ContentionReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores), enableMissInMiss = true)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       defaultAssignments(dut)
 
       val workingSet = 1
@@ -210,7 +210,8 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
       performUpdateRequest(dut, coreId = 1, setIdx = workingSet, hitWay = 3)
 
       // Perform eviction using critical core during a miss, which should trigger an event
-      dut.io.control.missActive.poke(true.B)
+      dut.io.control.missQueue.valid.poke(true.B)
+      dut.io.control.missQueue.bits.poke(1.U)
       performEvictionRequest(dut, coreId = 1, setIdx = workingSet, expectedEvictionCandidate = Some(0))
       dut.clock.step()
       performUpdateRequest(dut, coreId = 1, setIdx = workingSet, hitWay = 0)
@@ -223,7 +224,7 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
 
   "ContentionReplacementPolicy" should "Miss-in-Miss No Unlimited" in {
     val (nWays, nSets, nCores) = (4, 2, 3)
-    test(new ContentionReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores), true)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+    test(new ContentionReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores), enableMissInMiss = true)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       defaultAssignments(dut)
 
       val workingSet = 1
@@ -252,7 +253,8 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
       performUpdateRequest(dut, coreId = 2, setIdx = workingSet, hitWay = 3)
 
       // Perform eviction using unlimited critical core during a miss, which should trigger an event
-      dut.io.control.missActive.poke(true.B)
+      dut.io.control.missQueue.valid.poke(true.B)
+      dut.io.control.missQueue.bits.poke(1.U)
       performEvictionRequest(dut, coreId = 1, setIdx = workingSet, expectedEvictionCandidate = Some(0))
       dut.clock.step()
       performUpdateRequest(dut, coreId = 1, setIdx = workingSet, hitWay = 0)
@@ -265,7 +267,7 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
 
   "ContentionReplacementPolicy" should "Miss-in-Miss with eviction event" in {
     val (nWays, nSets, nCores) = (4, 2, 3)
-    test(new ContentionReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores), true)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+    test(new ContentionReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores), enableMissInMiss = true)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       defaultAssignments(dut)
 
       val workingSet = 1
@@ -293,7 +295,8 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
 
       // Perform eviction using unlimited critical core during a miss, which should trigger 2 events:
       // One eviction event and one miss-in-miss
-      dut.io.control.missActive.poke(true.B)
+      dut.io.control.missQueue.valid.poke(true.B)
+      dut.io.control.missQueue.bits.poke(1.U)
       performEvictionRequest(dut, coreId = 0, setIdx = workingSet, expectedEvictionCandidate = Some(0))
       dut.clock.step()
       performUpdateRequest(dut, coreId = 0, setIdx = workingSet, hitWay = 0)
@@ -306,6 +309,122 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
 
       // Now try to evict the critical core using non-critical, should evict non-critical instead of limited LRU
       performEvictionRequest(dut, coreId = 2, setIdx = workingSet, expectedEvictionCandidate = Some(1))
+    }
+  }
+
+  "ContentionReplacementPolicy" should "handle precedent events" in {
+    val (nWays, nSets, nCores) = (4, 2, 3)
+    test(new ContentionReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores), enablePrecedentEvents = true)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+      defaultAssignments(dut)
+
+      val workingSet = 1
+      dut.clock.step()
+
+      // Set the first core as critical with a contention limit of 2
+      setCoreAsCritical(dut, coreID = 0, wData = 2)
+
+      // Assign some lines to the critical core
+      performEvictionRequest(dut, coreId = 0, setIdx = workingSet, expectedEvictionCandidate = Some(0))
+      dut.clock.step()
+      performUpdateRequest(dut, coreId = 0, setIdx = workingSet, hitWay = 0)
+
+      performEvictionRequest(dut, coreId = 0, setIdx = workingSet, expectedEvictionCandidate = Some(1))
+      dut.clock.step()
+      performUpdateRequest(dut, coreId = 0, setIdx = workingSet, hitWay = 1)
+
+      performEvictionRequest(dut, coreId = 0, setIdx = workingSet, expectedEvictionCandidate = Some(2))
+      dut.clock.step()
+      performUpdateRequest(dut, coreId = 0, setIdx = workingSet, hitWay = 2)
+
+      performEvictionRequest(dut, coreId = 2, setIdx = workingSet, expectedEvictionCandidate = Some(3))
+      dut.clock.step()
+      performUpdateRequest(dut, coreId = 2, setIdx = workingSet, hitWay = 3)
+
+      // Bring the contention limit up by accessing a line that was brought in by a non-critical core
+      dut.io.control.isHit.poke(true.B)
+      performUpdateRequest(dut, coreId = 0, setIdx = workingSet, hitWay = 3)
+      dut.clock.step()
+
+      // Now use non-critical cores to evict the critical core's lines, thus reach the contention limit
+      performEvictionRequest(dut, coreId = 1, setIdx = workingSet, expectedEvictionCandidate = Some(0))
+      dut.clock.step()
+      performUpdateRequest(dut, coreId = 1, setIdx = workingSet, hitWay = 0)
+
+      performEvictionRequest(dut, coreId = 1, setIdx = workingSet, expectedEvictionCandidate = Some(1))
+      dut.clock.step()
+      performUpdateRequest(dut, coreId = 1, setIdx = workingSet, hitWay = 1)
+
+      performEvictionRequest(dut, coreId = 1, setIdx = workingSet, expectedEvictionCandidate = Some(2))
+      dut.clock.step()
+      performUpdateRequest(dut, coreId = 1, setIdx = workingSet, hitWay = 2)
+
+      // Bring in a new line by a critical core that should not be evicted
+      performEvictionRequest(dut, coreId = 0, setIdx = workingSet, expectedEvictionCandidate = Some(0))
+      dut.clock.step()
+      performUpdateRequest(dut, coreId = 0, setIdx = workingSet, hitWay = 0)
+
+      // Get the plru to point to the critical core's line
+      performUpdateRequest(dut, coreId = 2, setIdx = workingSet, hitWay = 0)
+      performUpdateRequest(dut, coreId = 2, setIdx = workingSet, hitWay = 1)
+      performUpdateRequest(dut, coreId = 2, setIdx = workingSet, hitWay = 3)
+
+      // Now try to evict the critical line using non-critical core, should evict non-critical instead
+      performEvictionRequest(dut, coreId = 2, setIdx = workingSet, expectedEvictionCandidate = Some(1))
+
+      dut.clock.step()
+    }
+  }
+
+  "ContentionReplacementPolicy" should "handle miss-queue events" in {
+    val (nWays, nSets, nCores) = (4, 2, 3)
+    test(new ContentionReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores), missQueueDepth = 4, enableMissInMiss = true)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+      defaultAssignments(dut)
+
+      val workingSet = 1
+      dut.clock.step()
+
+      // Set the first core as critical with a contention limit of 2
+      setCoreAsCritical(dut, coreID = 2, wData = 2)
+
+      // Assign some lines to cores
+      performEvictionRequest(dut, coreId = 2, setIdx = workingSet, expectedEvictionCandidate = Some(0))
+      dut.clock.step()
+      performUpdateRequest(dut, coreId = 2, setIdx = workingSet, hitWay = 0)
+
+      performEvictionRequest(dut, coreId = 0, setIdx = workingSet, expectedEvictionCandidate = Some(1))
+      dut.clock.step()
+      performUpdateRequest(dut, coreId = 0, setIdx = workingSet, hitWay = 1)
+
+      performEvictionRequest(dut, coreId = 0, setIdx = workingSet, expectedEvictionCandidate = Some(2))
+      dut.clock.step()
+      performUpdateRequest(dut, coreId = 0, setIdx = workingSet, hitWay = 2)
+
+      performEvictionRequest(dut, coreId = 0, setIdx = workingSet, expectedEvictionCandidate = Some(3))
+      dut.clock.step()
+      performUpdateRequest(dut, coreId = 0, setIdx = workingSet, hitWay = 3)
+
+      // Make plru point to the first non-critical line
+      performUpdateRequest(dut, coreId = 1, setIdx = workingSet, hitWay = 0)
+
+      // Bring the contention limit down by indicating that there is currently two outstanding misses in the queue
+      dut.io.control.missQueue.valid.poke(true.B)
+      dut.io.control.missQueue.bits.poke(2.U)
+
+      performEvictionRequest(dut, coreId = 2, setIdx = workingSet, expectedEvictionCandidate = Some(1))
+      dut.clock.step()
+      performUpdateRequest(dut, coreId = 2, setIdx = workingSet, hitWay = 1)
+
+      dut.io.control.missQueue.valid.poke(false.B)
+      dut.io.control.missQueue.bits.poke(0.U)
+
+      // Get the plru to point to the critical core's line
+      performUpdateRequest(dut, coreId = 2, setIdx = workingSet, hitWay = 2)
+      performUpdateRequest(dut, coreId = 2, setIdx = workingSet, hitWay = 3)
+
+      // Now try to evict the critical line using non-critical core, should evict non-critical line instead
+      performEvictionRequest(dut, coreId = 2, setIdx = workingSet, expectedEvictionCandidate = Some(2))
+
+      dut.clock.step()
     }
   }
 }
