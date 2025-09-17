@@ -140,15 +140,19 @@ class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolic
   val basePolicyInst = Module(basePolicy())
 
   // Update base policy
-  basePolicyInst.io.control.isHit := io.control.isHit
   basePolicyInst.io.control.setIdx := io.control.setIdx
-  basePolicyInst.io.control.missQueue := io.control.missQueue
-  basePolicyInst.io.control.evict := io.control.evict
   basePolicyInst.io.control.update.valid := io.control.update.valid
   basePolicyInst.io.control.update.bits := io.control.update.bits
-  basePolicyInst.io.control.updateCoreId := io.control.update.bits
   basePolicyInst.io.control.stall := io.control.stall
-  basePolicyInst.io.scheduler <> io.scheduler
+  basePolicyInst.io.control.evict := DontCare
+  basePolicyInst.io.control.updateCoreId := DontCare
+  basePolicyInst.io.scheduler.cmd := DontCare
+  basePolicyInst.io.scheduler.addr := DontCare
+  basePolicyInst.io.scheduler.wData := DontCare
+  basePolicyInst.io.control.isHit := DontCare
+  basePolicyInst.io.control.missQueueEmpty := DontCare
+  basePolicyInst.io.control.missQueueCores := DontCare
+  basePolicyInst.io.control.missQueueValidCores := DontCare
 
   // Need to delay this signal by two CCs since the bit plru uses memory to store the MRU bits
   val setIdxDelayReg = PipelineReg(io.control.setIdx, 0.U, !io.control.stall)
@@ -189,7 +193,9 @@ class ContentionReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolic
   contAlgorithm.io.validLineAssignments := assignArr.io.rValidAssign
   contAlgorithm.io.coreLimits := coreTable.io.rLimits
   contAlgorithm.io.criticalCores := coreTable.io.rCritCores
-  contAlgorithm.io.missQueue := io.control.missQueue
+  contAlgorithm.io.missQueueEmpty := io.control.missQueueEmpty
+  contAlgorithm.io.missQueueCores := io.control.missQueueCores
+  contAlgorithm.io.missQueueValidCores := io.control.missQueueValidCores
 
   io.control.replaceWay := contAlgorithm.io.replacementWay.bits
   io.control.isValid := contAlgorithm.io.replacementWay.valid

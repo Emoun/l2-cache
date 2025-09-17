@@ -26,7 +26,9 @@ class ReplacementPolicyIO(nWays: Int, nSets: Int, nCores: Int, missQueueDepth: I
   //  so miss-q can be triggered by the same signal as the mim signal, but we would use a
   //  a number greater than 1 to decrement the limit, the number would be stored in a register that keeps track
   //  of how many misses there are in a queue so far
-  val missQueue = Input(Valid(UInt(log2Up(missQueueDepth).W)))
+  val missQueueEmpty = Input(Bool())
+  val missQueueCores = Input(Vec(missQueueDepth, UInt(log2Up(nCores).W)))
+  val missQueueValidCores = Input(Vec(missQueueDepth, Bool()))
   val update = Input(Valid(UInt(log2Up(nWays).W)))
   val setIdx = Input(UInt(log2Up(nSets).W))
   val updateCoreId = Input(UInt(log2Up(nCores).W))

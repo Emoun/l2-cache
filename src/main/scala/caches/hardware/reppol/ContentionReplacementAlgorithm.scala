@@ -11,7 +11,9 @@ class ContentionReplacementAlgorithm(nWays: Int, nCores: Int, nMshrs: Int = 4, e
     val hit = Input(Bool())
     val hitWayIdx = Input(UInt(log2Up(nWays).W))
     val reqCore = Input(UInt(log2Up(nCores).W))
-    val missQueue = Input(Valid(UInt(log2Up(nMshrs).W)))
+    val missQueueEmpty = Input(Bool())
+    val missQueueCores = Input(Vec(nMshrs, UInt(log2Up(nCores).W)))
+    val missQueueValidCores = Input(Vec(nMshrs, Bool()))
     val baseCandidates = Input(Vec(nWays, UInt(log2Up(nWays).W)))
     val validLineAssignments = Input(Vec(nWays, Bool()))
     val lineAssignments = Input(Vec(nWays, UInt(log2Up(nCores).W)))
@@ -37,6 +39,7 @@ class ContentionReplacementAlgorithm(nWays: Int, nCores: Int, nMshrs: Int = 4, e
   val updateCoreId = WireDefault(0.U(log2Up(nCores).W))
   val updateCoreMim = WireDefault(false.B)
   val updateCoreIdMim = WireDefault(0.U(log2Up(nCores).W))
+  val updateCoreMimEventCnt = WireDefault(0.U(log2Up(nMshrs).W))
   val updateCorePrecedent = WireDefault(false.B)
   val updateCoreIdPrecedent = WireDefault(0.U(log2Up(nCores).W))
 
@@ -62,20 +65,28 @@ class ContentionReplacementAlgorithm(nWays: Int, nCores: Int, nMshrs: Int = 4, e
   val anyNonCriticalWays = criticalWays.map(x => !x).reduce((x, y) => x || y)
 
   // This will address both miss in miss and miss-q events
-  val missInMissEvent = isReqCoreCritical && io.evict && io.missQueue.valid
+  val missInMissEvent = isReqCoreCritical && io.evict && !io.missQueueEmpty // TODO: Can replace io.evict with !io.hit instead
 
   // Trigger Miss-In-Miss event
   if (enableMissInMiss) {
+    val nonCritMissesInQueue = VecInit(Seq.fill(nMshrs)(false.B))
+    for (i <- 0 until nMshrs) {
+      nonCritMissesInQueue(i) := io.missQueueValidCores(i) && !io.criticalCores(io.missQueueCores(i))
+    }
+
     when(missInMissEvent) {
       updateCoreMim := true.B
       updateCoreIdMim := io.reqCore
+      updateCoreMimEventCnt := PopCount(nonCritMissesInQueue)
     }
   }
 
   // Check if it is a precedent event
   if (enablePrecedentEvents) {
-    // If the core whose way we hit is not critical and the requesting core is critical, then we increment the contention limit
-    val precedentEvent = isReqCoreCritical && !io.criticalCores(io.lineAssignments(io.hitWayIdx)) && io.update && io.hit
+    // If the core whose way we hit is not owned by the requesting core and the owner is not a critical core, then we increment the contention limit.
+    // Additionally, we only increment it if the requesting core is critical, since it would make no sense to do that for a non-critical core.
+    val ownerCore = io.lineAssignments(io.hitWayIdx)
+    val precedentEvent = isReqCoreCritical && (ownerCore =/= io.reqCore) && !io.criticalCores(ownerCore) && io.update && io.hit
     when(precedentEvent) {
       updateCorePrecedent := true.B
       updateCoreIdPrecedent := io.reqCore
@@ -101,7 +112,7 @@ class ContentionReplacementAlgorithm(nWays: Int, nCores: Int, nMshrs: Int = 4, e
   io.updateCore.bits := updateCoreId
   io.updateCoreMim.valid := updateCoreMim
   io.updateCoreMim.bits := updateCoreIdMim
-  io.updateCoreMimEventCnt := io.missQueue.bits
+  io.updateCoreMimEventCnt := updateCoreMimEventCnt
   io.updateCorePrecedent.valid := updateCorePrecedent
   io.updateCorePrecedent.bits := updateCoreIdPrecedent
   io.replacementWay.valid := isValidReplaceWay

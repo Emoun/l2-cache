@@ -12,28 +12,30 @@ class CacheCmdIO(nCores: Int, reqIdWidth: Int, blockOffsetWidth: Int) extends Bu
   val blockOffset = Input(UInt(blockOffsetWidth.W))
 }
 
-class LineRequestIO(nWays: Int, tagWidth: Int, indexWidth: Int, dataWidth: Int) extends Bundle {
+class LineRequestIO(nCores: Int, nWays: Int, tagWidth: Int, indexWidth: Int, dataWidth: Int) extends Bundle {
   val tag = Input(UInt(tagWidth.W))
   val index = Input(UInt(indexWidth.W))
   val byteEn = Input(UInt((dataWidth / 8).W))
+  val incidentCoreId = Input(UInt(log2Up(nCores).W)) // The core that caused this miss
   val replaceWay = Input(UInt(log2Up(nWays).W))
 }
 
-class MshrInfoIO(nMshrs: Int, nWays: Int, indexWidth: Int, tagWidth: Int) extends Bundle {
+class MshrInfoIO(nCores: Int, nMshrs: Int, nWays: Int, indexWidth: Int, tagWidth: Int) extends Bundle {
   val currentIndexes = Output(Vec(nMshrs, UInt(indexWidth.W)))
   val currentTags = Output(Vec(nMshrs, UInt(tagWidth.W)))
   val replacementWays = Output(Vec(nMshrs, UInt(log2Up(nWays).W)))
+  val incidentCoreIds = Output(Vec(nMshrs, UInt(log2Up(nCores).W)))
   val validMSHRs = Output(Vec(nMshrs, Bool()))
   val fullCmds = Output(Vec(nMshrs, Bool()))
   val wrPtr = Output(UInt(log2Ceil(nMshrs).W))
-  val elementCnt = Output(UInt(log2Up(nMshrs).W))
+  val elementCnt = Output(UInt(log2Up(nMshrs + 1).W))
 }
 
 class MshrPushIO(nCores: Int, nMshrs: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, subBlockWidth: Int) extends Bundle() {
   // For inserting a new MSHR entry
   val pushReq = Input(Bool())
   val withCmd = Input(Bool()) // If true, the pushReqEntry will be pushed with a command
-  val pushReqEntry = new LineRequestIO(nWays, tagWidth, indexWidth, subBlockWidth)
+  val pushReqEntry = new LineRequestIO(nCores, nWays, tagWidth, indexWidth, subBlockWidth)
   // For pushing new command into MSHR entry
   val pushCmd = Input(Bool())
   val mshrIdx = Input(UInt(log2Up(nMshrs).W))
@@ -50,22 +52,22 @@ class MshrPushIO(nCores: Int, nMshrs: Int, nWays: Int, reqIdWidth: Int, tagWidth
 class MshrPopIO(nCores: Int, nCmds: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, blockWidth: Int) extends Bundle() {
   val pop = Input(Bool())
   val reading = Input(Bool()) // Indicate that the memory interface is reading the pop entry and that no new data should be added to it
-  val popEntry = Flipped(new LineRequestIO(nWays, tagWidth, indexWidth, blockWidth))
+  val popEntry = Flipped(new LineRequestIO(nCores, nWays, tagWidth, indexWidth, blockWidth))
   val cmds = Output(Vec(nCmds, new CacheCmdIO(nCores, reqIdWidth, blockOffsetWidth)))
   val cmdCnt = Output(UInt((log2Up(nCmds) + 1).W))
   val empty = Output(Bool())
 }
 
 class MshrIO(nCores: Int, nMSHRs: Int, nCmds: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, blockWidth: Int, subBlockWidth: Int) extends Bundle {
-  val info = new MshrInfoIO(nMSHRs, nWays, indexWidth, tagWidth)
+  val info = new MshrInfoIO(nCores, nMSHRs, nWays, indexWidth, tagWidth)
   val push = new MshrPushIO(nCores, nMSHRs, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, subBlockWidth)
   val pop = new MshrPopIO(nCores, nCmds, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, blockWidth)
 }
 
 class MissFifoIO(nCores: Int, nMSHRs: Int, nCmds: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, blockWidth: Int, subBlockWidth: Int) extends Bundle {
   val memIntIdle = Input(Bool())
-  val nonCritInfo = new MshrInfoIO(nMSHRs, nWays, indexWidth, tagWidth)
-  val critInfo = new MshrInfoIO(nMSHRs, nWays, indexWidth, tagWidth)
+  val nonCritInfo = new MshrInfoIO(nCores, nMSHRs, nWays, indexWidth, tagWidth)
+  val critInfo = new MshrInfoIO(nCores, nMSHRs, nWays, indexWidth, tagWidth)
   val isCrit = Input(Bool()) // Indicate if the current request should be pushed to the critical queue
   val push = new MshrPushIO(nCores, nMSHRs, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, subBlockWidth)
   val pop = new MshrPopIO(nCores, nCmds, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, blockWidth)
@@ -121,17 +123,17 @@ class MshrPopMux(nCores: Int, nCmds: Int, nWays: Int, reqIdWidth: Int, tagWidth:
   }
 }
 
-class RequestMshrQueue(nMshrs: Int, nWays: Int, tagWidth: Int, indexWidth: Int, blockWidth: Int, subBlockWidth: Int) extends Module {
+class RequestMshrQueue(nCores: Int, nMshrs: Int, nWays: Int, tagWidth: Int, indexWidth: Int, blockWidth: Int, subBlockWidth: Int) extends Module {
   val io = IO(new Bundle {
     val push = Input(Bool())
-    val pushEntry = new LineRequestIO(nWays, tagWidth, indexWidth, blockWidth)
+    val pushEntry = new LineRequestIO(nCores, nWays, tagWidth, indexWidth, blockWidth)
     val blockOffset = Input(UInt(log2Up(blockWidth / subBlockWidth).W))
     val updateByteEn = Input(Bool())
     val updateByteEnRow = Input(UInt(log2Up(nMshrs).W))
     val updateByteEnCol = Input(UInt(log2Up(blockWidth / subBlockWidth).W))
     val updateByteEnVal = Input(UInt((subBlockWidth / 8).W))
     val pop = Input(Bool())
-    val popEntry = Flipped(new LineRequestIO(nWays, tagWidth, indexWidth, blockWidth))
+    val popEntry = Flipped(new LineRequestIO(nCores, nWays, tagWidth, indexWidth, blockWidth))
     val empty = Output(Bool())
     val full = Output(Bool())
     val wrPtr = Output(UInt(log2Up(nMshrs).W))
@@ -139,6 +141,7 @@ class RequestMshrQueue(nMshrs: Int, nWays: Int, tagWidth: Int, indexWidth: Int, 
     val currentIndexes = Output(Vec(nMshrs, UInt(indexWidth.W)))
     val currentTags = Output(Vec(nMshrs, UInt(tagWidth.W)))
     val replacementWays = Output(Vec(nMshrs, UInt(log2Up(nWays).W)))
+    val incidentCoreIds = Output(Vec(nMshrs, UInt(log2Up(nCores).W)))
     val validMSHRs = Output(Vec(nMshrs, Bool()))
   })
 
@@ -147,6 +150,7 @@ class RequestMshrQueue(nMshrs: Int, nWays: Int, tagWidth: Int, indexWidth: Int, 
   val tagQueue = Module(new RegFifoWithStatus(UInt(tagWidth.W), nMshrs))
   val idxQueue = Module(new RegFifoWithStatus(UInt(indexWidth.W), nMshrs))
   val wayQueue = Module(new RegFifoWithStatus(UInt(log2Up(nWays).W), nMshrs))
+  val incidentCoreQueue = Module(new RegFifoWithStatus(UInt(log2Up(nCores).W), nMshrs))
   val currWrPtr = tagQueue.io.wrPtr
   val currRdPtr = tagQueue.io.rdPtr
 
@@ -172,6 +176,9 @@ class RequestMshrQueue(nMshrs: Int, nWays: Int, tagWidth: Int, indexWidth: Int, 
   wayQueue.io.enq.valid := io.push
   wayQueue.io.enq.bits := io.pushEntry.replaceWay
 
+  incidentCoreQueue.io.enq.valid := io.push
+  incidentCoreQueue.io.enq.bits := io.pushEntry.incidentCoreId
+
   val byteShift = Cat(io.blockOffset, 0.U(log2Up(subBlockWidth / 8).W))
   val byteMask = (io.pushEntry.byteEn << byteShift).asUInt
   val blockAlignedByteEn = byteMask((blockWidth / 8) - 1, 0)
@@ -189,11 +196,13 @@ class RequestMshrQueue(nMshrs: Int, nWays: Int, tagWidth: Int, indexWidth: Int, 
   wayQueue.io.deq.ready := io.pop
   tagQueue.io.deq.ready := io.pop
   idxQueue.io.deq.ready := io.pop
+  incidentCoreQueue.io.deq.ready := io.pop
 
   io.popEntry.tag := tagQueue.io.deq.bits
   io.popEntry.index := idxQueue.io.deq.bits
   io.popEntry.replaceWay := wayQueue.io.deq.bits
   io.popEntry.byteEn := byteEnQueue.io.rdData
+  io.popEntry.incidentCoreId := incidentCoreQueue.io.deq.bits
 
   io.empty := empty
   io.full := full
@@ -205,6 +214,7 @@ class RequestMshrQueue(nMshrs: Int, nWays: Int, tagWidth: Int, indexWidth: Int, 
   io.currentTags := tagQueue.io.regOut
   io.currentIndexes := idxQueue.io.regOut
   io.replacementWays := wayQueue.io.regOut
+  io.incidentCoreIds := incidentCoreQueue.io.regOut
 }
 
 class CmdMshrQueue(nCmds: Int, nCores: Int, nMshrs: Int, reqIdWidth: Int, blockOffsetWidth: Int) extends Module {
@@ -260,7 +270,7 @@ class CmdMshrQueue(nCmds: Int, nCores: Int, nMshrs: Int, reqIdWidth: Int, blockO
 class MshrQueue(nCores: Int, nCmds: Int, nMshrs: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, subBlockWidth: Int, blockWidth: Int) extends Module {
   val io = IO(new MshrIO(nCores = nCores, nMSHRs = nMshrs, nCmds = nCmds, nWays = nWays, reqIdWidth = reqIdWidth, tagWidth = tagWidth, indexWidth = indexWidth, blockOffsetWidth = blockOffsetWidth, blockWidth = blockWidth, subBlockWidth = subBlockWidth))
 
-  val reqQueue = Module(new RequestMshrQueue(nMshrs, nWays, tagWidth, indexWidth, blockWidth, subBlockWidth))
+  val reqQueue = Module(new RequestMshrQueue(nCores, nMshrs, nWays, tagWidth, indexWidth, blockWidth, subBlockWidth))
   val cmdQueue = Module(new CmdMshrQueue(nCmds, nCores, nMshrs, reqIdWidth, blockOffsetWidth))
 
   reqQueue.io.push := io.push.pushReq
@@ -281,10 +291,10 @@ class MshrQueue(nCores: Int, nCmds: Int, nMshrs: Int, nWays: Int, reqIdWidth: In
   cmdQueue.io.updtPtr := io.push.mshrIdx
   cmdQueue.io.updtData := Cat(io.push.pushCmdEntry.reqId, io.push.pushCmdEntry.coreId, io.push.pushCmdEntry.blockOffset)
 
-  val queueElementCntReg = RegInit(0.U(log2Up(nMshrs).W))
+  val queueElementCntReg = RegInit(0.U(log2Up(nMshrs + 1).W))
   when(io.push.pushReq && !io.pop.pop) {
     queueElementCntReg := queueElementCntReg + 1.U
-  }.elsewhen(!io.push.pushReq && io.pop.pop && !io.pop.reading) {
+  }.elsewhen(!io.push.pushReq && io.pop.pop) {
     queueElementCntReg := queueElementCntReg - 1.U
   }
 
@@ -302,6 +312,7 @@ class MshrQueue(nCores: Int, nCmds: Int, nMshrs: Int, nWays: Int, reqIdWidth: In
   io.info.currentTags := reqQueue.io.currentTags
   io.info.currentIndexes := reqQueue.io.currentIndexes
   io.info.replacementWays := reqQueue.io.replacementWays
+  io.info.incidentCoreIds := reqQueue.io.incidentCoreIds
   io.info.fullCmds := cmdQueue.io.full
   io.info.elementCnt := queueElementCntReg
 
@@ -310,6 +321,7 @@ class MshrQueue(nCores: Int, nCmds: Int, nMshrs: Int, nWays: Int, reqIdWidth: In
   io.pop.popEntry.tag := reqQueue.io.popEntry.tag
   io.pop.popEntry.index := reqQueue.io.popEntry.index
   io.pop.popEntry.replaceWay := reqQueue.io.popEntry.replaceWay
+  io.pop.popEntry.incidentCoreId := reqQueue.io.popEntry.incidentCoreId
   io.pop.popEntry.byteEn := reqQueue.io.popEntry.byteEn
   io.pop.cmds := cmdQueue.io.rdCmds
 }

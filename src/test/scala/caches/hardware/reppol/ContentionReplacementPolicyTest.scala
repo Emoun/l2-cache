@@ -210,12 +210,18 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
       performUpdateRequest(dut, coreId = 1, setIdx = workingSet, hitWay = 3)
 
       // Perform eviction using critical core during a miss, which should trigger an event
-      dut.io.control.missQueue.valid.poke(true.B)
-      dut.io.control.missQueue.bits.poke(1.U)
+      dut.io.control.missQueueEmpty.poke(false.B)
+      dut.io.control.missQueueCores(0).poke(2.U)
+      dut.io.control.missQueueValidCores(0).poke(true.B)
+
       performEvictionRequest(dut, coreId = 1, setIdx = workingSet, expectedEvictionCandidate = Some(0))
       dut.clock.step()
       performUpdateRequest(dut, coreId = 1, setIdx = workingSet, hitWay = 0)
       dut.clock.step()
+
+      dut.io.control.missQueueEmpty.poke(true.B)
+      dut.io.control.missQueueCores(0).poke(0.U)
+      dut.io.control.missQueueValidCores(0).poke(false.B)
 
       // Now try to evict the critical core using non-critical
       performEvictionRequest(dut, coreId = 2, setIdx = workingSet, expectedEvictionCandidate = None)
@@ -253,12 +259,18 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
       performUpdateRequest(dut, coreId = 2, setIdx = workingSet, hitWay = 3)
 
       // Perform eviction using unlimited critical core during a miss, which should trigger an event
-      dut.io.control.missQueue.valid.poke(true.B)
-      dut.io.control.missQueue.bits.poke(1.U)
+      dut.io.control.missQueueEmpty.poke(false.B)
+      dut.io.control.missQueueCores(0).poke(0.U)
+      dut.io.control.missQueueValidCores(0).poke(true.B)
+
       performEvictionRequest(dut, coreId = 1, setIdx = workingSet, expectedEvictionCandidate = Some(0))
       dut.clock.step()
       performUpdateRequest(dut, coreId = 1, setIdx = workingSet, hitWay = 0)
       dut.clock.step()
+
+      dut.io.control.missQueueEmpty.poke(true.B)
+      dut.io.control.missQueueCores(0).poke(0.U)
+      dut.io.control.missQueueValidCores(0).poke(false.B)
 
       // Now try to evict the critical core using non-critical
       performEvictionRequest(dut, coreId = 0, setIdx = workingSet, expectedEvictionCandidate = None)
@@ -295,12 +307,18 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
 
       // Perform eviction using unlimited critical core during a miss, which should trigger 2 events:
       // One eviction event and one miss-in-miss
-      dut.io.control.missQueue.valid.poke(true.B)
-      dut.io.control.missQueue.bits.poke(1.U)
+      dut.io.control.missQueueEmpty.poke(false.B)
+      dut.io.control.missQueueCores(0).poke(2.U)
+      dut.io.control.missQueueValidCores(0).poke(true.B)
+
       performEvictionRequest(dut, coreId = 0, setIdx = workingSet, expectedEvictionCandidate = Some(0))
       dut.clock.step()
       performUpdateRequest(dut, coreId = 0, setIdx = workingSet, hitWay = 0)
       dut.clock.step()
+
+      dut.io.control.missQueueEmpty.poke(true.B)
+      dut.io.control.missQueueCores(0).poke(0.U)
+      dut.io.control.missQueueValidCores(0).poke(false.B)
 
       // Now use all the non-critical lines to reset the critical core to least recently used
       performUpdateRequest(dut, coreId = 2, setIdx = workingSet, hitWay = 1)
@@ -407,15 +425,21 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
       performUpdateRequest(dut, coreId = 1, setIdx = workingSet, hitWay = 0)
 
       // Bring the contention limit down by indicating that there is currently two outstanding misses in the queue
-      dut.io.control.missQueue.valid.poke(true.B)
-      dut.io.control.missQueue.bits.poke(2.U)
+      dut.io.control.missQueueEmpty.poke(false.B)
+      dut.io.control.missQueueCores(0).poke(1.U)
+      dut.io.control.missQueueCores(1).poke(0.U)
+      dut.io.control.missQueueValidCores(0).poke(true.B)
+      dut.io.control.missQueueValidCores(1).poke(true.B)
 
       performEvictionRequest(dut, coreId = 2, setIdx = workingSet, expectedEvictionCandidate = Some(1))
       dut.clock.step()
       performUpdateRequest(dut, coreId = 2, setIdx = workingSet, hitWay = 1)
 
-      dut.io.control.missQueue.valid.poke(false.B)
-      dut.io.control.missQueue.bits.poke(0.U)
+      dut.io.control.missQueueEmpty.poke(true.B)
+      dut.io.control.missQueueCores(0).poke(0.U)
+      dut.io.control.missQueueCores(1).poke(0.U)
+      dut.io.control.missQueueValidCores(0).poke(false.B)
+      dut.io.control.missQueueValidCores(1).poke(false.B)
 
       // Get the plru to point to the critical core's line
       performUpdateRequest(dut, coreId = 2, setIdx = workingSet, hitWay = 2)

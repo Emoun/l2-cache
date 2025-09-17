@@ -11,15 +11,19 @@ class TimeoutReplacementPolicy (ways: Int, sets: Int, nCores: Int, basePolicy: (
   val basePolicyInst = Module(basePolicy())
 
   // Update base policy
-  basePolicyInst.io.control.isHit := io.control.isHit
   basePolicyInst.io.control.setIdx := io.control.setIdx
-  basePolicyInst.io.control.evict := io.control.evict
   basePolicyInst.io.control.update.valid := io.control.update.valid
   basePolicyInst.io.control.update.bits := io.control.update.bits
-  basePolicyInst.io.control.updateCoreId := io.control.update.bits
   basePolicyInst.io.control.stall := io.control.stall
-  basePolicyInst.io.control.missQueue := io.control.missQueue
-  basePolicyInst.io.scheduler <> io.scheduler
+  basePolicyInst.io.control.evict := DontCare
+  basePolicyInst.io.control.updateCoreId := DontCare
+  basePolicyInst.io.scheduler.cmd := DontCare
+  basePolicyInst.io.scheduler.addr := DontCare
+  basePolicyInst.io.scheduler.wData := DontCare
+  basePolicyInst.io.control.isHit := DontCare
+  basePolicyInst.io.control.missQueueEmpty := DontCare
+  basePolicyInst.io.control.missQueueCores := DontCare
+  basePolicyInst.io.control.missQueueValidCores := DontCare
 
   // Need to delay this signal by two CCs because PLRU has 2 stages
   val setIdxDelayReg = PipelineReg(io.control.setIdx, 0.U, !io.control.stall)
@@ -118,4 +122,5 @@ class TimeoutReplacementPolicy (ways: Int, sets: Int, nCores: Int, basePolicy: (
   io.control.popRejQueue.valid := false.B
   io.control.popRejQueue.bits := 0.U
   io.control.pushReqToCritQueue := DontCare
+  io.scheduler.rData := DontCare
 }

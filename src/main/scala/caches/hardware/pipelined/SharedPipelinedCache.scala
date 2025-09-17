@@ -122,7 +122,7 @@ class SharedPipelinedCache(
   tagLogic.io.invalidate.invalidate := invalidateLine
   tagLogic.io.invalidate.way := invalidateWay
   tagLogic.io.invalidate.index := invalidateIndex
-  tagLogic.io.setValidLine := updateLogic.io.setValidLine
+  tagLogic.io.setLineValid := updateLogic.io.setValidLine
 
   // ---------------- Replacement ----------------
 

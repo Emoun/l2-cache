@@ -27,8 +27,12 @@ class BitPlruReplacementAlgorithm(nWays: Int) extends Module() {
   def updateMruBits(way: UInt, currentMruBits: Vec[Bool]): Vec[Bool] = {
     val newMruBits = VecInit(Seq.fill(nWays)(false.B))
 
+    // TODO: Need to find a way to reset the mru bits if the remaining 0 bits are owned by critical ways
+
     // Check for capacity
     val capacity = ((~currentMruBits.asUInt).asUInt & ((~currentMruBits.asUInt).asUInt - 1.U)) === 0.U
+    val first0BitIdx = PriorityEncoder((~currentMruBits.asUInt).asUInt)
+    val reset = capacity && (first0BitIdx === way).asBool
 
     for (bitIdx <- 0 until nWays) {
       when(capacity && (bitIdx.U =/= way).asBool) { // When at capacity, reset all bits except the accessed way bit

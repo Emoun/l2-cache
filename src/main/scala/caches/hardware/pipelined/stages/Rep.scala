@@ -16,6 +16,7 @@ class RepIO(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth:
   val isHit = Input(Bool())
   val hitWay = Input(UInt(log2Up(nWays).W))
   val dirtyBits = Input(Vec(nWays, Bool()))
+  val validBits = Input(Vec(nWays, Bool()))
   val setTags = Input(Vec(nWays, UInt(tagWidth.W)))
   val blockOffset = Input(UInt(blockOffWidth.W))
   val index = Input(UInt(indexWidth.W))
@@ -37,8 +38,8 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
     val read = Flipped(new ReadIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockOffWidth, blockWidth, subBlockWidth))
     val missFifoPush = Flipped(new MshrPushIO(nCores = nCores, nMshrs = nMshrs, nWays = nWays, reqIdWidth = reqIdWidth, tagWidth = tagWidth, indexWidth = indexWidth, blockOffsetWidth = blockOffWidth, subBlockWidth = subBlockWidth))
     val isMissPushCrit = Output(Bool())
-    val missNonCritInfo = Flipped(new MshrInfoIO(nMshrs, nWays, indexWidth, tagWidth))
-    val missCritInfo = Flipped(new MshrInfoIO(nMshrs, nWays, indexWidth, tagWidth))
+    val missNonCritInfo = Flipped(new MshrInfoIO(nCores, nMshrs, nWays, indexWidth, tagWidth))
+    val missCritInfo = Flipped(new MshrInfoIO(nCores, nMshrs, nWays, indexWidth, tagWidth))
     val repPol = Flipped(new ReplacementPolicyIO(nWays = nWays, nSets = nSets, nCores = nCores))
     val halfMissCapacity = Output(Bool())
     val stall = Input(Bool())
@@ -109,6 +110,7 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   val isHitReg = PipelineReg(isHitRepWay, false.B, !io.stall)
   val hitWayReg = PipelineReg(hitWayRepWay, 0.U, !io.stall) // On a half-miss the hit way should be the wWay of the full miss
   val dirtyBitsReg = PipelineReg(io.rep.dirtyBits, VecInit(Seq.fill(nWays)(false.B)), !io.stall)
+  val validBitsReg = PipelineReg(io.rep.validBits, VecInit(Seq.fill(nWays)(false.B)), !io.stall)
   val setTagsReg = PipelineReg(io.rep.setTags, VecInit(Seq.fill(nWays)(0.U(tagWidth.W))), !io.stall)
   val blockOffsetReg = PipelineReg(io.rep.blockOffset, 0.U, !io.stall)
   val indexReg = PipelineReg(io.rep.index, 0.U, !io.stall)
@@ -127,10 +129,13 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   val repWay = io.repPol.replaceWay
   val repWayValid = io.repPol.isValid
   val isRepDirty = dirtyBitsReg(repWay)
+  val isRepLineValid = validBitsReg(repWay)
   val dirtyTag = setTagsReg(repWay)
   val evict = reqValidReg && (!isHitUpdate && repWayValid && !isHalfMissReg) && !io.stall
 
-  // TODO: If the replacement way is dirty but the line is not valid---stall the pipeline
+  // If the replacement way is dirty but the line is not valid---stall the pipeline
+  val stallDueToDirtyInvalid = reqValidReg && (!isHitUpdate && isRepDirty && !isRepLineValid) // TODO: Need to forward valid bits here
+
   invalidate := evict
   invalidateWay := repWay
   invalidateIndex := indexReg
@@ -143,8 +148,9 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   io.repPol.updateCoreId := coreIdReg
   io.repPol.evict := evict
   io.repPol.isHit := isHitUpdate
-  io.repPol.missQueue.valid := io.missNonCritInfo.elementCnt > 0.U
-  io.repPol.missQueue.bits := io.missNonCritInfo.elementCnt
+  io.repPol.missQueueEmpty := io.missNonCritInfo.elementCnt === 0.U
+  io.repPol.missQueueCores := io.missNonCritInfo.incidentCoreIds
+  io.repPol.missQueueValidCores := io.missNonCritInfo.validMSHRs
 
   // Push request or a command to the miss fifo
   io.isMissPushCrit := halfMissInCritReg || io.repPol.pushReqToCritQueue
@@ -155,6 +161,7 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   io.missFifoPush.pushReqEntry.index := indexReg
   io.missFifoPush.pushReqEntry.byteEn := Mux(reqRwReg, byteEnReg, 0.U)
   io.missFifoPush.pushReqEntry.replaceWay := repWay
+  io.missFifoPush.pushReqEntry.incidentCoreId := coreIdReg
 
   io.missFifoPush.pushCmd := isHalfMissReg && reqValidReg && !isHitUpdate && !io.stall // Push a half miss command
   io.missFifoPush.mshrIdx := halfMissIdxReg
