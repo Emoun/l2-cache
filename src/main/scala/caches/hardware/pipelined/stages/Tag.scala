@@ -1,8 +1,8 @@
 package caches.hardware.pipelined.stages
 
+import caches.hardware.util.{MemBlock, PipelineReg}
 import chisel3._
 import chisel3.util._
-import caches.hardware.util.{MemBlock, PipelineReg}
 
 class ValidMem(nWays: Int, nSets: Int) extends Module {
   val io = IO(new Bundle {
@@ -21,7 +21,7 @@ class ValidMem(nWays: Int, nSets: Int) extends Module {
 
   when(io.set) {
     writeData := true.B
-  } .elsewhen(io.unset) {
+  }.elsewhen(io.unset) {
     writeData := false.B
   }
 
@@ -57,7 +57,7 @@ class DirtyMem(nWays: Int, nSets: Int) extends Module() {
 
   when(io.set) {
     writeData := true.B
-  } .elsewhen(io.unset) {
+  }.elsewhen(io.unset) {
     writeData := false.B
   }
 
@@ -131,31 +131,27 @@ class Tag(nCores: Int, nSets: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, i
   dirtyBitMem.io.set := io.dirtyCtrl.set
   dirtyBitMem.io.stall := io.stall
 
-  val validBitsForIndex = VecInit(Seq.fill(nWays)(false.B)) //validBitMem.io.rValid
-  val dirtyBitsForIndex = VecInit(Seq.fill(nWays)(false.B)) //dirtyRegFile.io.rDirtyBits
+  val validBitsForIndex = VecInit(Seq.fill(nWays)(false.B))
+  val dirtyBitsForIndex = VecInit(Seq.fill(nWays)(false.B))
+  val tagsForIndex = VecInit(Seq.fill(nWays)(0.U(tagWidth.W)))
   validBitsForIndex := validBitMem.io.rValid
   dirtyBitsForIndex := dirtyBitMem.io.rDirtyBits
+  tagsForIndex := readTags
 
+  // Forwarding for the valid bit and tag, which are updated in the update stage
   when(io.invalidate.invalidate && io.invalidate.index === io.tag.index) {
     validBitsForIndex(io.invalidate.way) := false.B
-  }.elsewhen (io.setLineValid.refill && io.setLineValid.index === io.tag.index) {
-    validBitsForIndex(io.invalidate.way) := true.B
+  }.elsewhen(io.setLineValid.refill && io.setLineValid.index === io.tag.index) {
+    validBitsForIndex(io.setLineValid.way) := true.B
+    tagsForIndex(io.setLineValid.way) := io.setLineValid.tag
   }
 
-  // Compare tags and check if there is a hit and where
-  val hits = Wire(Vec(nWays, Bool()))
-  for (wayIdx <- 0 until nWays) {
-    hits(wayIdx) := validBitsForIndex(wayIdx) && (io.tag.tag === readTags(wayIdx))
+  // Forwarding for the dirty bit, that is updated in the rep stage
+  when(io.dirtyCtrl.set && io.dirtyCtrl.wIndex === io.tag.index) {
+    dirtyBitsForIndex(io.dirtyCtrl.wWay) := true.B
+  }.elsewhen(io.dirtyCtrl.unset && io.dirtyCtrl.wIndex === io.tag.index) {
+    dirtyBitsForIndex(io.dirtyCtrl.wWay) := false.B
   }
-
-  val hit = hits.reduce((x, y) => x || y)
-  val hitWay = PriorityEncoder(hits)
-
-  // Check if a line has been either invalidated or has been set valid in the meantime
-//  val isMissNowHit = io.setLineValid.tag === io.tag.tag && io.setLineValid.index === io.tag.index && io.setLineValid.refill && !hit
-//  val isLineNowInvalid = io.invalidate.invalidate && hit && (io.invalidate.way === hitWay) && (io.invalidate.index === io.tag.index)
-//  val isHit = !isLineNowInvalid && (isMissNowHit || hit)
-//  val trueHitWay = Mux(isMissNowHit, io.setLineValid.way, hitWay)
 
   io.rep.coreId := PipelineReg(io.tag.coreId, 0.U, !io.stall)
   io.rep.reqValid := PipelineReg(io.tag.reqValid, false.B, !io.stall)
@@ -163,11 +159,9 @@ class Tag(nCores: Int, nSets: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, i
   io.rep.reqRw := PipelineReg(io.tag.reqRw, false.B, !io.stall)
   io.rep.wData := PipelineReg(io.tag.wData, 0.U, !io.stall)
   io.rep.byteEn := PipelineReg(io.tag.byteEn, 0.U, !io.stall)
-  io.rep.isHit := PipelineReg(hit, false.B, !io.stall)
-  io.rep.hitWay := PipelineReg(hitWay, 0.U, !io.stall)
   io.rep.dirtyBits := PipelineReg(dirtyBitsForIndex, VecInit(Seq.fill(nWays)(false.B)), !io.stall)
   io.rep.validBits := PipelineReg(validBitsForIndex, VecInit(Seq.fill(nWays)(false.B)), !io.stall)
-  io.rep.setTags := PipelineReg(readTags, VecInit(Seq.fill(nWays)(0.U(tagWidth.W))), !io.stall) // Need this to get the dirty tag later on
+  io.rep.setTags := PipelineReg(tagsForIndex, VecInit(Seq.fill(nWays)(0.U(tagWidth.W))), !io.stall) // Need this to get the dirty tag later on
   io.rep.blockOffset := PipelineReg(io.tag.blockOffset, 0.U, !io.stall)
   io.rep.index := PipelineReg(io.tag.index, 0.U, !io.stall)
   io.rep.repPolReadIndex := io.tag.index

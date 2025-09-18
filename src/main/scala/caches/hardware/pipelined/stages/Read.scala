@@ -74,8 +74,6 @@ class Read(memSizeInBytes: Int, nCores: Int, nWays: Int, reqIdWidth: Int, tagWid
   io.wbQueue.pushEntry.tag := dirtyTagReg
   io.wbQueue.pushEntry.index := indexReg
 
-  // TODO: Move this to the Rep stage, and forward this signal to earlier stages, since if the number of mshr entries is increased,
-  //  a request might not be able to see that the line that it is evicting is dirty, thus would not trigger a writeback
   io.dirtyCtrl.unset := wb
   io.dirtyCtrl.set := reqValidReg && reqRwReg && (isHitReg || repValidReg)
   io.dirtyCtrl.wIndex := indexReg

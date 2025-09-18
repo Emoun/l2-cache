@@ -15,7 +15,9 @@ class SharedPipelinedCacheSynthTop(
                                     bytesPerSubBlock: Int,
                                     memBeatSize: Int,
                                     memBurstLen: Int,
-                                    l2RepPolicyGen: () => SharedCacheReplacementPolicyType
+                                    l2RepPolicyGen: () => SharedCacheReplacementPolicyType,
+                                    nMshrs: Option[Int] = None,
+                                    nHalfMissCmds: Option[Int] = None,
                                   ) extends Module {
   private val coreDataWidth = 32
   private val coreBurstLen = bytesPerSubBlock / (coreDataWidth / 8)
@@ -32,7 +34,9 @@ class SharedPipelinedCacheSynthTop(
     bytesPerSubBlock = bytesPerSubBlock,
     memBeatSize = memBeatSize,
     memBurstLen = memBurstLen,
-    l2RepPolicy = l2RepPolicyGen
+    l2RepPolicy = l2RepPolicyGen,
+    nMshrs = nMshrs,
+    nHalfMissCmds = nHalfMissCmds
   )
 
   val l2Cache = Module(new OcpCacheWrapper(

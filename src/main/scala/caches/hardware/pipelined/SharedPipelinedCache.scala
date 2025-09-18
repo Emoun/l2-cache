@@ -37,7 +37,9 @@ class SharedPipelinedCache(
                             bytesPerSubBlock: Int,
                             memBeatSize: Int,
                             memBurstLen: Int,
-                            l2RepPolicy: () => SharedCacheReplacementPolicyType
+                            l2RepPolicy: () => SharedCacheReplacementPolicyType,
+                            nMshrs: Option[Int] = None,
+                            nHalfMissCmds: Option[Int] = None
                           ) extends Module {
   require(isPow2(memBeatSize), "Number of bytes per beat must be a power of 2.")
   require(isPow2(bytesPerBlock), "Number of bytes per block must be a power of 2.")
@@ -49,11 +51,19 @@ class SharedPipelinedCache(
   private val blockOffsetWidth = log2Up(subBlocksPerBlock)
   private val indexWidth = log2Up(nSets)
   private val tagWidth = addressWidth - indexWidth - blockOffsetWidth - byteOffsetWidth
-  private val nMshrs = nWays / 2 // nMshrs = nWays for now
-  private val nHalfMissCmds = 8 // Number of half miss commands
 
-  val missQueue = Module(new MissFifo(nCores, nHalfMissCmds, nMshrs, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, bytesPerSubBlock * 8, bytesPerBlock * 8))
-  val wbQueue = Module(new WriteBackFifo(nMshrs, tagWidth, indexWidth, bytesPerBlock * 8))
+  private val mshrCnt = nMshrs match {
+    case Some(v) => v
+    case None => nWays / 2
+  }
+
+  private val halfMissCmdCnt = nHalfMissCmds match {
+    case Some(v) => v
+    case None => nWays
+  }
+
+  val missQueue = Module(new MissFifo(nCores, halfMissCmdCnt, mshrCnt, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, bytesPerSubBlock * 8, bytesPerBlock * 8))
+  val wbQueue = Module(new WriteBackFifo(mshrCnt, tagWidth, indexWidth, bytesPerBlock * 8))
   val updateLogic = Module(new UpdateUnit(nCores, nWays, reqIdWidth, tagWidth, indexWidth, bytesPerBlock * 8, bytesPerSubBlock * 8))
   val repPol = Module(l2RepPolicy())
 
@@ -64,6 +74,7 @@ class SharedPipelinedCache(
   val invalidateWay = WireDefault(0.U(log2Up(nWays).W))
   val invalidateIndex = WireDefault(0.U(indexWidth.W))
   val missFifoCmdCapacity = WireDefault(false.B)
+  val repDirtyInvalidStall = WireDefault(false.B)
 
   println(
     s"L2 Cache Configuration: " +
@@ -88,7 +99,7 @@ class SharedPipelinedCache(
   val rejectionQueue = Module(new RejectionQueue(nCores = nCores, addrWidth = addressWidth, dataWidth = bytesPerSubBlock * 8, reqIdWidth = reqIdWidth, depth = nCores))
   val coreReqMux = Module(new CoreReqMux(nCores = nCores, addrWidth = addressWidth, dataWidth = bytesPerSubBlock * 8, reqIdWidth = reqIdWidth))
 
-  val pipeStall = updateLogic.io.stall || missQueue.io.full // || missFifoCmdCapacity
+  val pipeStall = updateLogic.io.stall || missQueue.io.full || missFifoCmdCapacity || repDirtyInvalidStall
   val reqAccept = !pipeStall
 
   // Connect core request and rejection queue to the core request multiplexer that feeds into the cache pipeline
@@ -126,7 +137,7 @@ class SharedPipelinedCache(
 
   // ---------------- Replacement ----------------
 
-  val repLogic = Module(new Rep(nCores = nCores, nSets = nSets, nWays = nWays, nMshrs = nMshrs, reqIdWidth = reqIdWidth, tagWidth = tagWidth, indexWidth = indexWidth, blockOffWidth = blockOffsetWidth, blockWidth = bytesPerBlock * 8, subBlockWidth = bytesPerSubBlock * 8))
+  val repLogic = Module(new Rep(nCores = nCores, nSets = nSets, nWays = nWays, nMshrs = mshrCnt, reqIdWidth = reqIdWidth, tagWidth = tagWidth, indexWidth = indexWidth, blockOffWidth = blockOffsetWidth, blockWidth = bytesPerBlock * 8, subBlockWidth = bytesPerSubBlock * 8))
   repLogic.io.stall := pipeStall
   repLogic.io.rep <> tagLogic.io.rep
   repLogic.io.missFifoPush <> missQueue.io.push
@@ -139,6 +150,7 @@ class SharedPipelinedCache(
   invalidateWay := repLogic.io.invalidate.way
   invalidateIndex := repLogic.io.invalidate.index
   missFifoCmdCapacity := repLogic.io.halfMissCapacity
+  repDirtyInvalidStall := repLogic.io.dirtyInvalidStall
   rejectionQueue.io.push := repLogic.io.pushReject
   rejectionQueue.io.pushEntry := repLogic.io.pushRejectEntry
 
@@ -149,11 +161,12 @@ class SharedPipelinedCache(
   readLogic.io.read <> repLogic.io.read
   readLogic.io.wbQueue <> wbQueue.io.push
   readLogic.io.memUpdate <> updateLogic.io.memUpdate
-  readLogic.io.dirtyCtrl <> tagLogic.io.dirtyCtrl
+  tagLogic.io.dirtyCtrl := readLogic.io.dirtyCtrl
+  repLogic.io.dirtyCtrl := readLogic.io.dirtyCtrl
 
   // ---------------- Update ----------------
 
-  val memInterface = Module(new MemoryInterface(nCores, nWays, nHalfMissCmds, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, bytesPerBlock * 8, bytesPerSubBlock * 8, beatSize = memBeatSize, burstLen = memBurstLen))
+  val memInterface = Module(new MemoryInterface(nCores, nWays, halfMissCmdCnt, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, bytesPerBlock * 8, bytesPerSubBlock * 8, beatSize = memBeatSize, burstLen = memBurstLen))
   memInterface.io.missFifo <> missQueue.io.pop
   memInterface.io.wbFifo <> wbQueue.io.pop
   memInterface.io.memController <> io.mem

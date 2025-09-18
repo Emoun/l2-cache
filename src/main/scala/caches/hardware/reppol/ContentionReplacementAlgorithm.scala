@@ -64,6 +64,37 @@ class ContentionReplacementAlgorithm(nWays: Int, nCores: Int, nMshrs: Int = 4, e
   val firstUCSetWayCore = coreAssignments(firstUCSetIdx)
   val anyNonCriticalWays = criticalWays.map(x => !x).reduce((x, y) => x || y)
 
+  // Check if it is a precedent event
+  if (enablePrecedentEvents) {
+    // If the core whose way we hit is not owned by the requesting core and the owner is not a critical core, then we increment the contention limit.
+    // Additionally, we only increment it if the requesting core is critical, since it would make no sense to do that for a non-critical core.
+    val ownerCore = io.lineAssignments(io.hitWayIdx)
+    val precedentEvent = isReqCoreCritical && (ownerCore =/= io.reqCore) && !io.criticalCores(ownerCore) && io.update && io.hit
+    when(precedentEvent) {
+      updateCorePrecedent := true.B
+      updateCoreIdPrecedent := io.reqCore
+    }
+  }
+
+  val evictionEvent = WireDefault(false.B)
+  val replacementEvent = WireDefault(false.B)
+
+  when(unlimitedWays.reduce((x, y) => x || y)) {
+    // If we encounter a contention event we need to update the contention count
+    evictionEvent := firstUCSetWayCoreCritical && anyNonCriticalWays
+    replacementEvent := firstUCSetWayCoreCritical && !isReqCoreCritical
+    replaceWay := io.baseCandidates(firstUCSetIdx)
+    isValidReplaceWay := true.B
+  }.elsewhen(isReqCoreCritical) {
+    replaceWay := io.baseCandidates(0)
+    isValidReplaceWay := true.B
+  }
+
+  when(io.evict && (evictionEvent || replacementEvent)) {
+    updateCore := true.B
+    updateCoreId := firstUCSetWayCore
+  }
+
   // This will address both miss in miss and miss-q events
   val missInMissEvent = isReqCoreCritical && io.evict && !io.missQueueEmpty // TODO: Can replace io.evict with !io.hit instead
 
@@ -79,33 +110,6 @@ class ContentionReplacementAlgorithm(nWays: Int, nCores: Int, nMshrs: Int = 4, e
       updateCoreIdMim := io.reqCore
       updateCoreMimEventCnt := PopCount(nonCritMissesInQueue)
     }
-  }
-
-  // Check if it is a precedent event
-  if (enablePrecedentEvents) {
-    // If the core whose way we hit is not owned by the requesting core and the owner is not a critical core, then we increment the contention limit.
-    // Additionally, we only increment it if the requesting core is critical, since it would make no sense to do that for a non-critical core.
-    val ownerCore = io.lineAssignments(io.hitWayIdx)
-    val precedentEvent = isReqCoreCritical && (ownerCore =/= io.reqCore) && !io.criticalCores(ownerCore) && io.update && io.hit
-    when(precedentEvent) {
-      updateCorePrecedent := true.B
-      updateCoreIdPrecedent := io.reqCore
-    }
-  }
-
-  when(unlimitedWays.reduce((x, y) => x || y)) {
-    // If we encounter a contention event we need to update the contention count
-    val evictionEvent = firstUCSetWayCoreCritical && anyNonCriticalWays
-    val replacementEvent = firstUCSetWayCoreCritical && !isReqCoreCritical
-    when(io.evict && (evictionEvent || replacementEvent)) {
-      updateCore := true.B
-      updateCoreId := firstUCSetWayCore
-    }
-    replaceWay := io.baseCandidates(firstUCSetIdx)
-    isValidReplaceWay := true.B
-  }.elsewhen(isReqCoreCritical) {
-    replaceWay := io.baseCandidates(0)
-    isValidReplaceWay := true.B
   }
 
   io.updateCore.valid := updateCore

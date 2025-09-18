@@ -95,43 +95,27 @@ object Tests {
 
   val testActions2: Array[TestAction] = Array(
     CacheRequest(coreId = 1, reqId = 0, tag = 0, index = 0, blockOffset = 0, rw = false, expectedData = Some("cafebabebabecafedeadbeefbeefdead")), // Bring new line into the cache (put in way: 0, idx: 0)
-
     CacheRequest(coreId = 1, reqId = 1, tag = 0, index = 4, blockOffset = 0, rw = false, expectedData = Some("8fb2741c9dea0137bc3f0e2a40cbde98")), // Bring new line into the cache (put in way: 0, idx: 4)
-
     CacheRequest(coreId = 1, reqId = 2, tag = 1, index = 0, blockOffset = 0, rw = false, expectedData = Some("bbef1226751129196ede4c8a9dc4fbd4")), // Bring new line into the cache (put in way: 1, idx: 0)
     CacheRequest(coreId = 3, reqId = 3, tag = 2, index = 0, blockOffset = 0, rw = false, expectedData = Some("013bb292b95895f88cde7faf55adaaba")), // Bring new line into the cache (put in way: 2, idx: 0)
     CacheRequest(coreId = 1, reqId = 4, tag = 0, index = 0, blockOffset = 1, rw = false, expectedData = Some("deadbabebabedeadfeedfacefacefeed")), // (HIT)
     CacheRequest(coreId = 1, reqId = 5, tag = 0, index = 0, blockOffset = 2, rw = true, wData = Some("hd00dfeed"), byteEn = Some("b0000000000001111")), // Write to an existing line in the cache (HIT)
-
     CacheRequest(coreId = 1, reqId = 6, tag = 0, index = 4, blockOffset = 1, rw = false, expectedData = Some("ce28f9010fdabe34b93e1a7d7ac4d2f1")), // (HIT)
-
     CacheRequest(coreId = 1, reqId = 7, tag = 1, index = 0, blockOffset = 3, rw = false, expectedData = Some("107709677fdfcc120da699175fad2fc1")), // (HIT)
-
     CacheRequest(coreId = 1, reqId = 8, tag = 2, index = 4, blockOffset = 1, rw = false, expectedData = Some("a2cc291a987d1f7c4d0f31f40e755553")), // Bring new line into the cache (put in way: 1, idx: 4)
-
     CacheRequest(coreId = 3, reqId = 9, tag = 3, index = 0, blockOffset = 2, rw = false, expectedData = Some("c70485594aeb67d9904d7f5fd0cbca8d")), // Bring new line into the cache (put in way: 3, idx: 0)
-
     CacheRequest(coreId = 3, reqId = 10, tag = 3, index = 4, blockOffset = 3, rw = false, expectedData = Some("52c626535c92c204ebcdf992fdc70d3f")), // Bring new line into the cache (put in way: 2, idx: 4)
     CacheRequest(coreId = 3, reqId = 11, tag = 1, index = 4, blockOffset = 3, rw = false, expectedData = Some("ba8c556a6162ff795bcfa1e8a6c78ad4")), // Bring new line into the cache (put in way: 3, idx: 4)
-
     CacheRequest(coreId = 1, reqId = 12, tag = 0, index = 3, blockOffset = 2, rw = false, expectedData = Some("56789abcef01234593cd78aba1e2f8d0")), // Bring new line into the cache (put in way: 0, idx: 3)
     CacheRequest(coreId = 2, reqId = 13, tag = 0, index = 2, blockOffset = 3, rw = false, expectedData = Some("6a8fdc4ede91ab230fabc9877c3a12ed")), // Bring new line into the cache (put in way: 0, idx: 2)
-
     CacheRequest(coreId = 3, reqId = 14, tag = 4, index = 0, blockOffset = 1, rw = false, expectedData = Some("734ccecdbe11b44dae6eaf60cb218892")), // Bring new line into the cache (put in way: 4, idx: 0)
-
     CacheRequest(coreId = 0, reqId = 15, tag = 4, index = 4, blockOffset = 3, rw = false, expectedData = Some("640df405821ff856a0436b31f624cd8b")), // (HIT)
-
     CacheRequest(coreId = 3, reqId = 16, tag = 0, index = 0, blockOffset = 2, rw = false, expectedData = Some("fee1deaddeadfee1c00010ffd00dfeed")), // (HIT)
     CacheRequest(coreId = 1, reqId = 17, tag = 5, index = 0, blockOffset = 1, rw = false, expectedData = Some("cc5fd511c237a27e2451003dbc4d8025")), // Bring new line into the cache (put in way: 5, idx: 0),
-
     CacheRequest(coreId = 1, reqId = 18, tag = 1, index = 3, blockOffset = 1, rw = false, expectedData = Some("30464e5bf598385749afdfcfba3bae98")), // Bring new line into the cache (put in way: 1, idx: 3),
-
     CacheRequest(coreId = 1, reqId = 19, tag = 5, index = 4, blockOffset = 3, rw = false, expectedData = Some("07b14887beaa396de0919c32e9127550")), // Bring new line into the cache (put in way: 4, idx: 4),
-
     CacheRequest(coreId = 1, reqId = 20, tag = 6, index = 0, blockOffset = 0, rw = false, expectedData = Some("2888e103997223a9003bc584e091cc8a")), // Bring new line into the cache (put in way: 6, idx: 0),
-
     CacheRequest(coreId = 3, reqId = 21, tag = 6, index = 4, blockOffset = 1, rw = false, expectedData = Some("3bc5171128c41fbfe21a727455ae40f9")), // Bring new line into the cache (put in way: 5, idx: 4),
-
     CacheRequest(coreId = 3, reqId = 22, tag = 7, index = 0, blockOffset = 1, rw = false, expectedData = Some("040fd41d7771f0535a07ec451db97efb")), // Bring new line into the cache (put in way: 7, idx: 0),
     CacheRequest(coreId = 0, reqId = 23, tag = 8, index = 0, blockOffset = 0, rw = false, expectedData = Some("39df6c998739192bae26debd84620423")), // Bring new line into the cache (put in way: 0, idx: 0),
     CacheRequest(coreId = 2, reqId = 24, tag = 9, index = 0, blockOffset = 0, rw = false, expectedData = Some("3e653a9dbf432147e4d0eef71a9d9897")), // Bring new line into the cache (put in way: 1, idx: 0) reach contention limit for core 1,
@@ -151,7 +135,7 @@ object Tests {
     ExpectFinishedRejectedResponse(coreId = 0, reqId = 32, expectedData = "d1f8fbeb63d88f19a2af35a0cd00f5ef"),
     CacheRequest(coreId = 3, reqId = 34, tag = 8, index = 4, blockOffset = 0, rw = false, expectedData = Some("bf7ecefbef86e816b49f6740df6d0069")),
     CacheRequest(coreId = 3, reqId = 35, tag = 0, index = 5, blockOffset = 2, rw = false, expectedData = Some("b7e1903f47db2c8efa81039b23a5f64e")),
-    CacheRequest(coreId = 3, reqId = 36, tag = 1, index = 3, blockOffset = 1, rw = false, expectedData = Some("30464e5bf598385749afdfcfba3bae98")),
+    CacheRequest(coreId = 3, reqId = 36, tag = 1, index = 3, blockOffset = 1, rw = false, expectedData = Some("30464e5bf598385749afdfcfba3bae98")), // (HIT)
     CacheRequest(coreId = 0, reqId = 37, tag = 17, index = 0, blockOffset = 0, rw = false, expectedData = Some("d1f8fbeb63d88f19a2af35a0cd00f5ef")),
     CacheRequest(coreId = 2, reqId = 38, tag = 0, index = 4, blockOffset = 2, rw = false, expectedData = Some("314a8f9cd7e40cb26f19de83a481b2dc")), // (HIT)
   )
@@ -253,6 +237,21 @@ object Tests {
     CacheRequest(coreId = 2, reqId = 18, tag = 43, index = 74, blockOffset = 1, rw = false, expectedData = Some("a9e7b6e5d8cc2100224ed5714cea356d")), // HIT, way: 7,
     CacheRequest(coreId = 2, reqId = 19, tag = 41, index = 74, blockOffset = 1, rw = false, expectedData = Some("8f2a3009871c1b8fb22ed80f63229d0f")), // MISS, way: 4, any non-critical way cannot evict any more lines in this set
     CacheRequest(coreId = 0, reqId = 20, tag = 2, index = 74, blockOffset = 1, rw = false, expectedData = Some("799773662e941d07b4340bdff6f72ec1"), rejected = true), // MISS, way: rejected
+    CacheRequest(coreId = 3, reqId = 21, tag = 41, index = 73, blockOffset = 1, rw = false, expectedData = Some("43b459ab68e19d5012e7cb6afc7836ee")), // MISS, way: 0, allow some non-critical events to enter the miss queue
+    CacheRequest(coreId = 3, reqId = 22, tag = 42, index = 73, blockOffset = 3, rw = false, expectedData = Some("763453aa42df7d92956636a260ab9d3b")), // MISS, way: 1
+    CacheRequest(coreId = 2, reqId = 23, tag = 43, index = 73, blockOffset = 2, rw = false, expectedData = Some("8ce6a0927f254495140145d97c73d99b")), // MISS, way: 2, expect the critical request to enter the critical queue
+    CacheRequest(coreId = 3, reqId = 24, tag = 43, index = 73, blockOffset = 0, rw = false, expectedData = Some("1166cabd710071a9c992e051ec16c43d")), // HALF-MISS, see if a non-critical request can be added as a half miss
+  )
+
+  val testActions6: Array[TestAction] = Array( // TODO: Should extend this check for the critical queue too
+    CacheRequest(coreId = 0, reqId = 0, tag = 60, index = 57, blockOffset = 0, rw = false, expectedData = Some("02f6aa2d6c7f403950ad1a7166aeab2e")), // MISS, way: 0
+    CacheRequest(coreId = 3, reqId = 1, tag = 60, index = 57, blockOffset = 1, rw = false, expectedData = Some("5ab22a1a86dd5005cf60419e7d51a925")), // HALF-MISS, way: 0
+    CacheRequest(coreId = 2, reqId = 2, tag = 60, index = 57, blockOffset = 2, rw = true, wData = Some("hdeadbeefdeadbeefdeadbeefdeadbeef"), byteEn = Some("b0000000000001101")), // HALF-MISS, way: 0
+    CacheRequest(coreId = 2, reqId = 3, tag = 60, index = 57, blockOffset = 3, rw = true, wData = Some("hcafebabecafebabecafebabecafebabe"), byteEn = Some("b0000011100000000")), // HALF-MISS, way: 0
+    CacheRequest(coreId = 1, reqId = 4, tag = 60, index = 57, blockOffset = 2, rw = false, expectedData = Some("1b9ec3d806fee9654ad7394c6f5414d3")), // HALF-MISS, way: 0
+    CacheRequest(coreId = 1, reqId = 5, tag = 60, index = 57, blockOffset = 3, rw = false, expectedData = Some("5fba5cb28130e17479aa83d94b3062e7")), // HALF-MISS, way: 0
+    CacheRequest(coreId = 2, reqId = 6, tag = 60, index = 57, blockOffset = 2, rw = false, expectedData = Some("1b9ec3d806fee9654ad7394cdead14ef")), // HIT, way: 0
+    CacheRequest(coreId = 2, reqId = 7, tag = 60, index = 57, blockOffset = 3, rw = false, expectedData = Some("5fba5cb281febabe79aa83d94b3062e7")), // HIT, way: 0
   )
 }
 
@@ -302,8 +301,14 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     var actionIdx = 0
     var currentCC = 0
     var stallCycle: Option[Int] = None
+    var receivedResponseCnt = 0
+    val expectedRespCnt = testActions.count {
+      case CacheRequest(_, _, _, _, _, _, _, rejected, _, _, _) if !rejected => true
+      case ExpectFinishedRejectedResponse(_, _, _) => true
+      case _ => false
+    }
 
-    while (currentCC < maxCCs) {
+    while (currentCC < maxCCs && receivedResponseCnt != expectedRespCnt) {
 
       // Need to unset the request signals for the previous request
       if (previousRequestCore.isDefined) {
@@ -358,6 +363,7 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
 
       if (response.isDefined) {
         responses.add(response.get)
+        receivedResponseCnt += 1
       }
 
       dut.clock.step(1)
@@ -473,8 +479,8 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       bytesPerSubBlock = bytesPerSubBlock,
       memBeatSize = memBeatSize,
       memBurstLen = memBurstLen,
-      l2RepPolicy,
-      Some(memFile)
+      l2RepPolicyGen = l2RepPolicy,
+      dataFile = Some(memFile)
     )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default inputs
       for (i <- 0 until nCores) {
@@ -534,8 +540,8 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       bytesPerSubBlock = bytesPerSubBlock,
       memBeatSize = memBeatSize,
       memBurstLen = memBurstLen,
-      l2RepPolicy,
-      Some(memFile)
+      l2RepPolicyGen = l2RepPolicy,
+      dataFile = Some(memFile)
     )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default inputs
       for (i <- 0 until nCores) {
@@ -557,12 +563,12 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.clock.step(1)
 
       // Set the fourth core as critical
-      setCoreAsCritical(dut, coreID = 3, contentionLimit = 2)
+      setCoreAsCritical(dut, coreID = 3, contentionLimit = 10)
 
       dut.clock.step(1)
 
       // Issue the first set of requests
-      assertAccesses(dut, nCores, Tests.testActions2, indexWidth, blockOffsetWidth, byteOffsetWidth, 870, printResults = printResults)
+      assertAccesses(dut, nCores, Tests.testActions2, indexWidth, blockOffsetWidth, byteOffsetWidth, 900, printResults = printResults)
 
       dut.clock.step(1)
 
@@ -572,7 +578,7 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.clock.step(1)
 
       // Evict some previously critical caches
-      assertAccesses(dut, nCores, Tests.testActions3, indexWidth, blockOffsetWidth, byteOffsetWidth, 100, printResults = printResults)
+      assertAccesses(dut, nCores, Tests.testActions3, indexWidth, blockOffsetWidth, byteOffsetWidth, 200, printResults = printResults)
     }
   }
 
@@ -608,8 +614,8 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       bytesPerSubBlock = bytesPerSubBlock,
       memBeatSize = memBeatSize,
       memBurstLen = memBurstLen,
-      l2RepPolicy,
-      Some(memFile)
+      l2RepPolicyGen = l2RepPolicy,
+      dataFile = Some(memFile)
     )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
 
       // Default inputs
@@ -637,7 +643,7 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.clock.step(1)
 
       // Issue the first set of requests
-      assertAccesses(dut, nCores, Tests.testActions5, indexWidth, blockOffsetWidth, byteOffsetWidth, 470, printResults = printResults)
+      assertAccesses(dut, nCores, Tests.testActions5, indexWidth, blockOffsetWidth, byteOffsetWidth, 500, printResults = printResults)
 
       dut.clock.step(1)
 
@@ -677,8 +683,8 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       bytesPerSubBlock = bytesPerSubBlock,
       memBeatSize = memBeatSize,
       memBurstLen = memBurstLen,
-      l2RepPolicy,
-      Some(memFile)
+      l2RepPolicyGen = l2RepPolicy,
+      dataFile = Some(memFile)
     )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default inputs
       for (i <- 0 until nCores) {
@@ -704,6 +710,79 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
         1000, // Increased cycles to handle more complex test patterns
         printResults = true
       )
+    }
+  }
+
+  "SharedPipelinedCache" should "work with mshr entries that are full of cmds" in {
+    val sizeInBytes = 65536 // 64 KiB
+    val nCores = 4
+    val nWays = 8
+    val addressWidth = 25
+    val reqIdWidth = 16
+    val bytesPerBlock = 64
+    val bytesPerSubBlock = 16
+    val nSets = sizeInBytes / (nWays * bytesPerBlock)
+    val basePolicy = () => new BitPlruReplacementPolicy(nWays, nSets, nCores)
+    val l2RepPolicy = () => new ContentionReplacementPolicy(nWays, nSets, nCores, basePolicy, enableMissInMiss = true, enablePrecedentEvents = true)
+    val memFile = "./hex/test_mem_32w.hex"
+
+    val printResults = true
+
+    val memBeatSize = 4
+    val memBurstLen = 4
+
+    val byteOffsetWidth = log2Up(bytesPerSubBlock)
+    val blockOffsetWidth = log2Up(bytesPerBlock / bytesPerSubBlock)
+    val indexWidth = log2Up(nSets)
+
+    test(new SharedPipelinedCacheTestTop(
+      sizeInBytes = sizeInBytes,
+      nWays = nWays,
+      nCores = nCores,
+      reqIdWidth = reqIdWidth,
+      addressWidth = addressWidth,
+      bytesPerBlock = bytesPerBlock,
+      bytesPerSubBlock = bytesPerSubBlock,
+      memBeatSize = memBeatSize,
+      memBurstLen = memBurstLen,
+      l2RepPolicyGen = l2RepPolicy,
+      dataFile = Some(memFile),
+      nHalfMissCmds = Some(6)
+    )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+
+      // Default inputs
+      for (i <- 0 until nCores) {
+        dut.io.requests.cores(i).req.reqId.valid.poke(false.B)
+        dut.io.requests.cores(i).req.reqId.bits.poke(0.U)
+        dut.io.requests.cores(i).req.addr.poke(0.U)
+        dut.io.requests.cores(i).req.rw.poke(false.B)
+        dut.io.requests.cores(i).req.wData.poke(0.U)
+      }
+      dut.io.scheduler.cmd.poke(SchedulerCmd.NULL)
+      dut.io.scheduler.addr.poke(0.U)
+      dut.io.scheduler.wData.poke(0.U)
+
+      dut.clock.step(5)
+
+      // Set the third core as critical
+      setCoreAsCritical(dut, coreID = 2, contentionLimit = 10)
+
+      dut.clock.step(1)
+
+      // Set the second core as critical
+      setCoreAsCritical(dut, coreID = 1, contentionLimit = 20)
+
+      dut.clock.step(1)
+
+      // Issue the first set of requests
+      assertAccesses(dut, nCores, Tests.testActions6, indexWidth, blockOffsetWidth, byteOffsetWidth, 150, printResults = printResults)
+
+      dut.clock.step(1)
+
+      // Set the third core as no-critical
+      unsetCoreAsCritical(dut, coreID = 2)
+
+      dut.clock.step(1)
     }
   }
 }
