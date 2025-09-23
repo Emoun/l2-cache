@@ -22,23 +22,17 @@ class ReplacementPolicyIO(nWays: Int, nSets: Int, nCores: Int, missQueueDepth: I
   val stall = Input(Bool())
   val evict = Input(Bool()) // Some policies may need to know if when the line is being evicted
   val isHit = Input(Bool())
-  // TODO: Miss in miss would be triggered at the same time as a miss queue would be,
-  //  so miss-q can be triggered by the same signal as the mim signal, but we would use a
-  //  a number greater than 1 to decrement the limit, the number would be stored in a register that keeps track
-  //  of how many misses there are in a queue so far
   val missQueueEmpty = Input(Bool())
   val missQueueCores = Input(Vec(missQueueDepth, UInt(log2Up(nCores).W)))
   val missQueueValidCores = Input(Vec(missQueueDepth, Bool()))
   val update = Input(Valid(UInt(log2Up(nWays).W)))
   val setIdx = Input(UInt(log2Up(nSets).W))
   val updateCoreId = Input(UInt(log2Up(nCores).W))
-  val popRejQueue = Valid(UInt((log2Up(nCores) + 1).W)) // For specifying how many entries should be popped from the rejection queue
   val isValid = Output(Bool()) // To signal if there are no valid ways to replace
   val replaceWay = Output(UInt(log2Up(nWays).W))
   val replacementSet = Output(Vec(nWays, UInt(log2Up(nWays).W))) // If a replacement policy needs an ordered set of ways, otherwise can be ignored
+  val popRejQueue = Valid(UInt((log2Up(nCores) + 1).W)) // For specifying how many entries should be popped from the rejection queue
   val pushReqToCritQueue = Output(Bool())
-
-  //  val coreId = Input(UInt(log2Up(nCores).W)) // ID of the requesting core
 }
 
 class SharedCacheReplacementIO(nWays: Int, nSets: Int, nCores: Int, dataWidth: Int, missQueueDepth: Int) extends Bundle {

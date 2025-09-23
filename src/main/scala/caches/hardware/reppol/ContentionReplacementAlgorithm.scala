@@ -14,7 +14,7 @@ class ContentionReplacementAlgorithm(nWays: Int, nCores: Int, nMshrs: Int = 4, e
     val missQueueEmpty = Input(Bool())
     val missQueueCores = Input(Vec(nMshrs, UInt(log2Up(nCores).W)))
     val missQueueValidCores = Input(Vec(nMshrs, Bool()))
-    val baseCandidates = Input(Vec(nWays, UInt(log2Up(nWays).W)))
+    val baseCandidates = Input(Vec(nWays, UInt(log2Up(nWays).W))) // TODO: Instead of giving order list of way indexes, give a list where the first element refers to the index of the first way in the list
     val validLineAssignments = Input(Vec(nWays, Bool()))
     val lineAssignments = Input(Vec(nWays, UInt(log2Up(nCores).W)))
     val coreLimits = Input(Vec(nCores, UInt(CONTENTION_LIMIT_WIDTH.W)))
@@ -31,10 +31,6 @@ class ContentionReplacementAlgorithm(nWays: Int, nCores: Int, nMshrs: Int = 4, e
   val replaceWay = WireDefault(0.U(log2Up(nWays).W))
   val isValidReplaceWay = WireDefault(false.B)
 
-  val criticalWays = VecInit(Seq.fill(nWays)(false.B))
-  val unlimitedWays = VecInit(Seq.fill(nWays)(false.B))
-  val coreAssignments = VecInit(Seq.fill(nWays)(0.U(log2Up(nCores).W)))
-
   val updateCore = WireDefault(false.B)
   val updateCoreId = WireDefault(0.U(log2Up(nCores).W))
   val updateCoreMim = WireDefault(false.B)
@@ -43,25 +39,35 @@ class ContentionReplacementAlgorithm(nWays: Int, nCores: Int, nMshrs: Int = 4, e
   val updateCorePrecedent = WireDefault(false.B)
   val updateCoreIdPrecedent = WireDefault(0.U(log2Up(nCores).W))
 
-  // Determine critical and unlimited ways
-  for (i <- 0 until nWays) {
-    val wayIdx = io.baseCandidates(i)
+  // Compute UC mask
+  val criticalWays = VecInit(Seq.fill(nWays)(false.B))
+  val unlimitedWays = VecInit(Seq.fill(nWays)(false.B))
+  val coreAssignments = VecInit(Seq.fill(nWays)(0.U(log2Up(nCores).W)))
+
+  for (wayIdx <- 0 until nWays) {
     val assignedCoreIdx = io.lineAssignments(wayIdx)
     val hasValidAssignment = io.validLineAssignments(wayIdx)
 
-    val limit = Mux(hasValidAssignment, io.coreLimits(assignedCoreIdx), 0.U(CONTENTION_LIMIT_WIDTH.W))
-    val isCriticalWay = Mux(hasValidAssignment, io.criticalCores(assignedCoreIdx), false.B)
+    val limit = io.coreLimits(assignedCoreIdx)
+    val isCriticalWay = hasValidAssignment && io.criticalCores(assignedCoreIdx)
 
     val isUnlimited = !isCriticalWay || (isCriticalWay && limit > 0.U)
 
-    unlimitedWays(i) := isUnlimited
-    criticalWays(i) := isCriticalWay
-    coreAssignments(i) := assignedCoreIdx
+    unlimitedWays(wayIdx) := isUnlimited
+    criticalWays(wayIdx) := isCriticalWay
+    coreAssignments(wayIdx) := assignedCoreIdx
   }
 
-  val firstUCSetIdx = PriorityEncoder(unlimitedWays)
-  val firstUCSetWayCoreCritical = criticalWays(firstUCSetIdx)
-  val firstUCSetWayCore = coreAssignments(firstUCSetIdx)
+  // Order the UC mask
+  val orderedUcMask = VecInit(Seq.fill(nWays)(false.B))
+  for (i <- 0 until nWays) {
+    orderedUcMask(i) := unlimitedWays(io.baseCandidates(i))
+  }
+
+//  val firstUCSetIdx = PriorityEncoder(orderedUcMask)
+  val firstUCWay = io.baseCandidates(PriorityEncoder(orderedUcMask))
+  val firstUCSetWayCoreCritical = criticalWays(firstUCWay)
+  val firstUCSetWayCore = coreAssignments(firstUCWay)
   val anyNonCriticalWays = criticalWays.map(x => !x).reduce((x, y) => x || y)
 
   // Check if it is a precedent event
@@ -83,13 +89,14 @@ class ContentionReplacementAlgorithm(nWays: Int, nCores: Int, nMshrs: Int = 4, e
     // If we encounter a contention event we need to update the contention count
     evictionEvent := firstUCSetWayCoreCritical && anyNonCriticalWays
     replacementEvent := firstUCSetWayCoreCritical && !isReqCoreCritical
-    replaceWay := io.baseCandidates(firstUCSetIdx)
+    replaceWay := firstUCWay
     isValidReplaceWay := true.B
   }.elsewhen(isReqCoreCritical) {
     replaceWay := io.baseCandidates(0)
     isValidReplaceWay := true.B
   }
 
+  // Decrement the contention limit when we encounter an eviction or replacement event
   when(io.evict && (evictionEvent || replacementEvent)) {
     updateCore := true.B
     updateCoreId := firstUCSetWayCore

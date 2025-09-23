@@ -450,7 +450,7 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     dut.io.requests.cores(coreId).req.byteEn.poke(byteEnValue)
   }
 
-  "SharedPipelinedCache" should "process pipelined requests for 8 ways, 128 sets, and plru policy configuration" in {
+  "SharedPipelinedCache" should "process pipelined requests for 8 ways, 128 sets, with bit plru policy" in {
     val sizeInBytes = 65536 // 64 KiB
     val nCores = 4
     val nWays = 8
@@ -508,7 +508,65 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     }
   }
 
-  "SharedPipelinedCache" should "process pipelined requests for 8 ways, 128 sets, and contention policy configuration" in {
+  "SharedPipelinedCache" should "process pipelined requests for 8 ways, 128 sets, with tree plru policy" in {
+    val sizeInBytes = 65536 // 64 KiB
+    val nCores = 4
+    val nWays = 8
+    val addressWidth = 25
+    val reqIdWidth = 16
+    val bytesPerBlock = 64
+    val bytesPerSubBlock = 16
+    val nSets = sizeInBytes / (nWays * bytesPerBlock)
+    val l2RepPolicy = () => new TreePlruReplacementPolicy(nWays, nSets, nCores)
+    val memFile = "./hex/test_mem_32w.hex"
+
+    val memBeatSize = 4
+    val memBurstLen = 4
+
+    val byteOffsetWidth = log2Up(bytesPerSubBlock)
+    val blockOffsetWidth = log2Up(bytesPerBlock / bytesPerSubBlock)
+    val indexWidth = log2Up(nSets)
+
+    test(new SharedPipelinedCacheTestTop(
+      sizeInBytes = sizeInBytes,
+      nWays = nWays,
+      nCores = nCores,
+      reqIdWidth = reqIdWidth,
+      addressWidth = addressWidth,
+      bytesPerBlock = bytesPerBlock,
+      bytesPerSubBlock = bytesPerSubBlock,
+      memBeatSize = memBeatSize,
+      memBurstLen = memBurstLen,
+      l2RepPolicyGen = l2RepPolicy,
+      dataFile = Some(memFile)
+    )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+      // Default inputs
+      for (i <- 0 until nCores) {
+        dut.io.requests.cores(i).req.reqId.valid.poke(false.B)
+        dut.io.requests.cores(i).req.reqId.bits.poke(0.U)
+        dut.io.requests.cores(i).req.addr.poke(0.U)
+        dut.io.requests.cores(i).req.rw.poke(false.B)
+        dut.io.requests.cores(i).req.wData.poke(0.U)
+      }
+      dut.io.scheduler.cmd.poke(SchedulerCmd.NULL)
+      dut.io.scheduler.addr.poke(0.U)
+
+      dut.clock.step(5)
+
+      assertAccesses(
+        dut,
+        nCores,
+        Tests.testActions1,
+        indexWidth,
+        blockOffsetWidth,
+        byteOffsetWidth,
+        700,
+        printResults = true
+      )
+    }
+  }
+
+  "SharedPipelinedCache" should "process pipelined requests for 8 ways, 128 sets, with contention policy" in {
     val sizeInBytes = 65536 // 64 KiB
     val nCores = 4
     val nWays = 8
@@ -568,7 +626,16 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.clock.step(1)
 
       // Issue the first set of requests
-      assertAccesses(dut, nCores, Tests.testActions2, indexWidth, blockOffsetWidth, byteOffsetWidth, 900, printResults = printResults)
+      assertAccesses(
+        dut,
+        nCores,
+        Tests.testActions2,
+        indexWidth,
+        blockOffsetWidth,
+        byteOffsetWidth,
+        900,
+        printResults = printResults
+      )
 
       dut.clock.step(1)
 
@@ -578,7 +645,108 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.clock.step(1)
 
       // Evict some previously critical caches
-      assertAccesses(dut, nCores, Tests.testActions3, indexWidth, blockOffsetWidth, byteOffsetWidth, 200, printResults = printResults)
+      assertAccesses(
+        dut,
+        nCores,
+        Tests.testActions3,
+        indexWidth,
+        blockOffsetWidth,
+        byteOffsetWidth,
+        200,
+        printResults = printResults
+      )
+    }
+  }
+
+  "SharedPipelinedCache" should "process pipelined requests for 8 ways, 128 sets, with timeout policy" in {
+    val sizeInBytes = 65536 // 64 KiB
+    val nCores = 4
+    val nWays = 8
+    val addressWidth = 25
+    val reqIdWidth = 16
+    val bytesPerBlock = 64
+    val bytesPerSubBlock = 16
+    val nSets = sizeInBytes / (nWays * bytesPerBlock)
+    val basePolicy = () => new BitPlruReplacementPolicy(nWays, nSets, nCores)
+    val l2RepPolicy = () => new TimeoutReplacementPolicy(nWays, nSets, nCores, basePolicy)
+    val memFile = "./hex/test_mem_32w.hex"
+
+    val printResults = true
+
+    val memBeatSize = 4
+    val memBurstLen = 4
+
+    val byteOffsetWidth = log2Up(bytesPerSubBlock)
+    val blockOffsetWidth = log2Up(bytesPerBlock / bytesPerSubBlock)
+    val indexWidth = log2Up(nSets)
+
+    test(new SharedPipelinedCacheTestTop(
+      sizeInBytes = sizeInBytes,
+      nWays = nWays,
+      nCores = nCores,
+      reqIdWidth = reqIdWidth,
+      addressWidth = addressWidth,
+      bytesPerBlock = bytesPerBlock,
+      bytesPerSubBlock = bytesPerSubBlock,
+      memBeatSize = memBeatSize,
+      memBurstLen = memBurstLen,
+      l2RepPolicyGen = l2RepPolicy,
+      dataFile = Some(memFile)
+    )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+      // Default inputs
+      for (i <- 0 until nCores) {
+        dut.io.requests.cores(i).req.reqId.valid.poke(false.B)
+        dut.io.requests.cores(i).req.reqId.bits.poke(0.U)
+        dut.io.requests.cores(i).req.addr.poke(0.U)
+        dut.io.requests.cores(i).req.rw.poke(false.B)
+        dut.io.requests.cores(i).req.wData.poke(0.U)
+      }
+      dut.io.scheduler.cmd.poke(SchedulerCmd.NULL)
+      dut.io.scheduler.addr.poke(0.U)
+      dut.io.scheduler.wData.poke(0.U)
+
+      dut.clock.step(5)
+
+      // Set the second core as critical
+      setCoreAsCritical(dut, coreID = 1, contentionLimit = 450)
+
+      dut.clock.step(1)
+
+      // Set the fourth core as critical
+      setCoreAsCritical(dut, coreID = 3, contentionLimit = 200)
+
+      dut.clock.step(1)
+
+      // Issue the first set of requests
+      assertAccesses(
+        dut,
+        nCores,
+        Tests.testActions2,
+        indexWidth,
+        blockOffsetWidth,
+        byteOffsetWidth,
+        900,
+        printResults = printResults
+      )
+
+      dut.clock.step(1)
+
+      // Unset the second core as critical
+      unsetCoreAsCritical(dut, coreID = 1)
+
+      dut.clock.step(1)
+
+      // Evict some previously critical caches
+      assertAccesses(
+        dut,
+        nCores,
+        Tests.testActions3,
+        indexWidth,
+        blockOffsetWidth,
+        byteOffsetWidth,
+        200,
+        printResults = printResults
+      )
     }
   }
 
@@ -643,7 +811,16 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.clock.step(1)
 
       // Issue the first set of requests
-      assertAccesses(dut, nCores, Tests.testActions5, indexWidth, blockOffsetWidth, byteOffsetWidth, 500, printResults = printResults)
+      assertAccesses(
+        dut,
+        nCores,
+        Tests.testActions5,
+        indexWidth,
+        blockOffsetWidth,
+        byteOffsetWidth,
+        500,
+        printResults = printResults
+      )
 
       dut.clock.step(1)
 
@@ -654,7 +831,7 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     }
   }
 
-  "SharedPipelinedCache" should "handle stress test with plru policy" in {
+  "SharedPipelinedCache" should "handle stress test with bit plru policy" in {
     val sizeInBytes = 65536 // 64 KiB
     val nCores = 4
     val nWays = 8
@@ -775,7 +952,16 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.clock.step(1)
 
       // Issue the first set of requests
-      assertAccesses(dut, nCores, Tests.testActions6, indexWidth, blockOffsetWidth, byteOffsetWidth, 150, printResults = printResults)
+      assertAccesses(
+        dut,
+        nCores,
+        Tests.testActions6,
+        indexWidth,
+        blockOffsetWidth,
+        byteOffsetWidth,
+        150,
+        printResults = printResults
+      )
 
       dut.clock.step(1)
 
@@ -785,4 +971,5 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.clock.step(1)
     }
   }
+
 }

@@ -1,6 +1,6 @@
 package caches.hardware.reppol
 
-import caches.hardware.util.PipelineReg
+import caches.hardware.util.{MemBlock, PipelineReg}
 import chisel3._
 import chisel3.util._
 
@@ -9,36 +9,52 @@ import chisel3.util._
  * @param nSets number of sets in the whole cache
  */
 class TreePlruReplacementPolicy(nWays: Int, nSets: Int, nCores: Int) extends SharedCacheReplacementPolicyType(nWays, nSets, nCores) {
-  val setMruBits = Array.fill(nSets)(RegInit(VecInit(Seq.fill(nWays - 1)(false.B))))
+// ---------------- Base policy stage ----------------
+  def plruBits(rIdx: UInt, wrEn: Bool, wIdx: UInt, wData: Vec[Bool], stall: Bool): Vec[Bool] = {
+    val mruBits = Module(new MemBlock(nSets, nWays - 1))
+    val rMruBits = Wire(Vec(nWays - 1, Bool()))
 
-  val selMruBits = VecInit(Seq.fill(nWays - 1)(false.B))
+    mruBits.io.readAddr := rIdx
+    mruBits.io.writeAddr := wIdx
+    mruBits.io.writeData := wData.asUInt
+    mruBits.io.wrEn := wrEn
+    mruBits.io.stall := stall
 
-  // Multiplexer for selecting the sets mru bits
-  for (setIdx <- 0 until nSets) {
-    when(setIdx.U === io.control.setIdx) {
-      selMruBits := setMruBits(setIdx)
-    }
+    rMruBits := mruBits.io.readData.asBools
+
+    rMruBits
   }
 
-  val treePlruAlgo = Module(new TreePlruReplacementAlgorithm(nWays))
-  treePlruAlgo.io.mruBits := selMruBits
-  treePlruAlgo.io.hitWay := io.control.update.bits
+  // ---------------- Pre-Read stage ----------------
 
-  val updatedMruBits = treePlruAlgo.io.updatedMru
+  val updateStageSetIdx = WireDefault(0.U(log2Up(nSets).W))
+  val updatedStageWbMruBits = VecInit(Seq.fill(nWays - 1)(false.B))
+
+  val readMruBits = plruBits(rIdx = io.control.setIdx, wrEn = io.control.update.valid, wIdx = updateStageSetIdx, wData = updatedStageWbMruBits, stall = io.control.stall)
+  val idxDelayReg = PipelineReg(io.control.setIdx, 0.U, !io.control.stall)
+
+  // ---------------- Read stage ----------------
+
+  val doForward = updateStageSetIdx === idxDelayReg && io.control.update.valid
+  val computeMruBits = Mux(doForward, updatedStageWbMruBits, readMruBits)
+
+  val treePlruAlgo = Module(new TreePlruReplacementAlgorithm(nWays))
+  treePlruAlgo.io.computeLruBits := computeMruBits
+
   val replaceWay = treePlruAlgo.io.replaceWay
   val replaceSet = treePlruAlgo.io.replacementSet
 
-  // Demultiplexer for updating the mru bits
-  for (setIdx <- 0 until nSets) {
-    when(setIdx.U === io.control.setIdx && io.control.update.valid) {
-      setMruBits(setIdx) := updatedMruBits
-    }
-  }
-
-  // ---------------- Eviction stage ----------------
-
+  val mruBitsPipeReg = PipelineReg(computeMruBits, VecInit(Seq.fill(nWays - 1)(false.B)), !io.control.stall)
+  val setIdxPipeReg = PipelineReg(idxDelayReg, 0.U, !io.control.stall)
   val replaceWayPipeReg = PipelineReg(replaceWay, 0.U, !io.control.stall)
   val replaceSetPipeReg = PipelineReg(replaceSet, VecInit(Seq.fill(nWays)(0.U(log2Up(nWays).W))), !io.control.stall)
+
+  // ---------------- Update stage ----------------
+
+  treePlruAlgo.io.hitWay := io.control.update.bits
+  treePlruAlgo.io.updateLruBits := mruBitsPipeReg
+  updatedStageWbMruBits := treePlruAlgo.io.updatedLru // Updated LRU bits to writeback to memory
+  updateStageSetIdx := setIdxPipeReg
 
   io.control.replaceWay := replaceWay
   io.control.replaceWay := replaceWayPipeReg

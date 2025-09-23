@@ -4,6 +4,30 @@ import chisel3._
 import chiseltest._
 
 object ReplacementPolicyTest {
+  def assertReplacementSet(dut: SharedCacheReplacementPolicyType, expectedSet: Array[Int], printActual: Boolean = false): Unit = {
+    if (printActual) println("")
+
+    val idxs = dut.io.control.replacementSet
+    for (i <- 0 until idxs.length) {
+      if (printActual) println(s"Way $i: ${idxs(i).peekInt()}")
+
+      val actualWay = idxs(i).peekInt()
+      val expectedWay = expectedSet(i)
+      assert(actualWay == expectedWay, s"Actual way: $actualWay for index $i, did not equal the expected way: $expectedWay")
+    }
+
+    if (printActual) println("")
+  }
+
+  def stepForNcc(dut: SharedCacheReplacementPolicyType, cc: Int = 1): Unit = {
+    dut.clock.step(1)
+
+    dut.io.control.update.valid.poke(false.B)
+    dut.io.control.update.bits.poke(0.U)
+
+    dut.clock.step(cc)
+  }
+
   def setCoreAsCritical(dut: SharedCacheReplacementPolicyType, coreID: Int, wData: Int): Unit = {
     dut.io.scheduler.cmd.poke(SchedulerCmd.WR)
     dut.io.scheduler.addr.poke(coreID.U)

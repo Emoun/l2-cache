@@ -67,8 +67,8 @@ class TimeoutReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTeste
       dut.clock.step()
 
       // Set the first core as critical with a long timeout
-      val longtimeout = 1023
-      setCoreAsCritical(dut, coreID = 0, wData = longtimeout)
+      val longTimeout = 1023
+      setCoreAsCritical(dut, coreID = 0, wData = longTimeout)
 
       // Assign all ways to critical
       performEvictionRequest(dut, coreId = 0, setIdx = workingSet, expectedEvictionCandidate = Some(0))
@@ -87,7 +87,7 @@ class TimeoutReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTeste
       dut.clock.step()
       performUpdateRequest(dut, coreId = 0, setIdx = workingSet, hitWay = 3)
 
-      dut.clock.step(Random.between(1, longtimeout/2))
+      dut.clock.step(Random.between(1, longTimeout/2))
 
       performEvictionRequest(dut, coreId = 1, setIdx = workingSet, expectedEvictionCandidate = None)
       performEvictionRequest(dut, coreId = 2, setIdx = workingSet, expectedEvictionCandidate = None)
@@ -325,7 +325,7 @@ class TimeoutReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTeste
     }
   }
 
-  "TimeoutReplacementPolicy" should "Critical with short timeout doesnt refresh long timeout" in {
+  "TimeoutReplacementPolicy" should "Critical with short timeout doesn't refresh long timeout" in {
     val (nWays, nSets, nCores) = (4, 2, 3)
     test(new TimeoutReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores))).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       defaultAssignments(dut)
@@ -367,7 +367,7 @@ class TimeoutReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTeste
     }
   }
 
-  "TimeoutReplacementPolicy" should "Critical with long timeout refreshps short timeout" in {
+  "TimeoutReplacementPolicy" should "Critical with long timeout refreshes short timeout" in {
     val (nWays, nSets, nCores) = (4, 2, 3)
     test(new TimeoutReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores))).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       defaultAssignments(dut)

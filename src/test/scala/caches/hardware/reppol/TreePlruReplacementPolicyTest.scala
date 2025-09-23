@@ -1,12 +1,12 @@
 package caches.hardware.reppol
 
+import caches.hardware.reppol.ReplacementPolicyTest._
 import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
-import caches.hardware.reppol.ReplacementPolicyTest._
 
 class TreePlruReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTester {
-  "TreePlru" should "keep track of LRU way for 4 ways with pipelined updates" in {
+  "TreePlruReplacementPolicy" should "keep track of LRU way" in {
     val (nWays, nSets, nCores) = (4, 2, 1)
     test(new TreePlruReplacementPolicy(nWays = nWays, nSets = nSets, nCores = nCores)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default assignments
@@ -23,8 +23,8 @@ class TreePlruReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTest
 
       dut.clock.step(1)
 
-      // Expect to point to the first way
-      dut.io.control.replaceWay.expect(0.U)
+      // Expect to point to the third way
+      dut.io.control.replaceWay.expect(2.U)
 
       // Update LRU on cache hit to way three
       dut.io.control.update.valid.poke(true.B)
@@ -32,8 +32,8 @@ class TreePlruReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTest
 
       dut.clock.step(1)
 
-      // Expect to point to the third way
-      dut.io.control.replaceWay.expect(2.U)
+      // Expect to point to the second way
+      dut.io.control.replaceWay.expect(1.U)
 
       // Update LRU on cache hit to way two
       dut.io.control.update.valid.poke(true.B)
@@ -41,8 +41,8 @@ class TreePlruReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTest
 
       dut.clock.step(1)
 
-      // Expect to point to the second way
-      dut.io.control.replaceWay.expect(1.U)
+      // Expect to point to the fourth way
+      dut.io.control.replaceWay.expect(3.U)
 
       // Update LRU on cache hit to way four
       dut.io.control.update.valid.poke(true.B)
@@ -50,15 +50,6 @@ class TreePlruReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTest
 
       dut.clock.step(1)
 
-      // Expect to point to the fourth way
-      dut.io.control.replaceWay.expect(3.U)
-
-      // Update LRU on cache hit to way one
-      dut.io.control.update.valid.poke(true.B)
-      dut.io.control.update.bits.poke(0.U)
-
-      dut.clock.step(1)
-
       // Expect to point to the first way
       dut.io.control.replaceWay.expect(0.U)
 
@@ -68,7 +59,16 @@ class TreePlruReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTest
 
       dut.clock.step(1)
 
-      // Expect to point to the third way still
+      // Expect to point to the first third way
+      dut.io.control.replaceWay.expect(2.U)
+
+      // Update LRU on cache hit to way two
+      dut.io.control.update.valid.poke(true.B)
+      dut.io.control.update.bits.poke(1.U)
+
+      dut.clock.step(1)
+
+      // Expect to point to the third way again
       dut.io.control.replaceWay.expect(2.U)
 
       // Update LRU on cache hit to way three
@@ -77,8 +77,243 @@ class TreePlruReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTest
 
       dut.clock.step(1)
 
-      // Expect to point to the first way now, since we had accessed way two recently
+      // Expect to point to the first way now, since we had accessed way three recently
+      dut.io.control.replaceWay.expect(0.U)
+
+      dut.clock.step(1)
+    }
+  }
+
+  "TreePlruReplacementPolicy" should "keep track of LRU way for 2 ways" in {
+    val (nWays, nSets, nCores) = (2, 2, 1)
+    test(new TreePlruReplacementPolicy(nWays = nWays, nSets = nSets, nCores = nCores)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+      // Default assignments
+      defaultAssignments(dut)
+
+      dut.clock.step(1)
+
+      // Expect to point to the first way
+      dut.io.control.replaceWay.expect(0.U)
+
+      // Update LRU state by accessing first way
+      dut.io.control.update.valid.poke(true.B)
+      dut.io.control.update.bits.poke(0.U)
+
+      stepForNcc(dut)
+
+      // Expect to point to the second way
+      dut.io.control.replaceWay.expect(1.U)
+
+      // Update LRU state by accessing the second way
+      dut.io.control.update.valid.poke(true.B)
+      dut.io.control.update.bits.poke(1.U)
+
+      stepForNcc(dut)
+
+      // Expect to point to the first way
+      dut.io.control.replaceWay.expect(0.U)
+
+      // Update LRU state by accessing second way
+      dut.io.control.update.valid.poke(true.B)
+      dut.io.control.update.bits.poke(1.U)
+
+      stepForNcc(dut)
+
+      // Expect to point to the first way
+      dut.io.control.replaceWay.expect(0.U)
+
+      // Update LRU state by accessing first way
+      dut.io.control.update.valid.poke(true.B)
+      dut.io.control.update.bits.poke(0.U)
+
+      stepForNcc(dut)
+
+      // Expect to point to the second way
+      dut.io.control.replaceWay.expect(1.U)
+
+      // Update LRU state by accessing first way
+      dut.io.control.update.valid.poke(true.B)
+      dut.io.control.update.bits.poke(0.U)
+
+      stepForNcc(dut)
+
+      // Expect to point to the second way
+      dut.io.control.replaceWay.expect(1.U)
+
+      dut.clock.step(1)
+    }
+  }
+
+  "TreePlruReplacementPolicy" should "keep track of LRU way for 4 ways" in {
+    val (nWays, nSets, nCores) = (4, 2, 1)
+    test(new TreePlruReplacementPolicy(nWays = nWays, nSets = nSets, nCores = nCores)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+      // Default assignments
+      defaultAssignments(dut)
+
+      dut.clock.step(1)
+
+      // Expect to point to the first way
+      dut.io.control.replaceWay.expect(0.U)
+      //      assertReplacementSet(dut, expectedSet = Array(0, 1, 2, 3))
+
+      // Update LRU state by accessing first way
+      dut.io.control.update.valid.poke(true.B)
+      dut.io.control.update.bits.poke(0.U)
+
+      stepForNcc(dut)
+
+      // Expect to point to the second way
       dut.io.control.replaceWay.expect(2.U)
+      //      assertReplacementSet(dut, expectedSet = Array(1, 2, 3, 0))
+
+      // Update LRU state by accessing third way
+      dut.io.control.update.valid.poke(true.B)
+      dut.io.control.update.bits.poke(2.U)
+
+      stepForNcc(dut)
+
+      // Expect to point to the second way
+      dut.io.control.replaceWay.expect(1.U)
+      //      assertReplacementSet(dut, expectedSet = Array(1, 3, 0, 2))
+
+      // Update LRU state by accessing second way
+      dut.io.control.update.valid.poke(true.B)
+      dut.io.control.update.bits.poke(1.U)
+
+      stepForNcc(dut)
+
+      // Expect to point to the fourth way
+      dut.io.control.replaceWay.expect(3.U)
+      //      assertReplacementSet(dut, expectedSet = Array(3, 0, 1, 2))
+
+      // Update LRU state by accessing fourth way
+      dut.io.control.update.valid.poke(true.B)
+      dut.io.control.update.bits.poke(3.U)
+
+      stepForNcc(dut)
+
+      // Expect to point to the first way
+      dut.io.control.replaceWay.expect(0.U)
+      //      assertReplacementSet(dut, expectedSet = Array(0, 1, 2, 3))
+
+      dut.clock.step(1)
+    }
+  }
+
+  "TreePlruReplacementPolicy" should "keep track of LRU way for 8 ways" in {
+    val (nWays, nSets, nCores) = (8, 2, 1)
+    test(new TreePlruReplacementPolicy(nWays = nWays, nSets = nSets, nCores = nCores)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+      // Default assignments
+      defaultAssignments(dut)
+
+      dut.clock.step(1)
+
+      dut.io.control.replaceWay.expect(0.U)
+      //      assertReplacementSet(dut, expectedSet = Array(0, 1, 2, 3, 4, 5, 6, 7))
+
+      dut.io.control.update.valid.poke(true.B)
+      dut.io.control.update.bits.poke(0.U)
+
+      dut.clock.step(1)
+
+      dut.io.control.replaceWay.expect(4.U)
+      //      assertReplacementSet(dut, expectedSet = Array(1, 2, 3, 4, 5, 6, 7, 0))
+
+      dut.io.control.update.valid.poke(true.B)
+      dut.io.control.update.bits.poke(4.U)
+
+      dut.clock.step(1)
+
+      dut.io.control.replaceWay.expect(2.U)
+      //      assertReplacementSet(dut, expectedSet = Array(1, 3, 4, 5, 6, 7, 0, 2))
+
+      dut.io.control.update.valid.poke(true.B)
+      dut.io.control.update.bits.poke(2.U)
+
+      dut.clock.step(1)
+
+      dut.io.control.replaceWay.expect(6.U)
+      //      assertReplacementSet(dut, expectedSet = Array(3, 4, 5, 6, 7, 0, 1, 2))
+
+      dut.io.control.update.valid.poke(true.B)
+      dut.io.control.update.bits.poke(6.U)
+
+      dut.clock.step(1)
+
+      dut.io.control.replaceWay.expect(1.U)
+      //      assertReplacementSet(dut, expectedSet = Array(4, 5, 6, 7, 0, 1, 2, 3))
+
+      dut.io.control.update.valid.poke(true.B)
+      dut.io.control.update.bits.poke(1.U)
+
+      dut.clock.step(1)
+
+      dut.io.control.replaceWay.expect(5.U)
+      //      assertReplacementSet(dut, expectedSet = Array(4, 6, 7, 0, 1, 2, 3, 5))
+
+      dut.io.control.update.valid.poke(true.B)
+      dut.io.control.update.bits.poke(5.U)
+
+      dut.clock.step(1)
+
+      dut.io.control.replaceWay.expect(3.U)
+      //      assertReplacementSet(dut, expectedSet = Array(4, 6, 7, 0, 1, 2, 3, 5))
+
+      dut.io.control.update.valid.poke(true.B)
+      dut.io.control.update.bits.poke(3.U)
+
+      dut.clock.step(1)
+
+      dut.io.control.replaceWay.expect(7.U)
+      //      assertReplacementSet(dut, expectedSet = Array(4, 6, 0, 1, 2, 3, 5, 7))
+
+      dut.io.control.update.valid.poke(true.B)
+      dut.io.control.update.bits.poke(7.U)
+
+      dut.clock.step(1)
+
+      dut.io.control.replaceWay.expect(0.U)
+      //      assertReplacementSet(dut, expectedSet = Array(6, 0, 1, 2, 3, 4, 5, 7))
+
+      dut.io.control.update.valid.poke(false.B)
+      dut.io.control.update.bits.poke(0.U)
+
+      dut.io.control.setIdx.poke(1.U)
+
+      //-------------
+      dut.clock.step(2)
+
+      dut.io.control.replaceWay.expect(0.U)
+      //      assertReplacementSet(dut, expectedSet = Array(0, 1, 2, 3, 4, 5, 6, 7))
+
+      dut.io.control.update.valid.poke(true.B)
+      dut.io.control.update.bits.poke(0.U)
+
+      dut.clock.step(1)
+
+      dut.io.control.replaceWay.expect(4.U)
+      //      assertReplacementSet(dut, expectedSet = Array(0, 1, 2, 3, 4, 5, 7, 6))
+
+      dut.io.control.update.valid.poke(true.B)
+      dut.io.control.update.bits.poke(4.U)
+
+      dut.io.control.setIdx.poke(0.U)
+
+      dut.clock.step(2)
+
+      dut.io.control.replaceWay.expect(0.U)
+      //      assertReplacementSet(dut, expectedSet = Array(1, 2, 3, 4, 5, 6, 7, 0))
+
+      dut.io.control.update.valid.poke(true.B)
+      dut.io.control.update.bits.poke(0.U)
+
+      dut.clock.step(1)
+
+      dut.io.control.replaceWay.expect(4.U)
+      //      assertReplacementSet(dut, expectedSet = Array(1, 2, 3, 4, 5, 7, 0, 6))
+
+      dut.io.control.update.valid.poke(true.B)
+      dut.io.control.update.bits.poke(4.U)
 
       dut.clock.step(1)
     }

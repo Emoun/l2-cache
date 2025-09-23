@@ -180,8 +180,8 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
 
   // Update the rejection policy
   // We update the replacement policy even on a miss, since this miss later turns into a hit anyway.
-  // We prevent updating the policy if the replacement way is not valid it is a miss.
-  io.repPol.update.valid := reqValidReg && !io.stall && !isHalfMissReg && (isHit._1 || repWayValid)
+  // We prevent updating the policy if the replacement way is not valid
+  io.repPol.update.valid := reqValidReg && !io.stall && (isHit._1 || repWayValid)
   io.repPol.update.bits := Mux(isHit._1, isHit._2, repWay)
   io.repPol.updateCoreId := coreIdReg
   io.repPol.evict := evict

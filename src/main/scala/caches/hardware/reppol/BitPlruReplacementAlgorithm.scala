@@ -106,9 +106,9 @@ class BitPlruReplacementAlgorithm(nWays: Int) extends Module() {
 
   // Replacement selection logic
   val replaceWay = getLru(io.computeMruBits)
-  val replaceSet = getLruOrderedSet(io.computeMruBits)
+  val replacementSet = getLruOrderedSet(io.computeMruBits)
 
   io.updatedMru := updatedMruBits
   io.replaceWay := replaceWay
-  io.replacementSet := replaceSet
+  io.replacementSet := replacementSet
 }

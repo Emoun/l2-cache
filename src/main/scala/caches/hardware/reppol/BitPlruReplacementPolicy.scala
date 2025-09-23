@@ -28,15 +28,15 @@ class BitPlruReplacementPolicy(nWays: Int, nSets: Int, nCores: Int) extends Shar
   // ---------------- Pre-Read stage ----------------
 
   val updateStageSetIdx = WireDefault(0.U(log2Up(nSets).W))
-  val updatedStageMruBits = VecInit(Seq.fill(nWays)(false.B))
+  val updatedStageWbMruBits = VecInit(Seq.fill(nWays)(false.B))
 
-  val readMruBits = plruBits(io.control.setIdx, io.control.update.valid, updateStageSetIdx, updatedStageMruBits, io.control.stall)
+  val readMruBits = plruBits(rIdx = io.control.setIdx, wrEn = io.control.update.valid, wIdx = updateStageSetIdx, wData = updatedStageWbMruBits, stall = io.control.stall)
   val idxDelayReg = PipelineReg(io.control.setIdx, 0.U, !io.control.stall)
 
   // ---------------- Read stage ----------------
 
   val doForward = updateStageSetIdx === idxDelayReg && io.control.update.valid
-  val computeMruBits = Mux(doForward, updatedStageMruBits, readMruBits)
+  val computeMruBits = Mux(doForward, updatedStageWbMruBits, readMruBits)
 
   val bitPlruAlgorithm = Module(new BitPlruReplacementAlgorithm(nWays))
   bitPlruAlgorithm.io.computeMruBits := computeMruBits
@@ -52,7 +52,7 @@ class BitPlruReplacementPolicy(nWays: Int, nSets: Int, nCores: Int) extends Shar
   // ---------------- Update stage ----------------
   bitPlruAlgorithm.io.hitWay := io.control.update.bits
   bitPlruAlgorithm.io.updateMruBits := mruBitsPipeReg
-  updatedStageMruBits := bitPlruAlgorithm.io.updatedMru
+  updatedStageWbMruBits := bitPlruAlgorithm.io.updatedMru // Updated MRU bits to writeback to memory
   updateStageSetIdx := setIdxPipeReg
 
   io.control.replaceWay := replaceWayPipeReg
