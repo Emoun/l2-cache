@@ -17,21 +17,15 @@ class TimeoutReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolicy: 
   //--------------- Base Policy ---------------------
   val basePolicyInst = Module(basePolicy())
 
+  // Default assignments to base policy
+  basePolicyInst.io.control <> 0.U.asTypeOf(basePolicyInst.io.control)
+  basePolicyInst.io.scheduler <> 0.U.asTypeOf(basePolicyInst.io.scheduler)
+
   // Update base policy
   basePolicyInst.io.control.setIdx := io.control.setIdx
   basePolicyInst.io.control.update.valid := io.control.update.valid
   basePolicyInst.io.control.update.bits := io.control.update.bits
   basePolicyInst.io.control.stall := io.control.stall
-  // The rest of the signals are only relevant to timeout and contention policies, thus DontCare
-  basePolicyInst.io.control.evict := DontCare
-  basePolicyInst.io.control.updateCoreId := DontCare
-  basePolicyInst.io.scheduler.cmd := DontCare
-  basePolicyInst.io.scheduler.addr := DontCare
-  basePolicyInst.io.scheduler.wData := DontCare
-  basePolicyInst.io.control.isHit := DontCare
-  basePolicyInst.io.control.missQueueEmpty := DontCare
-  basePolicyInst.io.control.missQueueCores := DontCare
-  basePolicyInst.io.control.missQueueValidCores := DontCare
 
   // Need to delay this signal by two CCs because PLRU has 2 stages
   val setIdxDelayReg = PipelineReg(io.control.setIdx, 0.U, !io.control.stall) // Delay once for accessing base policy mem
@@ -47,11 +41,12 @@ class TimeoutReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolicy: 
   timeoutAlgo.io.baseCandidates := basePolicyInst.io.control.replacementSet
   timeoutAlgo.io.scheduler <> io.scheduler
 
+  // Default output assignments
+  io.control <> 0.U.asTypeOf(io.control)
+
   io.control.isValid := timeoutAlgo.io.isRepValid
   io.control.replaceWay := timeoutAlgo.io.replaceWay
-  io.control.replacementSet := DontCare
-
   io.control.popRejQueue.valid := timeoutAlgo.io.freeRejQueue
   io.control.popRejQueue.bits := nCores.U // Free the entire rejection queue
-  io.control.pushReqToCritQueue := false.B // TODO: set this appropriately
+  io.control.updateCoreReachedLimit := false.B // TODO: set this appropriately
 }

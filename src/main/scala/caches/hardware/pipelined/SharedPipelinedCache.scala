@@ -75,6 +75,8 @@ class SharedPipelinedCache(
   val invalidateIndex = WireDefault(0.U(indexWidth.W))
   val missFifoCmdCapacity = WireDefault(false.B)
   val repDirtyInvalidStall = WireDefault(false.B)
+  val memIntPopWb = WireDefault(false.B)
+  val memIntPopWbEntryIsCrit = WireDefault(false.B)
 
   println(
     s"L2 Cache Configuration: " +
@@ -143,12 +145,14 @@ class SharedPipelinedCache(
   repLogic.io.missFifoPush <> missQueue.io.push
   repLogic.io.missCritInfo <> missQueue.io.critInfo
   repLogic.io.missNonCritInfo <> missQueue.io.nonCritInfo
-  missQueue.io.isCrit := repLogic.io.isMissPushCrit
   repLogic.io.repPol <> repPol.io.control
   repLogic.io.setLineValid := updateLogic.io.setValidLine
+  repLogic.io.nonCritWbPop := memIntPopWb
+  repLogic.io.nonCritWbEntryIsCrit := memIntPopWbEntryIsCrit
   invalidateLine := repLogic.io.invalidate.invalidate
   invalidateWay := repLogic.io.invalidate.way
   invalidateIndex := repLogic.io.invalidate.index
+  missQueue.io.pushCrit := repLogic.io.isMissPushCrit
   missFifoCmdCapacity := repLogic.io.halfMissCapacity
   repDirtyInvalidStall := repLogic.io.dirtyInvalidStall
   rejectionQueue.io.push := repLogic.io.pushReject
@@ -163,14 +167,20 @@ class SharedPipelinedCache(
   readLogic.io.memUpdate <> updateLogic.io.memUpdate
   tagLogic.io.dirtyCtrl := readLogic.io.dirtyCtrl
   repLogic.io.dirtyCtrl := readLogic.io.dirtyCtrl
+  wbQueue.io.pushCrit := readLogic.io.wbQueuePushCrit
 
   // ---------------- Update ----------------
 
   val memInterface = Module(new MemoryInterface(nCores, nWays, halfMissCmdCnt, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, bytesPerBlock * 8, bytesPerSubBlock * 8, beatSize = memBeatSize, burstLen = memBurstLen))
   memInterface.io.missFifo <> missQueue.io.pop
+  memInterface.io.missPopCrit := missQueue.io.popCrit
   memInterface.io.wbFifo <> wbQueue.io.pop
+  memInterface.io.wbPopCrit := wbQueue.io.popCrit
   memInterface.io.memController <> io.mem
   missQueue.io.memIntIdle := memInterface.io.idle
+  wbQueue.io.memIntIdle := memInterface.io.idle
+  memIntPopWb := memInterface.io.wbFifo.pop
+  memIntPopWbEntryIsCrit := memInterface.io.wbFifo.popEntry.isCrit
 
   updateLogic.io.readStage <> readLogic.io.update
   updateLogic.io.memoryInterface <> memInterface.io.updateLogic

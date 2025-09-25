@@ -55,7 +55,9 @@ class MemoryInterface(nCores: Int, nWays: Int, nHalfMissCmds: Int, reqIdWidth: I
 
   val io = IO(new Bundle {
     val missFifo = Flipped(new MshrPopIO(nCores, nHalfMissCmds, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, blockWidth))
+    val missPopCrit = Input(Bool())
     val wbFifo = Flipped(new WbFifoPopIO(tagWidth, indexWidth, blockWidth))
+    val wbPopCrit = Input(Bool())
     val updateLogic = Flipped(new MemInterfaceToUpdateIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockWidth, subBlockWidth))
     val memController = new CacheMemoryControllerIO(addressWidth, beatSize)
     val idle = Output(Bool())
@@ -102,11 +104,18 @@ class MemoryInterface(nCores: Int, nWays: Int, nHalfMissCmds: Int, reqIdWidth: I
     is(sIdle) {
 
       idle := true.B
-      // Perform a write-back
-      when(!io.wbFifo.empty) {
-        stateReg := sWrite
-      }.elsewhen(!io.missFifo.empty) { // Perform a fill
-        stateReg := sRead
+      when(io.wbPopCrit || io.missPopCrit) {
+        when(io.wbPopCrit) {
+          stateReg := sWrite
+        }.elsewhen(io.missPopCrit) {
+          stateReg := sRead
+        }
+      }.otherwise{
+        when(!io.wbFifo.empty) { // Perform a write-back
+          stateReg := sWrite
+        }.elsewhen(!io.missFifo.empty) { // Perform a fill
+          stateReg := sRead
+        }
       }
     }
 

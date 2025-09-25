@@ -7,7 +7,7 @@ import caches.hardware.reppol.ReplacementPolicyTest._
 
 class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTester {
 
-  "ContentionReplacementPolicy" should "reach contention limit for BitPlru" in {
+  "ContentionReplacementPolicy" should "Reach contention limit for BitPlru" in {
     val (nWays, nSets, nCores) = (4, 2, 3)
     test(new ContentionReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores))).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       defaultAssignments(dut)
@@ -330,7 +330,7 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
     }
   }
 
-  "ContentionReplacementPolicy" should "handle precedent events" in {
+  "ContentionReplacementPolicy" should "Precedent events" in {
     val (nWays, nSets, nCores) = (4, 2, 3)
     test(new ContentionReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores), enablePrecedentEvents = true)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       defaultAssignments(dut)
@@ -393,7 +393,7 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
     }
   }
 
-  "ContentionReplacementPolicy" should "handle miss-queue events" in {
+  "ContentionReplacementPolicy" should "Miss-queue events" in {
     val (nWays, nSets, nCores) = (4, 2, 3)
     test(new ContentionReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores), missQueueDepth = 4, enableMissInMiss = true)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       defaultAssignments(dut)
@@ -447,6 +447,84 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
 
       // Now try to evict the critical line using non-critical core, should evict non-critical line instead
       performEvictionRequest(dut, coreId = 2, setIdx = workingSet, expectedEvictionCandidate = Some(2))
+
+      dut.clock.step()
+    }
+  }
+
+  "ContentionReplacementPolicy" should "WB events" in {
+    val (nWays, nSets, nCores) = (4, 2, 3)
+    test(new ContentionReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores), missQueueDepth = 4, enableMissInMiss = true, enableWbEvents = true)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+      defaultAssignments(dut)
+
+      val workingSet = 1
+      dut.clock.step()
+
+      // Set the first core as critical with a contention limit of 2
+      setCoreAsCritical(dut, coreID = 2, wData = 2)
+
+      // Assign some lines to cores
+      performEvictionRequest(dut, coreId = 2, setIdx = workingSet, expectedEvictionCandidate = Some(0))
+      dut.clock.step()
+      performUpdateRequest(dut, coreId = 2, setIdx = workingSet, hitWay = 0)
+
+      performEvictionRequest(dut, coreId = 0, setIdx = workingSet, expectedEvictionCandidate = Some(1))
+      dut.clock.step()
+      performUpdateRequest(dut, coreId = 0, setIdx = workingSet, hitWay = 1)
+
+      performEvictionRequest(dut, coreId = 0, setIdx = workingSet, expectedEvictionCandidate = Some(2))
+      dut.clock.step()
+      performUpdateRequest(dut, coreId = 0, setIdx = workingSet, hitWay = 2)
+
+      performEvictionRequest(dut, coreId = 0, setIdx = workingSet, expectedEvictionCandidate = Some(3))
+      dut.clock.step()
+      performUpdateRequest(dut, coreId = 0, setIdx = workingSet, hitWay = 3)
+
+      // Simulate a WB, the wb entry is critical, thus a wb event should not be triggered
+      dut.io.control.nonCritWbPop.poke(true.B)
+      dut.io.control.nonCritWbEntryIsCrit.poke(true.B)
+      // Simulate a critical core being in the miss-q
+      dut.io.control.missQueueCores(1).poke(2.U)
+      dut.io.control.missQueueValidCores(1).poke(true.B)
+      // Add a non-critical core in the miss-q too
+      dut.io.control.missQueueCores(0).poke(1.U)
+      dut.io.control.missQueueValidCores(0).poke(true.B)
+
+      dut.clock.step(1)
+
+      dut.io.control.nonCritWbPop.poke(false.B)
+      dut.io.control.nonCritWbEntryIsCrit.poke(false.B)
+
+      // Trigger a replacement event
+      performEvictionRequest(dut, coreId = 1, setIdx = workingSet, expectedEvictionCandidate = Some(0))
+      dut.clock.step()
+      performUpdateRequest(dut, coreId = 1, setIdx = workingSet, hitWay = 0)
+
+      // Simulate a WB again, the wb entry is non-critical, thus a wb event should be triggered
+      dut.io.control.nonCritWbPop.poke(true.B)
+      dut.io.control.nonCritWbEntryIsCrit.poke(false.B)
+
+      dut.clock.step(1)
+
+      dut.io.control.nonCritWbPop.poke(false.B)
+      dut.io.control.nonCritWbEntryIsCrit.poke(false.B)
+
+      // Make a critical core evict a new line
+      performEvictionRequest(dut, coreId = 2, setIdx = workingSet, expectedEvictionCandidate = Some(1))
+      dut.clock.step()
+      performUpdateRequest(dut, coreId = 2, setIdx = workingSet, hitWay = 1)
+
+      // Make a critical core evict a new line
+      performEvictionRequest(dut, coreId = 2, setIdx = workingSet, expectedEvictionCandidate = Some(2))
+      dut.clock.step()
+      performUpdateRequest(dut, coreId = 2, setIdx = workingSet, hitWay = 2)
+
+      // Make plru point to the first critical line
+      performUpdateRequest(dut, coreId = 1, setIdx = workingSet, hitWay = 3)
+      performUpdateRequest(dut, coreId = 1, setIdx = workingSet, hitWay = 0)
+
+      // Now try to evict the critical line using a non-critical core, should evict non-critical line instead
+      performEvictionRequest(dut, coreId = 2, setIdx = workingSet, expectedEvictionCandidate = Some(0))
 
       dut.clock.step()
     }

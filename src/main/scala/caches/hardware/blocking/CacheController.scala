@@ -105,16 +105,14 @@ class CacheController(ways: Int, sets: Int, nCores: Int) extends Module {
     }
   }
 
+  // Default assignments
+  io.repPol <> 0.U.asTypeOf(io.repPol)
+
   io.repPol.update.valid := policyUpdate
   io.repPol.update.bits := io.mem.hitWay
   io.repPol.updateCoreId := reqIdReg
   io.repPol.setIdx := io.mem.set
   io.repPol.evict := evict
-  io.repPol.stall := false.B
-  io.repPol.missQueueCores := DontCare
-  io.repPol.missQueueValidCores := DontCare
-  io.repPol.missQueueEmpty := DontCare
-  io.repPol.isHit := DontCare
 
   io.mem.latchReq := latchReq
   io.mem.validReq := stateReg =/= sIdle

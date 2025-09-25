@@ -33,6 +33,8 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
     val addrWidth = tagWidth + indexWidth + blockOffWidth + log2Up(subBlockWidth / 8)
     val rep = new RepIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockOffWidth, subBlockWidth)
     val invalidate = new InvalidateLineIO(nWays, indexWidth)
+    val nonCritWbPop = Input(Bool())
+    val nonCritWbEntryIsCrit = Input(Bool())
     val read = Flipped(new ReadIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockOffWidth, blockWidth, subBlockWidth))
     val missFifoPush = Flipped(new MshrPushIO(nCores = nCores, nMshrs = nMshrs, nWays = nWays, reqIdWidth = reqIdWidth, tagWidth = tagWidth, indexWidth = indexWidth, blockOffsetWidth = blockOffWidth, subBlockWidth = subBlockWidth))
     val isMissPushCrit = Output(Bool())
@@ -148,15 +150,16 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   val indexReg = PipelineReg(io.rep.index, 0.U, !io.stall)
   val tagReg = PipelineReg(io.rep.tag, 0.U, !io.stall)
 
+  // ---------------- Update Replacement policy ----------------
+
   val validAndDirtyBits2 = updateValidAndDirtyBits(validBitsReg, dirtyBitsReg, setTagsReg, indexReg, useInvalidate = false)
-  val isHit = checkIfHit(validAndDirtyBits2._1, validAndDirtyBits2._3, tagReg)
+  val isHit = checkIfHit(validAndDirtyBits2._1, validAndDirtyBits2._3, tagReg) // Long combinational path // TODO: Move one pipeline register back instead
 
   updateStageIndex := indexReg
   updateStageTag := tagReg
   updateStageValid := reqValidReg
   updateStageIsHit := isHit._1
 
-  // ---------------- Update Replacement policy ----------------
   val repWay = io.repPol.replaceWay
   val repWayValid = io.repPol.isValid
   val isRepDirty = validAndDirtyBits2._2(repWay)
@@ -164,21 +167,8 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   val dirtyTag = validAndDirtyBits2._3(repWay)
   val evict = reqValidReg && (!isHit._1 && repWayValid && !isHalfMissReg) && !io.stall
 
-  // If the replacement way is dirty but the line is not valid---stall the pipeline
-  val stallDueToDirtyInvalid = reqValidReg && (!isHit._1 && isRepDirty && !isRepLineValid)
-  io.dirtyInvalidStall := stallDueToDirtyInvalid
+  // Replacement policy connections
 
-  // If a single mshr register is full of commands then we stall the pipeline until the line is brought in
-  val cmdCapacityNonCrit = io.missNonCritInfo.fullCmds(halfMissIdxReg) && io.missNonCritInfo.validMSHRs(halfMissIdxReg) && isHalfMissReg && !isHit._1
-  val cmdCapacityCrit = io.missCritInfo.fullCmds(halfMissIdxReg) && io.missCritInfo.validMSHRs(halfMissIdxReg) && isHalfMissReg && !isHit._1
-  val halfMissCapacity = Mux(halfMissInCritReg, cmdCapacityCrit, cmdCapacityNonCrit)
-  io.halfMissCapacity := halfMissCapacity
-
-  invalidate := evict
-  invalidateWay := repWay
-  invalidateIndex := indexReg
-
-  // Update the rejection policy
   // We update the replacement policy even on a miss, since this miss later turns into a hit anyway.
   // We prevent updating the policy if the replacement way is not valid
   io.repPol.update.valid := reqValidReg && !io.stall && (isHit._1 || repWayValid)
@@ -189,11 +179,15 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   io.repPol.missQueueEmpty := io.missNonCritInfo.elementCnt === 0.U
   io.repPol.missQueueCores := io.missNonCritInfo.incidentCoreIds
   io.repPol.missQueueValidCores := io.missNonCritInfo.validMSHRs
+  io.repPol.missQueueCritCores := io.missNonCritInfo.isCritCores
+  io.repPol.nonCritWbPop := io.nonCritWbPop
+  io.repPol.nonCritWbEntryIsCrit := io.nonCritWbEntryIsCrit
 
   // Push request or a command to the miss fifo
-  io.isMissPushCrit := halfMissInCritReg || io.repPol.pushReqToCritQueue
-  updateStageIsCrit := io.repPol.pushReqToCritQueue && reqValidReg
+  io.isMissPushCrit := halfMissInCritReg || io.repPol.updateCoreReachedLimit
+  updateStageIsCrit := io.repPol.updateCoreReachedLimit && reqValidReg
 
+  // Miss fifo connections
   io.missFifoPush.pushReq := evict
   io.missFifoPush.withCmd := evict
   io.missFifoPush.pushReqEntry.tag := tagReg
@@ -201,6 +195,7 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   io.missFifoPush.pushReqEntry.byteEn := Mux(reqRwReg, byteEnReg, 0.U)
   io.missFifoPush.pushReqEntry.replaceWay := repWay
   io.missFifoPush.pushReqEntry.incidentCoreId := coreIdReg
+  io.missFifoPush.pushReqEntry.isCrit := io.repPol.updateCoreIsCrit
 
   io.missFifoPush.pushCmd := isHalfMissReg && reqValidReg && !isHit._1 && !io.stall // Push a half miss command
   io.missFifoPush.mshrIdx := halfMissIdxReg
@@ -213,6 +208,8 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   io.missFifoPush.updateByteEnCol := blockOffsetReg
   io.missFifoPush.updateByteEnRow := halfMissIdxReg
 
+  // Rejection queue connections
+
   // Push rejected request to the rejection queue, if it is a valid request, that is a miss but does not have a valid replacement way
   io.pushReject := reqValidReg && !isHit._1 && !repWayValid && !io.stall
   io.pushRejectEntry.coreId := coreIdReg
@@ -222,10 +219,14 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   io.pushRejectEntry.byteEn := byteEnReg
   io.pushRejectEntry.wData := wDataReg
 
+  // Outputs
+
   val byteShift = Cat(blockOffsetReg, 0.U(log2Up(subBlockWidth / 8).W))
   val blockByteMask = (byteEnReg << byteShift).asUInt
 
   io.read.coreId := coreIdReg
+  io.read.isCoreCrit := io.repPol.updateCoreIsCrit
+  io.read.coreReachedLimit := io.repPol.updateCoreReachedLimit
   io.read.reqValid := reqValidReg
   io.read.reqId := reqIdReg
   io.read.reqRw := reqRwReg
@@ -241,7 +242,24 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   io.read.index := indexReg
   io.read.tag := tagReg
 
+  // Cache line invalidation logic
+  invalidate := evict
+  invalidateWay := repWay
+  invalidateIndex := indexReg
+
   io.invalidate.invalidate := invalidate
   io.invalidate.way := invalidateWay
   io.invalidate.index := invalidateIndex
+
+  // ---------------- Stalls due to hazards ----------------
+
+  // If the replacement way is dirty but the line is not valid---stall the pipeline
+  val stallDueToDirtyInvalid = reqValidReg && (!isHit._1 && isRepDirty && !isRepLineValid)
+  io.dirtyInvalidStall := stallDueToDirtyInvalid
+
+  // If a single mshr register is full of commands then we stall the pipeline until the line is brought in
+  val cmdCapacityNonCrit = io.missNonCritInfo.fullCmds(halfMissIdxReg) && io.missNonCritInfo.validMSHRs(halfMissIdxReg) && isHalfMissReg && !isHit._1
+  val cmdCapacityCrit = io.missCritInfo.fullCmds(halfMissIdxReg) && io.missCritInfo.validMSHRs(halfMissIdxReg) && isHalfMissReg && !isHit._1
+  val halfMissCapacity = Mux(halfMissInCritReg, cmdCapacityCrit, cmdCapacityNonCrit)
+  io.halfMissCapacity := halfMissCapacity
 }

@@ -17,6 +17,7 @@ class LineRequestIO(nCores: Int, nWays: Int, tagWidth: Int, indexWidth: Int, dat
   val index = Input(UInt(indexWidth.W))
   val byteEn = Input(UInt((dataWidth / 8).W))
   val incidentCoreId = Input(UInt(log2Up(nCores).W)) // The core that caused this miss
+  val isCrit = Input(Bool())
   val replaceWay = Input(UInt(log2Up(nWays).W))
 }
 
@@ -25,6 +26,7 @@ class MshrInfoIO(nCores: Int, nMshrs: Int, nWays: Int, indexWidth: Int, tagWidth
   val currentTags = Output(Vec(nMshrs, UInt(tagWidth.W)))
   val replacementWays = Output(Vec(nMshrs, UInt(log2Up(nWays).W)))
   val incidentCoreIds = Output(Vec(nMshrs, UInt(log2Up(nCores).W)))
+  val isCritCores = Output(Vec(nMshrs, Bool()))
   val validMSHRs = Output(Vec(nMshrs, Bool()))
   val fullCmds = Output(Vec(nMshrs, Bool()))
   val wrPtr = Output(UInt(log2Ceil(nMshrs).W))
@@ -68,9 +70,10 @@ class MissFifoIO(nCores: Int, nMSHRs: Int, nCmds: Int, nWays: Int, reqIdWidth: I
   val memIntIdle = Input(Bool())
   val nonCritInfo = new MshrInfoIO(nCores, nMSHRs, nWays, indexWidth, tagWidth)
   val critInfo = new MshrInfoIO(nCores, nMSHRs, nWays, indexWidth, tagWidth)
-  val isCrit = Input(Bool()) // Indicate if the current request should be pushed to the critical queue
+  val pushCrit = Input(Bool()) // Indicate if the current request should be pushed to the critical queue
   val push = new MshrPushIO(nCores, nMSHRs, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, subBlockWidth)
   val pop = new MshrPopIO(nCores, nCmds, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, blockWidth)
+  val popCrit = Output(Bool()) // Indicate if the current request should be pushed to the critical queue
   val full = Output(Bool())
 }
 
@@ -142,6 +145,7 @@ class RequestMshrQueue(nCores: Int, nMshrs: Int, nWays: Int, tagWidth: Int, inde
     val currentTags = Output(Vec(nMshrs, UInt(tagWidth.W)))
     val replacementWays = Output(Vec(nMshrs, UInt(log2Up(nWays).W)))
     val incidentCoreIds = Output(Vec(nMshrs, UInt(log2Up(nCores).W)))
+    val isCritCores = Output(Vec(nMshrs, Bool()))
     val validMSHRs = Output(Vec(nMshrs, Bool()))
   })
 
@@ -151,6 +155,7 @@ class RequestMshrQueue(nCores: Int, nMshrs: Int, nWays: Int, tagWidth: Int, inde
   val idxQueue = Module(new RegFifoWithStatus(UInt(indexWidth.W), nMshrs))
   val wayQueue = Module(new RegFifoWithStatus(UInt(log2Up(nWays).W), nMshrs))
   val incidentCoreQueue = Module(new RegFifoWithStatus(UInt(log2Up(nCores).W), nMshrs))
+  val isCritQueue = Module(new RegFifoWithStatus(UInt(log2Up(nCores).W), nMshrs)) // Whether the incident core is critical or not
   val currWrPtr = tagQueue.io.wrPtr
   val currRdPtr = tagQueue.io.rdPtr
 
@@ -179,6 +184,9 @@ class RequestMshrQueue(nCores: Int, nMshrs: Int, nWays: Int, tagWidth: Int, inde
   incidentCoreQueue.io.enq.valid := io.push
   incidentCoreQueue.io.enq.bits := io.pushEntry.incidentCoreId
 
+  isCritQueue.io.enq.valid := io.push
+  isCritQueue.io.enq.bits := io.pushEntry.isCrit
+
   val byteShift = Cat(io.blockOffset, 0.U(log2Up(subBlockWidth / 8).W))
   val byteMask = (io.pushEntry.byteEn << byteShift).asUInt
   val blockAlignedByteEn = byteMask((blockWidth / 8) - 1, 0)
@@ -197,12 +205,14 @@ class RequestMshrQueue(nCores: Int, nMshrs: Int, nWays: Int, tagWidth: Int, inde
   tagQueue.io.deq.ready := io.pop
   idxQueue.io.deq.ready := io.pop
   incidentCoreQueue.io.deq.ready := io.pop
+  isCritQueue.io.deq.ready := io.pop
 
   io.popEntry.tag := tagQueue.io.deq.bits
   io.popEntry.index := idxQueue.io.deq.bits
   io.popEntry.replaceWay := wayQueue.io.deq.bits
   io.popEntry.byteEn := byteEnQueue.io.rdData
   io.popEntry.incidentCoreId := incidentCoreQueue.io.deq.bits
+  io.popEntry.isCrit := isCritQueue.io.deq.bits
 
   io.empty := empty
   io.full := full
@@ -215,6 +225,7 @@ class RequestMshrQueue(nCores: Int, nMshrs: Int, nWays: Int, tagWidth: Int, inde
   io.currentIndexes := idxQueue.io.regOut
   io.replacementWays := wayQueue.io.regOut
   io.incidentCoreIds := incidentCoreQueue.io.regOut
+  io.isCritCores := isCritQueue.io.regOut
 }
 
 class CmdMshrQueue(nCmds: Int, nCores: Int, nMshrs: Int, reqIdWidth: Int, blockOffsetWidth: Int) extends Module {
@@ -313,16 +324,13 @@ class MshrQueue(nCores: Int, nCmds: Int, nMshrs: Int, nWays: Int, reqIdWidth: In
   io.info.currentIndexes := reqQueue.io.currentIndexes
   io.info.replacementWays := reqQueue.io.replacementWays
   io.info.incidentCoreIds := reqQueue.io.incidentCoreIds
+  io.info.isCritCores := reqQueue.io.isCritCores
   io.info.fullCmds := cmdQueue.io.full
   io.info.elementCnt := queueElementCntReg
 
   io.pop.empty := reqQueue.io.empty
   io.pop.cmdCnt := cmdQueue.io.cmdCnt
-  io.pop.popEntry.tag := reqQueue.io.popEntry.tag
-  io.pop.popEntry.index := reqQueue.io.popEntry.index
-  io.pop.popEntry.replaceWay := reqQueue.io.popEntry.replaceWay
-  io.pop.popEntry.incidentCoreId := reqQueue.io.popEntry.incidentCoreId
-  io.pop.popEntry.byteEn := reqQueue.io.popEntry.byteEn
+  io.pop.popEntry := reqQueue.io.popEntry
   io.pop.cmds := cmdQueue.io.rdCmds
 }
 
@@ -335,7 +343,7 @@ class MissFifo(nCores: Int, nCmds: Int, nMshrs: Int, nWays: Int, reqIdWidth: Int
   // De-multiplex the push interface to the two queues
   val mshrPushDemux = Module(new MshrPushDemux(nCores, nCmds, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, blockWidth))
 
-  mshrPushDemux.io.sel := io.isCrit
+  mshrPushDemux.io.sel := io.pushCrit
   mshrPushDemux.io.in <> io.push
   nonCritQueue.io.push <> mshrPushDemux.io.out1
   critQueue.io.push <> mshrPushDemux.io.out2
@@ -357,9 +365,6 @@ class MissFifo(nCores: Int, nCmds: Int, nMshrs: Int, nWays: Int, reqIdWidth: Int
   io.critInfo <> critQueue.io.info
   io.nonCritInfo <> nonCritQueue.io.info
 
-  // TODO: half misses can always go to either or
-  //  but requests can be pushed to critical queue only if it is a reqeust made by a critical core
-  //  that has reached its contention limit
-
   io.full := critQueue.io.push.full || nonCritQueue.io.push.full
+  io.popCrit := mshrPopSelReg
 }

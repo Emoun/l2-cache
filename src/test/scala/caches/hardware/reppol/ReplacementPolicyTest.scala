@@ -108,10 +108,11 @@ object ReplacementPolicyTest {
   }
 
   def defaultAssignments(dut: SharedCacheReplacementPolicyType): Unit = {
-    dut.io.control.update.valid.poke(false.B)
-    dut.io.control.update.bits.poke(0.U)
     dut.io.control.stall.poke(false.B)
     dut.io.control.evict.poke(false.B)
+    dut.io.control.isHit.poke(false.B)
+    dut.io.control.update.valid.poke(false.B)
+    dut.io.control.update.bits.poke(0.U)
     dut.io.control.updateCoreId.poke(0.U)
     dut.io.control.setIdx.poke(0.U)
 

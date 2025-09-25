@@ -25,6 +25,9 @@ class ReplacementPolicyIO(nWays: Int, nSets: Int, nCores: Int, missQueueDepth: I
   val missQueueEmpty = Input(Bool())
   val missQueueCores = Input(Vec(missQueueDepth, UInt(log2Up(nCores).W)))
   val missQueueValidCores = Input(Vec(missQueueDepth, Bool()))
+  val missQueueCritCores = Input(Vec(missQueueDepth, Bool()))
+  val nonCritWbPop = Input(Bool())
+  val nonCritWbEntryIsCrit = Input(Bool())
   val update = Input(Valid(UInt(log2Up(nWays).W)))
   val setIdx = Input(UInt(log2Up(nSets).W))
   val updateCoreId = Input(UInt(log2Up(nCores).W))
@@ -32,7 +35,8 @@ class ReplacementPolicyIO(nWays: Int, nSets: Int, nCores: Int, missQueueDepth: I
   val replaceWay = Output(UInt(log2Up(nWays).W))
   val replacementSet = Output(Vec(nWays, UInt(log2Up(nWays).W))) // If a replacement policy needs an ordered set of ways, otherwise can be ignored
   val popRejQueue = Valid(UInt((log2Up(nCores) + 1).W)) // For specifying how many entries should be popped from the rejection queue
-  val pushReqToCritQueue = Output(Bool())
+  val updateCoreReachedLimit = Output(Bool())
+  val updateCoreIsCrit = Output(Bool())
 }
 
 class SharedCacheReplacementIO(nWays: Int, nSets: Int, nCores: Int, dataWidth: Int, missQueueDepth: Int) extends Bundle {

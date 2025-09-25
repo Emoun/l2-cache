@@ -14,6 +14,8 @@ class DirtyCtrlIO(nWays: Int, indexWidth: Int) extends Bundle {
 
 class ReadIO(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffWidth: Int, blockWidth: Int, subBlockWidth: Int) extends Bundle() {
   val coreId = Input(UInt(log2Up(nCores).W))
+  val isCoreCrit = Input(Bool())
+  val coreReachedLimit = Input(Bool())
   val reqValid = Input(Bool())
   val reqId = Input(UInt(reqIdWidth.W))
   val reqRw = Input(Bool())
@@ -36,6 +38,7 @@ class Read(memSizeInBytes: Int, nCores: Int, nWays: Int, reqIdWidth: Int, tagWid
     val memUpdate = Flipped(new CacheMemUpdateIO(nWays = nWays, indexWidth = indexWidth, nSubBlocks = blockWidth / subBlockWidth, subBlockWidth = subBlockWidth))
     val stall = Input(Bool())
     val wbQueue = Flipped(new WbFifoPushIO(tagWidth = tagWidth, indexWidth = indexWidth, blockWidth = blockWidth))
+    val wbQueuePushCrit = Output(Bool())
     val update = Flipped(new UpdateIO(nCores = nCores, nWays = nWays, reqIdWidth = reqIdWidth, tagWidth = tagWidth, indexWidth = indexWidth, blockWidth = blockWidth, subBlockWidth = subBlockWidth))
     val dirtyCtrl = new DirtyCtrlIO(nWays = nWays, indexWidth = indexWidth)
   })
@@ -52,6 +55,7 @@ class Read(memSizeInBytes: Int, nCores: Int, nWays: Int, reqIdWidth: Int, tagWid
   dataMem.io.stall := io.stall
 
   val coreIdReg = PipelineReg(io.read.coreId, 0.U, !io.stall)
+  val isCoreCritReg = PipelineReg(io.read.isCoreCrit, 0.U, !io.stall)
   val reqValidReg = PipelineReg(io.read.reqValid, false.B, !io.stall)
   val reqIdReg = PipelineReg(io.read.reqId, 0.U, !io.stall)
   val reqRwReg = PipelineReg(io.read.reqRw, false.B, !io.stall)
@@ -69,10 +73,12 @@ class Read(memSizeInBytes: Int, nCores: Int, nWays: Int, reqIdWidth: Int, tagWid
 
   val wb = reqValidReg && !isHitReg && isRepDirtyReg && repValidReg
 
+  io.wbQueuePushCrit := false.B // TODO: Need to decide when to push to critical writeback queue
   io.wbQueue.push := wb && !io.stall
   io.wbQueue.pushEntry.wbData := dataMem.io.rData.asUInt
   io.wbQueue.pushEntry.tag := dirtyTagReg
   io.wbQueue.pushEntry.index := indexReg
+  io.wbQueue.pushEntry.isCrit := isCoreCritReg
 
   io.dirtyCtrl.unset := wb
   io.dirtyCtrl.set := reqValidReg && reqRwReg && (isHitReg || repValidReg)

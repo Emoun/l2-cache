@@ -56,13 +56,14 @@ class TreePlruReplacementPolicy(nWays: Int, nSets: Int, nCores: Int) extends Sha
   updatedStageWbMruBits := treePlruAlgo.io.updatedLru // Updated LRU bits to writeback to memory
   updateStageSetIdx := setIdxPipeReg
 
+  // Default output assignments
+  io.control <> 0.U.asTypeOf(io.control)
+  io.scheduler <> 0.U.asTypeOf(io.scheduler)
+
+  // We assign only the signals that are relevant to this policy
   io.control.replaceWay := replaceWay
   io.control.replaceWay := replaceWayPipeReg
   io.control.replacementSet := replaceSetPipeReg
   io.control.isValid := true.B
-  io.scheduler.rData := DontCare
-  io.control.popRejQueue.valid := DontCare
-  io.control.popRejQueue.bits := DontCare
-  io.control.pushReqToCritQueue := DontCare
 }
 

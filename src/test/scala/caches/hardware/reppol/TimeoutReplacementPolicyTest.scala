@@ -211,7 +211,7 @@ class TimeoutReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTeste
     }
   }
 
-  "TimeoutReplacementPolicy" should "Eventually times out" in {
+  "TimeoutReplacementPolicy" should "Eventually time out" in {
     val (nWays, nSets, nCores) = (4, 2, 3)
     test(new TimeoutReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores))).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       defaultAssignments(dut)
