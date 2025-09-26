@@ -226,6 +226,7 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
 
   io.read.coreId := coreIdReg
   io.read.isCoreCrit := io.repPol.updateCoreIsCrit
+  io.read.isRepWayCrit := io.repPol.isReplacementWayCrit
   io.read.coreReachedLimit := io.repPol.updateCoreReachedLimit
   io.read.reqValid := reqValidReg
   io.read.reqId := reqIdReg

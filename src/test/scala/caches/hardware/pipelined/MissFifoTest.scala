@@ -66,7 +66,7 @@ class MissFifoTest extends AnyFlatSpec with ChiselScalatestTester {
       blockOffsetWidth = 2,
       subBlockWidth = subBlockWidth,
       blockWidth = blockWidth
-    )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+    )).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation)) { dut =>
       // Initialize inputs
       dut.io.push.pushReq.poke(false.B)
       dut.io.push.withCmd.poke(false.B)

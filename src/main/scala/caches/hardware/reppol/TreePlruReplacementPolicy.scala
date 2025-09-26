@@ -9,7 +9,9 @@ import chisel3.util._
  * @param nSets number of sets in the whole cache
  */
 class TreePlruReplacementPolicy(nWays: Int, nSets: Int, nCores: Int) extends SharedCacheReplacementPolicyType(nWays, nSets, nCores) {
-// ---------------- Base policy stage ----------------
+  override def printConfig(): Unit = println(s"Tree PLRU replacement policy configuration: ways: $nWays, sets: $nSets, cores: $nCores")
+
+  // ---------------- Base policy stage ----------------
   def plruBits(rIdx: UInt, wrEn: Bool, wIdx: UInt, wData: Vec[Bool], stall: Bool): Vec[Bool] = {
     val mruBits = Module(new MemBlock(nSets, nWays - 1))
     val rMruBits = Wire(Vec(nWays - 1, Bool()))

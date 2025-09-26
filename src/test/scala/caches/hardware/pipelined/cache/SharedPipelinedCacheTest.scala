@@ -1,14 +1,16 @@
-package caches.hardware.pipelined
+package caches.hardware.pipelined.cache
 
+import caches.hardware.pipelined.SharedPipelinedCacheTestTop
 import caches.hardware.reppol._
 import chisel3._
-import chisel3.util._
+import chisel3.util.log2Up
 import chiseltest._
-import org.scalatest.flatspec.AnyFlatSpec
 
 import scala.collection.mutable
 
 trait TestAction {}
+
+trait PolicyConfiguration {}
 
 case class CacheRequest(
                          coreId: Int,
@@ -28,6 +30,8 @@ case class Stall(stallCycles: Int = 0) extends TestAction()
 
 case class ExpectFinishedRejectedResponse(coreId: Int, reqId: Int, expectedData: String) extends TestAction()
 
+case class PerformSchedulerOperation(addr: Int, rw: Boolean, wData: Option[Int] = None) extends TestAction()
+
 case class CacheResponse(
                           receivedCC: Int,
                           coreId: Int,
@@ -35,7 +39,31 @@ case class CacheResponse(
                           data: String
                         )
 
+case class CacheConfiguration(
+                               sizeInBytes: Int,
+                               nCores: Int,
+                               nWays: Int,
+                               addressWidth: Int,
+                               reqIdWidth: Int,
+                               bytesPerBlock: Int,
+                               bytesPerSubBlock: Int,
+                               repPolConfig: PolicyConfiguration,
+                               memBeatSize: Int,
+                               memBurstLen: Int,
+                               memFile: Option[String],
+                               nHalfMissCmds: Option[Int] = None
+                             )
+
+case class BitPlruConfiguration() extends PolicyConfiguration
+
+case class TreePlruConfiguration() extends PolicyConfiguration
+
+case class ContentionConfiguration(base: PolicyConfiguration, mim: Boolean = false, precedent: Boolean = false, wb: Boolean = false) extends PolicyConfiguration
+
+case class TimeoutConfiguration(base: PolicyConfiguration) extends PolicyConfiguration
+
 object Tests {
+  // Test actions for bit and tree PLRUs
   val testActions1: Array[TestAction] = Array(
     CacheRequest(coreId = 1, reqId = 0, tag = 0, index = 0, blockOffset = 0, rw = false, expectedData = Some("cafebabebabecafedeadbeefbeefdead")), // (tag = 0, idx = 0, blockOff = 0, way = 0)
     CacheRequest(coreId = 1, reqId = 1, tag = 0, index = 0, blockOffset = 1, rw = false, expectedData = Some("deadbabebabedeadfeedfacefacefeed")), // (HIT)
@@ -93,7 +121,10 @@ object Tests {
     CacheRequest(coreId = 0, reqId = 41, tag = 16, index = 113, blockOffset = 2, rw = false, expectedData = Some("358958f999ddee22de0082b374f1b3f5")),
   )
 
+  // Test actions for contention cache
   val testActions2: Array[TestAction] = Array(
+    PerformSchedulerOperation(addr = 1, rw = true, wData = Some(2)),
+    PerformSchedulerOperation(addr = 3, rw = true, wData = Some(10)),
     CacheRequest(coreId = 1, reqId = 0, tag = 0, index = 0, blockOffset = 0, rw = false, expectedData = Some("cafebabebabecafedeadbeefbeefdead")), // Bring new line into the cache (put in way: 0, idx: 0)
     CacheRequest(coreId = 1, reqId = 1, tag = 0, index = 4, blockOffset = 0, rw = false, expectedData = Some("8fb2741c9dea0137bc3f0e2a40cbde98")), // Bring new line into the cache (put in way: 0, idx: 4)
     CacheRequest(coreId = 1, reqId = 2, tag = 1, index = 0, blockOffset = 0, rw = false, expectedData = Some("bbef1226751129196ede4c8a9dc4fbd4")), // Bring new line into the cache (put in way: 1, idx: 0)
@@ -128,9 +159,8 @@ object Tests {
     CacheRequest(coreId = 2, reqId = 31, tag = 16, index = 0, blockOffset = 0, rw = false, expectedData = Some("40a13302ac635051b398eb9a4cec416c"), rejected = true), // Rejected response (once free, put in way: 4, idx: 0),
     CacheRequest(coreId = 0, reqId = 32, tag = 17, index = 0, blockOffset = 0, rw = false, expectedData = Some("d1f8fbeb63d88f19a2af35a0cd00f5ef"), rejected = true), // Rejected response (once free, put in way: 4, idx: 0),
     CacheRequest(coreId = 1, reqId = 33, tag = 18, index = 0, blockOffset = 0, rw = false, expectedData = Some("ca065d4eea469633ab2fd69681debb57")), // Critical core can evict any other core
-  )
-
-  val testActions3: Array[TestAction] = Array(
+    Stall(250), // Wait for some time before unset the core as non-critical
+    PerformSchedulerOperation(addr = 1, rw = false),
     ExpectFinishedRejectedResponse(coreId = 2, reqId = 31, expectedData = "40a13302ac635051b398eb9a4cec416c"),
     ExpectFinishedRejectedResponse(coreId = 0, reqId = 32, expectedData = "d1f8fbeb63d88f19a2af35a0cd00f5ef"),
     CacheRequest(coreId = 3, reqId = 34, tag = 8, index = 4, blockOffset = 0, rw = false, expectedData = Some("bf7ecefbef86e816b49f6740df6d0069")),
@@ -140,70 +170,59 @@ object Tests {
     CacheRequest(coreId = 2, reqId = 38, tag = 0, index = 4, blockOffset = 2, rw = false, expectedData = Some("314a8f9cd7e40cb26f19de83a481b2dc")), // (HIT)
   )
 
-  val testActions4: Array[TestAction] = Array(
+  // Test actions for a stress test
+  val testActions3: Array[TestAction] = Array(
     // Test sequential reads from different memory regions
     CacheRequest(coreId = 0, reqId = 0, tag = 0, index = 0, blockOffset = 0, rw = false, expectedData = Some("cafebabebabecafedeadbeefbeefdead")), // Words 0-3: beefdead, deadbeef, babecafe, cafebabe
     CacheRequest(coreId = 1, reqId = 1, tag = 0, index = 0, blockOffset = 1, rw = false, expectedData = Some("deadbabebabedeadfeedfacefacefeed")), // Words 4-7: facefeed, feedface, babedead, deadbabe
     CacheRequest(coreId = 2, reqId = 2, tag = 0, index = 0, blockOffset = 2, rw = false, expectedData = Some("fee1deaddeadfee1c00010ff10ffc000")), // Words 8-11: 10ffc000, c00010ff, deadfee1, fee1dead
     CacheRequest(coreId = 3, reqId = 3, tag = 0, index = 0, blockOffset = 3, rw = false, expectedData = Some("dead10cc10ccdeadd00d2bad2badd00d")), // Words 12-15: 2badd00d, d00d2bad, 10ccdead, dead10cc
-
     // Test reads from mid-range addresses (around word 1000)
     CacheRequest(coreId = 0, reqId = 4, tag = 1, index = 0, blockOffset = 0, rw = false, expectedData = Some("bbef1226751129196ede4c8a9dc4fbd4")), // Words 1000-1003 region
     CacheRequest(coreId = 1, reqId = 5, tag = 1, index = 0, blockOffset = 1, rw = false, expectedData = Some("f8ab4690dd99254eb0eeda4a06a360bc")), // Words 1004-1007 region
-
     // Test reads from higher addresses (around word 5000)
     CacheRequest(coreId = 2, reqId = 6, tag = 5, index = 0, blockOffset = 0, rw = false, expectedData = Some("1172becdb246ca947b61e7da07672879")),
     CacheRequest(coreId = 3, reqId = 7, tag = 5, index = 0, blockOffset = 1, rw = false, expectedData = Some("cc5fd511c237a27e2451003dbc4d8025")),
-
     // Test interleaved reads and writes
     CacheRequest(coreId = 0, reqId = 8, tag = 0, index = 1, blockOffset = 0, rw = false, expectedData = Some("bbadbeefbeefbbade0ddf00dbadc0ffe")), // Words 16-19
     CacheRequest(coreId = 1, reqId = 9, tag = 0, index = 1, blockOffset = 1, rw = true, wData = Some("hdeadcafe00000000"), byteEn = Some("b0000000011110000")), // Partial write
     Stall(5),
     //    CacheRequest(coreId = 2, reqId = 10, tag = 0, index = 1, blockOffset = 1, rw = false, expectedData = Some("0d15ea5eea5e0d15deadcafed00dcafe")), // Read back modified data
-
     // Test cache conflicts and evictions with different tags, same index
     CacheRequest(coreId = 3, reqId = 11, tag = 2, index = 1, blockOffset = 0, rw = false, expectedData = Some("5094fd4c8f779c01498c95738c2435e3")), // Force different tag, same index
     CacheRequest(coreId = 0, reqId = 12, tag = 3, index = 1, blockOffset = 0, rw = false, expectedData = Some("30e2a17ee045d14ab58defac3308495e")), // Another different tag, same index
     CacheRequest(coreId = 1, reqId = 13, tag = 4, index = 1, blockOffset = 0, rw = false, expectedData = Some("8c6cab16656b3baa17613c7518180499")), // Yet another different tag
-
     // Test boundary conditions - end of memory regions
     CacheRequest(coreId = 2, reqId = 14, tag = 10, index = 127, blockOffset = 0, rw = false, expectedData = Some("817b131959fd217505137e68dc457d74")), // High index
     CacheRequest(coreId = 3, reqId = 15, tag = 10, index = 127, blockOffset = 3, rw = false, expectedData = Some("073645cb83479e5c4002236602d01f20")), // High index, high block offset
-
     // Test mixed access patterns - read, write, read same location
     CacheRequest(coreId = 0, reqId = 16, tag = 0, index = 2, blockOffset = 0, rw = false, expectedData = Some("beefcacecacebeeffeedfacefacefeed")), // Words 32-35
     CacheRequest(coreId = 1, reqId = 17, tag = 0, index = 2, blockOffset = 0, rw = true, wData = Some("hcafebabe000000000000000000000000"), byteEn = Some("b1111000000000000")),
     Stall(5),
     //    CacheRequest(coreId = 2, reqId = 18, tag = 0, index = 2, blockOffset = 0, rw = false, expectedData = Some("cafebabecacebeeffeedfacefacefeed")), // Read modified
-
     // Test all cores accessing same cache line simultaneously
     CacheRequest(coreId = 0, reqId = 19, tag = 0, index = 3, blockOffset = 0, rw = false, expectedData = Some("bd42f9c33e0b8a6ff71d24c989bc3e10")), // Words 36-39
     CacheRequest(coreId = 1, reqId = 20, tag = 0, index = 3, blockOffset = 1, rw = false, expectedData = Some("d239c4fa41e0bc97caf3b2186f83d1a5")), // Words 40-43
     CacheRequest(coreId = 2, reqId = 21, tag = 0, index = 3, blockOffset = 2, rw = false, expectedData = Some("56789abcef01234593cd78aba1e2f8d0")), // Words 44-47
     CacheRequest(coreId = 3, reqId = 22, tag = 0, index = 3, blockOffset = 3, rw = false, expectedData = Some("e1d0a5f737ed5f90cbfae10310293abc")), // Words 48-51
-
     // Test write-through behavior with byte enables
     CacheRequest(coreId = 0, reqId = 23, tag = 0, index = 4, blockOffset = 0, rw = true, wData = Some("hdeadbeef0000000000000000"), byteEn = Some("b011000000000")), // 2-byte write
     CacheRequest(coreId = 1, reqId = 24, tag = 0, index = 4, blockOffset = 0, rw = true, wData = Some("h000000000000000000000000cafebabe"), byteEn = Some("b0000000000001111")), // Different bytes
     Stall(5),
     //    CacheRequest(coreId = 2, reqId = 25, tag = 0, index = 4, blockOffset = 0, rw = false, expectedData = Some("8fb2741c9adbe137bc3f0e2acafebabe")), // Read combined write
-
     // Test large address space coverage
     CacheRequest(coreId = 3, reqId = 26, tag = 15, index = 63, blockOffset = 2, rw = false, expectedData = Some("1e7ddd1da8695c92691e32ca820d4be5")), // Mid-range tag and index
     CacheRequest(coreId = 0, reqId = 27, tag = 31, index = 31, blockOffset = 1, rw = false, expectedData = Some("db19b1635794a999575ef4b5da482462")), // Higher tag and index
-
     // Test rapid sequential access pattern
     CacheRequest(coreId = 1, reqId = 28, tag = 0, index = 10, blockOffset = 0, rw = false, expectedData = Some("feed123410badf00faceb00cc0ffeeee")), // Words around 640
     CacheRequest(coreId = 1, reqId = 29, tag = 0, index = 10, blockOffset = 1, rw = false, expectedData = Some("fa11babebabefacec01dbabea11face1")),
     CacheRequest(coreId = 1, reqId = 30, tag = 0, index = 10, blockOffset = 2, rw = false, expectedData = Some("ba5efacef005ba11d00dbabedeadfeed")),
     CacheRequest(coreId = 1, reqId = 31, tag = 0, index = 10, blockOffset = 3, rw = false, expectedData = Some("c0dec0debaddbabedead1337bad15ead")),
-
     // Test cross-core write conflicts
     CacheRequest(coreId = 2, reqId = 32, tag = 0, index = 20, blockOffset = 0, rw = true, wData = Some("haaaaaaaa0000000000000000"), byteEn = Some("b0000011000000000")),
     CacheRequest(coreId = 3, reqId = 33, tag = 0, index = 20, blockOffset = 0, rw = true, wData = Some("h00000000bbbbbbbb00000000"), byteEn = Some("b0000000011000000")),
     Stall(5),
     //    CacheRequest(coreId = 0, reqId = 34, tag = 0, index = 20, blockOffset = 0, rw = false, expectedData = Some("aaaaaaaabbbbbbbb0000000000000000")), // Read combined
-
     // Final stress test with high-frequency mixed operations
     CacheRequest(coreId = 1, reqId = 35, tag = 100, index = 100, blockOffset = 0, rw = false, expectedData = Some("7bdce363af7a7d087b11f4d10c7df004")), // High addresses
     CacheRequest(coreId = 2, reqId = 36, tag = 100, index = 100, blockOffset = 1, rw = true, wData = Some("hffffffff00000000"), byteEn = Some("b0000000011110000")),
@@ -213,7 +232,10 @@ object Tests {
     //    CacheRequest(coreId = 1, reqId = 39, tag = 100, index = 100, blockOffset = 3, rw = false, expectedData = Some("21c7660216f71ee6e3f0f7c2b1feb075")) // Read final state
   )
 
-  val testActions5: Array[TestAction] = Array(
+  // Test actions for miss-q and precedent events only
+  val testActions4: Array[TestAction] = Array(
+    PerformSchedulerOperation(2, rw = true, wData = Some(10)),
+    PerformSchedulerOperation(1, rw = true, wData = Some(20)),
     CacheRequest(coreId = 0, reqId = 0, tag = 60, index = 74, blockOffset = 0, rw = false, expectedData = Some("ae51ffbe61691f90541ac32810690f94")), // MISS, way: 0
     CacheRequest(coreId = 3, reqId = 1, tag = 54, index = 74, blockOffset = 1, rw = false, expectedData = Some("cda5416b8ba4fa4e0d8244282c9b4387")), // MISS, way: 1
     CacheRequest(coreId = 2, reqId = 2, tag = 22, index = 74, blockOffset = 0, rw = false, expectedData = Some("3470e64103b3e3bbbba668cc45f7ce41")), // MISS, way: 2, miss-q event
@@ -241,9 +263,11 @@ object Tests {
     CacheRequest(coreId = 3, reqId = 22, tag = 42, index = 73, blockOffset = 3, rw = false, expectedData = Some("763453aa42df7d92956636a260ab9d3b")), // MISS, way: 1
     CacheRequest(coreId = 2, reqId = 23, tag = 43, index = 73, blockOffset = 2, rw = false, expectedData = Some("8ce6a0927f254495140145d97c73d99b")), // MISS, way: 2, expect the critical request to enter the critical queue
     CacheRequest(coreId = 3, reqId = 24, tag = 43, index = 73, blockOffset = 0, rw = false, expectedData = Some("1166cabd710071a9c992e051ec16c43d")), // HALF-MISS, see if a non-critical request can be added as a half miss
+    // TODO: Unset the cores as critical to see if we get a response
   )
 
-  val testActions6: Array[TestAction] = Array( // TODO: Should extend this check for the critical queue too
+  // Test actions for a miss queue full of half misses
+  val testActions5: Array[TestAction] = Array(
     CacheRequest(coreId = 0, reqId = 0, tag = 60, index = 57, blockOffset = 0, rw = false, expectedData = Some("02f6aa2d6c7f403950ad1a7166aeab2e")), // MISS, way: 0
     CacheRequest(coreId = 3, reqId = 1, tag = 60, index = 57, blockOffset = 1, rw = false, expectedData = Some("5ab22a1a86dd5005cf60419e7d51a925")), // HALF-MISS, way: 0
     CacheRequest(coreId = 2, reqId = 2, tag = 60, index = 57, blockOffset = 2, rw = true, wData = Some("hdeadbeefdeadbeefdeadbeefdeadbeef"), byteEn = Some("b0000000000001101")), // HALF-MISS, way: 0
@@ -254,47 +278,84 @@ object Tests {
     CacheRequest(coreId = 2, reqId = 7, tag = 60, index = 57, blockOffset = 3, rw = false, expectedData = Some("5fba5cb281febabe79aa83d94b3062e7")), // HIT, way: 0
   )
 
-  val testActions7: Array[TestAction] = Array(
+  // Test actions for wb events only
+  val testActions6: Array[TestAction] = Array(
+    PerformSchedulerOperation(addr = 2, rw = true, wData = Some(6)),
+    PerformSchedulerOperation(addr = 1, rw = true, wData = Some(2)),
     CacheRequest(coreId = 2, reqId = 0, tag = 60, index = 74, blockOffset = 0, rw = true, wData = Some("hdeadbeefdeadbeefdeadbeefdeadbeef"), byteEn = Some("b0000000000001111")), // MISS, way: 0
     CacheRequest(coreId = 3, reqId = 1, tag = 54, index = 74, blockOffset = 1, rw = true, wData = Some("hdeadbeefdeadbeefdeadbeefdeadbeef"), byteEn = Some("b0000000011110000")), // MISS, way: 1
     CacheRequest(coreId = 1, reqId = 2, tag = 22, index = 74, blockOffset = 0, rw = true, wData = Some("hdeadbeefdeadbeefdeadbeefdeadbeef"), byteEn = Some("b0000111100000000")), // MISS, way: 2
-    CacheRequest(coreId = 3, reqId = 4, tag = 23, index = 74, blockOffset = 2, rw = true, wData = Some("hdeadbeefdeadbeefdeadbeefdeadbeef"), byteEn = Some("b1111000000000000")), // MISS, way: 3
-    CacheRequest(coreId = 2, reqId = 5, tag = 31, index = 74, blockOffset = 3, rw = true, wData = Some("hcafebabecafebabecafebabecafebabe"), byteEn = Some("b0000000000001111")), // MISS, way: 4
-    CacheRequest(coreId = 2, reqId = 6, tag = 44, index = 74, blockOffset = 1, rw = true, wData = Some("hcafebabecafebabecafebabecafebabe"), byteEn = Some("b0000000011110000")), // MISS, way: 5
-    CacheRequest(coreId = 2, reqId = 9, tag = 47, index = 74, blockOffset = 1, rw = true, wData = Some("hcafebabecafebabecafebabecafebabe"), byteEn = Some("b0000111100000000")), // MISS, way: 6,
-    CacheRequest(coreId = 2, reqId = 10, tag = 43, index = 74, blockOffset = 0, rw = true, wData = Some("hcafebabecafebabecafebabecafebabe"), byteEn = Some("b1111000000000000")), // MISS, way: 7,
-    CacheRequest(coreId = 0, reqId = 11, tag = 12, index = 74, blockOffset = 2, rw = false, expectedData = Some("27dc8a4a3c648e0f23e4cfb1207fb2ec")), // MISS, way: 0, contention event, critical wb
-    CacheRequest(coreId = 2, reqId = 12, tag = 18, index = 74, blockOffset = 0, rw = false, expectedData = Some("c70d484dfb1674c75d14d293ce30ec7c")), // MISS, way: 1, wb event, non-critical wb
-    CacheRequest(coreId = 3, reqId = 13, tag = 21, index = 74, blockOffset = 1, rw = false, expectedData = Some("efc887ce8779c45512b89afb7423b4d5")), // MISS, way: 2, contention event, critical wb
-    CacheRequest(coreId = 2, reqId = 14, tag = 39, index = 74, blockOffset = 3, rw = false, expectedData = Some("b638aaa4ef343eee6a4757cb65a2f78c")), // MISS, way: 3, wb event, non-critical wb, reach contention limit
-    CacheRequest(coreId = 2, reqId = 15, tag = 8, index = 74, blockOffset = 0, rw = false, expectedData = Some("e83fb23952953ff164bdb8d5685d2bd3")), // MISS, way: 0
-    CacheRequest(coreId = 2, reqId = 16, tag = 11, index = 74, blockOffset = 1, rw = false, expectedData = Some("42c953340ec5b7625bda6afc5422c666")), // MISS, way: 2
-    CacheRequest(coreId = 0, reqId = 20, tag = 2, index = 74, blockOffset = 1, rw = false, expectedData = Some("799773662e941d07b4340bdff6f72ec1"), rejected = true), // MISS, way: rejected
+    CacheRequest(coreId = 3, reqId = 3, tag = 23, index = 74, blockOffset = 2, rw = true, wData = Some("hdeadbeefdeadbeefdeadbeefdeadbeef"), byteEn = Some("b1111000000000000")), // MISS, way: 3
+    CacheRequest(coreId = 2, reqId = 4, tag = 31, index = 74, blockOffset = 3, rw = true, wData = Some("hcafebabecafebabecafebabecafebabe"), byteEn = Some("b0000000000001111")), // MISS, way: 4
+    CacheRequest(coreId = 2, reqId = 5, tag = 44, index = 74, blockOffset = 1, rw = true, wData = Some("hcafebabecafebabecafebabecafebabe"), byteEn = Some("b0000000011110000")), // MISS, way: 5
+    CacheRequest(coreId = 2, reqId = 6, tag = 47, index = 74, blockOffset = 1, rw = true, wData = Some("hcafebabecafebabecafebabecafebabe"), byteEn = Some("b0000111100000000")), // MISS, way: 6,
+    CacheRequest(coreId = 2, reqId = 7, tag = 43, index = 74, blockOffset = 0, rw = true, wData = Some("hcafebabecafebabecafebabecafebabe"), byteEn = Some("b1111000000000000")), // MISS, way: 7,
+    CacheRequest(coreId = 0, reqId = 8, tag = 12, index = 74, blockOffset = 2, rw = true, wData = Some("hdeadbeefdeadbeefdeadbeefdeadbeef"), byteEn = Some("b0000111100000000")), // MISS, way: 0, contention event, critical wb
+    CacheRequest(coreId = 2, reqId = 9, tag = 18, index = 74, blockOffset = 0, rw = true, wData = Some("hcafebabecafebabecafebabecafebabe"), byteEn = Some("b0000000000001111")), // MISS, way: 1, wb event, non-critical wb
+    CacheRequest(coreId = 3, reqId = 10, tag = 21, index = 74, blockOffset = 1, rw = false, expectedData = Some("efc887ce8779c45512b89afb7423b4d5")), // MISS, way: 2, contention event, critical wb
+    CacheRequest(coreId = 2, reqId = 11, tag = 39, index = 74, blockOffset = 3, rw = true, wData = Some("hdeadbeefdeadbeefdeadbeefdeadbeef"), byteEn = Some("b1111000000000000")), // MISS, way: 3, wb event, non-critical wb
+    CacheRequest(coreId = 0, reqId = 12, tag = 8, index = 74, blockOffset = 0, rw = false, expectedData = Some("e83fb23952953ff164bdb8d5685d2bd3")), // MISS, way: 4, eviction event, critical-wb
+    CacheRequest(coreId = 2, reqId = 13, tag = 43, index = 74, blockOffset = 1, rw = false, expectedData = Some("a9e7b6e5d8cc2100224ed5714cea356d")), // HIT, way: 7,
+    CacheRequest(coreId = 2, reqId = 14, tag = 11, index = 74, blockOffset = 1, rw = false, expectedData = Some("42c953340ec5b7625bda6afc5422c666")), // MISS, way: 5, eviction event, critical-wb
+    CacheRequest(coreId = 0, reqId = 15, tag = 2, index = 74, blockOffset = 1, rw = false, expectedData = Some("799773662e941d07b4340bdff6f72ec1")), // MISS, way: 6, eviction event, reach contention limit for core 2, critical-wb
+    CacheRequest(coreId = 1, reqId = 16, tag = 57, index = 74, blockOffset = 2, rw = false, expectedData = Some("26f4756810b9c7b7fc87a234ac62fee6")), // MISS, way: 0, wb event, non-critical wb, reach contention for core 1
+    CacheRequest(coreId = 1, reqId = 17, tag = 41, index = 74, blockOffset = 1, rw = false, expectedData = Some("8f2a3009871c1b8fb22ed80f63229d0f")), // MISS, way: 2
+    CacheRequest(coreId = 1, reqId = 18, tag = 49, index = 74, blockOffset = 0, rw = false, expectedData = Some("1254107d21d6cebe035d8eb34c9a7eb5")), // MISS, way: 4
+    CacheRequest(coreId = 1, reqId = 19, tag = 19, index = 74, blockOffset = 0, rw = false, expectedData = Some("7ee704ff89853f610b37152125de93af")), // MISS, way: 6
+    CacheRequest(coreId = 2, reqId = 20, tag = 15, index = 74, blockOffset = 0, rw = false, expectedData = Some("7296c2863afadb5b23832ee2be161f15")), // MISS, way: 1, cause critical-wb
+    CacheRequest(coreId = 3, reqId = 21, tag = 54, index = 74, blockOffset = 1, rw = true, wData = Some("hcafebabecafebabecafebabecafebabe"), byteEn = Some("b1111000000000000"), rejected = true), // MISS, way: rejected
+    Stall(200),
+    PerformSchedulerOperation(addr = 2, rw = false),
+    ExpectFinishedRejectedResponse(coreId = 3, reqId = 21, expectedData = "cda5416b8ba4fa4e0d8244282c9b4387")
   )
 
-  // TODO: Make a new test action array for timeout policy
+  // Test action array for timeout policy
+  val testActions7: Array[TestAction] = Array(
+    PerformSchedulerOperation(addr = 1, rw = true, wData = Some(100)),
+    PerformSchedulerOperation(addr = 3, rw = true, wData = Some(150)),
+    CacheRequest(coreId = 1, reqId = 0, tag = 0, index = 0, blockOffset = 0, rw = false, expectedData = Some("cafebabebabecafedeadbeefbeefdead")), // Bring new line into the cache (put in way: 0, idx: 0)
+    CacheRequest(coreId = 3, reqId = 1, tag = 1, index = 0, blockOffset = 0, rw = false, expectedData = Some("bbef1226751129196ede4c8a9dc4fbd4")), // Bring new line into the cache (put in way: 1, idx: 0)
+    CacheRequest(coreId = 3, reqId = 2, tag = 2, index = 0, blockOffset = 0, rw = false, expectedData = Some("013bb292b95895f88cde7faf55adaaba")), // Bring new line into the cache (put in way: 2, idx: 0)
+    CacheRequest(coreId = 3, reqId = 3, tag = 3, index = 0, blockOffset = 2, rw = false, expectedData = Some("c70485594aeb67d9904d7f5fd0cbca8d")), // Bring new line into the cache (put in way: 3, idx: 0)
+    CacheRequest(coreId = 3, reqId = 4, tag = 4, index = 0, blockOffset = 1, rw = false, expectedData = Some("734ccecdbe11b44dae6eaf60cb218892")), // Bring new line into the cache (put in way: 4, idx: 0)
+    CacheRequest(coreId = 1, reqId = 5, tag = 5, index = 0, blockOffset = 1, rw = false, expectedData = Some("cc5fd511c237a27e2451003dbc4d8025")), // Bring new line into the cache (put in way: 5, idx: 0),
+    CacheRequest(coreId = 1, reqId = 6, tag = 6, index = 0, blockOffset = 0, rw = false, expectedData = Some("2888e103997223a9003bc584e091cc8a")), // Bring new line into the cache (put in way: 6, idx: 0),
+    CacheRequest(coreId = 3, reqId = 7, tag = 7, index = 0, blockOffset = 1, rw = false, expectedData = Some("040fd41d7771f0535a07ec451db97efb")), // Bring new line into the cache (put in way: 7, idx: 0),
+    CacheRequest(coreId = 2, reqId = 8, tag = 8, index = 0, blockOffset = 0, rw = false, expectedData = Some("39df6c998739192bae26debd84620423"), rejected = true), // Try to evict line 0, get rejected
+    CacheRequest(coreId = 0, reqId = 9, tag = 9, index = 0, blockOffset = 0, rw = false, expectedData = Some("3e653a9dbf432147e4d0eef71a9d9897"), rejected = true), // Try to evict line 1, get rejected too
+    Stall(50), // Wait until the line 0 has timed out
+    ExpectFinishedRejectedResponse(coreId = 2, reqId = 8, expectedData = "39df6c998739192bae26debd84620423"),
+    Stall(50), // Wait until the line 1 has timed out
+    ExpectFinishedRejectedResponse(coreId = 2, reqId = 8, expectedData = "3e653a9dbf432147e4d0eef71a9d9897"),
+  )
+
+  // Test action array for contention, precedent, mim and wb events
+  val testActions8: Array[TestAction] = Array(
+    PerformSchedulerOperation(2, true, Some(5)),
+    PerformSchedulerOperation(1, true, Some(4)),
+    CacheRequest(coreId = 0, reqId = 0, tag = 60, index = 74, blockOffset = 0, rw = true, wData = Some("hdeadbeefdeadbeefdeadbeefdeadbeef"), byteEn = Some("b0000000011110000")), // MISS, way: 0
+    CacheRequest(coreId = 3, reqId = 1, tag = 54, index = 74, blockOffset = 1, rw = true, wData = Some("hdeadbeefdeadbeefdeadbeefdeadbeef"), byteEn = Some("b0000111100000000")), // MISS, way: 1
+    CacheRequest(coreId = 2, reqId = 2, tag = 22, index = 74, blockOffset = 0, rw = false, expectedData = Some("3470e64103b3e3bbbba668cc45f7ce41")), // MISS, way: 2, 2 miss-q events
+    CacheRequest(coreId = 1, reqId = 3, tag = 23, index = 74, blockOffset = 2, rw = true, wData = Some("hdeadbeefdeadbeefdeadbeefdeadbeef"), byteEn = Some("b0000000011110000")), // MISS, way: 3, 2 miss-q events
+    CacheRequest(coreId = 2, reqId = 4, tag = 31, index = 74, blockOffset = 3, rw = false, expectedData = Some("d5a1b2aea383f9efe8454c936e1980ff")), // MISS, way: 4, mim event
+    CacheRequest(coreId = 2, reqId = 5, tag = 44, index = 74, blockOffset = 1, rw = false, expectedData = Some("e93b3a7194d49fe2a0768f88d1761b37")), // MISS, way: 5,
+    CacheRequest(coreId = 2, reqId = 6, tag = 60, index = 74, blockOffset = 3, rw = false, expectedData = Some("73b0278b6f36d7c8306be31e40beb1d6")), // HIT, way: 0, precedent event
+    CacheRequest(coreId = 1, reqId = 7, tag = 54, index = 74, blockOffset = 0, rw = false, expectedData = Some("df40715150c3cdeb41342d9956c84263")), // HIT, way: 0, precedent event
+    CacheRequest(coreId = 1, reqId = 8, tag = 47, index = 74, blockOffset = 1, rw = false, expectedData = Some("8bc9e5b16e398f2a0ad9d36219c0a11d")), // MISS, way: 6,
+    CacheRequest(coreId = 2, reqId = 9, tag = 43, index = 74, blockOffset = 0, rw = false, expectedData = Some("bb8f359304bfc5ad924f17cfe23dd1e1")), // MISS, way: 7, 2 wb events
+    CacheRequest(coreId = 1, reqId = 10, tag = 12, index = 74, blockOffset = 2, rw = false, expectedData = Some("27dc8a4a3c648e0f23e4cfb1207fb2ec")), // MISS, way: 0, evict non-critical line, cause wb, 2 wb events
+    CacheRequest(coreId = 2, reqId = 11, tag = 18, index = 74, blockOffset = 0, rw = false, expectedData = Some("c70d484dfb1674c75d14d293ce30ec7c")), // MISS, way: 1, evict non-critical line, cause wb
+    CacheRequest(coreId = 0, reqId = 12, tag = 21, index = 74, blockOffset = 1, rw = false, expectedData = Some("efc887ce8779c45512b89afb7423b4d5")), // MISS, way: 2, contention event, reach contention limit for core 2
+    CacheRequest(coreId = 3, reqId = 13, tag = 39, index = 74, blockOffset = 3, rw = false, expectedData = Some("b638aaa4ef343eee6a4757cb65a2f78c")), // MISS, way: 3, contention event, critical wb, reach contention limit for core 1
+    CacheRequest(coreId = 1, reqId = 14, tag = 57, index = 74, blockOffset = 2, rw = false, expectedData = Some("26f4756810b9c7b7fc87a234ac62fee6")), // MISS, way: 2,
+    CacheRequest(coreId = 2, reqId = 15, tag = 41, index = 74, blockOffset = 1, rw = false, expectedData = Some("8f2a3009871c1b8fb22ed80f63229d0f")), // MISS, way: 3,
+    // TODO: Test the critical wb queue
+    CacheRequest(coreId = 0, reqId = 16, tag = 8, index = 74, blockOffset = 0, rw = false, expectedData = Some("e83fb23952953ff164bdb8d5685d2bd3"), rejected = true), // MISS, way: rejected
+    Stall(300),
+    PerformSchedulerOperation(2, false),
+    ExpectFinishedRejectedResponse(coreId = 0, reqId = 16, expectedData = "e83fb23952953ff164bdb8d5685d2bd3")
+  )
 }
-
-case class CacheConfiguration(
-                               sizeInBytes: Int,
-                               nCores: Int,
-                               nWays: Int,
-                               addressWidth: Int,
-                               reqIdWidth: Int,
-                               bytesPerBlock: Int,
-                               bytesPerSubBlock: Int,
-                               replacementPolicy: CacheReplacementPolicyConfiguration,
-                               memBeatSize: Int,
-                               memBurstLen: Int,
-                               memFile: Option[String],
-                               nHalfMissCmds: Option[Int]
-                             )
-
-case class CacheReplacementPolicyConfiguration(
-                                                policyType: String,
-                                                basePolicyType: Option[String] = None,
-                                                policyFlags: Map[String, Boolean] = Map.empty,
-                                              )
 
 object CacheConfigs {
   val config64BitPlru = CacheConfiguration(
@@ -305,52 +366,118 @@ object CacheConfigs {
     reqIdWidth = 16,
     bytesPerBlock = 64,
     bytesPerSubBlock = 16,
-    replacementPolicy = CacheReplacementPolicyConfiguration("BIT_PLRU"),
+    repPolConfig = BitPlruConfiguration(),
     memBeatSize = 4,
     memBurstLen = 4,
     memFile = Some("./hex/test_mem_32w.hex"),
     nHalfMissCmds = Some(6)
   )
+
+  val config64TreePlru = CacheConfiguration(
+    sizeInBytes = 65536,
+    nCores = 4,
+    nWays = 8,
+    addressWidth = 25,
+    reqIdWidth = 16,
+    bytesPerBlock = 64,
+    bytesPerSubBlock = 16,
+    repPolConfig = TreePlruConfiguration(),
+    memBeatSize = 4,
+    memBurstLen = 4,
+    memFile = Some("./hex/test_mem_32w.hex")
+  )
+
+  val config64TimeOut = CacheConfiguration(
+    sizeInBytes = 65536,
+    nCores = 4,
+    nWays = 8,
+    addressWidth = 25,
+    reqIdWidth = 16,
+    bytesPerBlock = 64,
+    bytesPerSubBlock = 16,
+    repPolConfig = TimeoutConfiguration(BitPlruConfiguration()),
+    memBeatSize = 4,
+    memBurstLen = 4,
+    memFile = Some("./hex/test_mem_32w.hex")
+  )
+
+  val config64Cont = CacheConfiguration(
+    sizeInBytes = 65536,
+    nCores = 4,
+    nWays = 8,
+    addressWidth = 25,
+    reqIdWidth = 16,
+    bytesPerBlock = 64,
+    bytesPerSubBlock = 16,
+    repPolConfig = ContentionConfiguration(BitPlruConfiguration()),
+    memBeatSize = 4,
+    memBurstLen = 4,
+    memFile = Some("./hex/test_mem_32w.hex")
+  )
+
+  val config64ContWb = CacheConfiguration(
+    sizeInBytes = 65536,
+    nCores = 4,
+    nWays = 8,
+    addressWidth = 25,
+    reqIdWidth = 16,
+    bytesPerBlock = 64,
+    bytesPerSubBlock = 16,
+    repPolConfig = ContentionConfiguration(BitPlruConfiguration(), wb = true),
+    memBeatSize = 4,
+    memBurstLen = 4,
+    memFile = Some("./hex/test_mem_32w.hex")
+  )
+
+  val config64ContMimPrec = CacheConfiguration(
+    sizeInBytes = 65536,
+    nCores = 4,
+    nWays = 8,
+    addressWidth = 25,
+    reqIdWidth = 16,
+    bytesPerBlock = 64,
+    bytesPerSubBlock = 16,
+    repPolConfig = ContentionConfiguration(BitPlruConfiguration(), mim = true, precedent = true),
+    memBeatSize = 4,
+    memBurstLen = 4,
+    memFile = Some("./hex/test_mem_32w.hex")
+  )
+
+  val config64ContMimPrecWb = CacheConfiguration(
+    sizeInBytes = 65536,
+    nCores = 4,
+    nWays = 8,
+    addressWidth = 25,
+    reqIdWidth = 16,
+    bytesPerBlock = 64,
+    bytesPerSubBlock = 16,
+    repPolConfig = ContentionConfiguration(BitPlruConfiguration(), mim = true, precedent = true, wb = true),
+    memBeatSize = 4,
+    memBurstLen = 4,
+    memFile = Some("./hex/test_mem_32w.hex")
+  )
 }
 
-class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
-  def generateReplacementPolicy(policyConfig: CacheReplacementPolicyConfiguration, nWays: Int, nSets: Int, nCores: Int): () => SharedCacheReplacementPolicyType = {
-    val basePolicy = policyConfig.basePolicyType match {
-      case Some("bit") => Some(() => new BitPlruReplacementPolicy(nWays, nSets, nCores))
-      case Some("tree") => Some(() => new TreePlruReplacementPolicy(nWays, nSets, nCores))
-      case _ => None
-    }
+object SharedPipelinedCacheTest {
+  val PRINT_RESULTS = true
 
-    var policy = () => new SharedCacheReplacementPolicyType(nWays, nSets, nCores)
+  val PRINT_INFO = true
 
-    if (basePolicy.isDefined) {
-      policy = policyConfig.policyType match {
-        case "contention" => () => new ContentionReplacementPolicy(nWays, nSets, nCores, basePolicy.get, enableMissInMiss = policyConfig.policyFlags.getOrElse("enableMissInMiss", false), enablePrecedentEvents = policyConfig.policyFlags.getOrElse("enablePrecedentEvents", false), enableWbEvents = policyConfig.policyFlags.getOrElse("enableWbEvents", false))
-        case "timeout" => () => new TimeoutReplacementPolicy(nWays, nSets, nCores, basePolicy.get)
-        case _ => () => new SharedCacheReplacementPolicyType(nWays, nSets, nCores)
-      }
-    } else {
-      policy = policyConfig.policyType match {
-        case "bit" => () => new BitPlruReplacementPolicy(nWays, nSets, nCores)
-        case "tree" => () => new TreePlruReplacementPolicy(nWays, nSets, nCores)
-        case _ => () => new SharedCacheReplacementPolicyType(nWays, nSets, nCores)
-      }
-    }
-
-    policy
-  }
-
-  def generateCache(cacheConfig: CacheConfiguration): SharedPipelinedCacheTestTop = {
+  def generateDut(cacheConfig: CacheConfiguration): (() => SharedPipelinedCacheTestTop, Int, Int, Int, Int) = {
     val nSets = cacheConfig.sizeInBytes / (cacheConfig.nWays * cacheConfig.bytesPerBlock)
 
     val l2RepPolicy = generateReplacementPolicy(
-      cacheConfig.replacementPolicy,
+      cacheConfig.repPolConfig,
       cacheConfig.nWays,
       nSets,
       cacheConfig.nCores
     )
 
-    new SharedPipelinedCacheTestTop(
+    val indexWidth = log2Up(nSets)
+    val blockOffsetWidth = log2Up(cacheConfig.bytesPerBlock / cacheConfig.bytesPerSubBlock)
+    val byteOffsetWidth = log2Up(cacheConfig.bytesPerSubBlock)
+
+    val cacheGenFun = () => new SharedPipelinedCacheTestTop(
       sizeInBytes = cacheConfig.sizeInBytes,
       nWays = cacheConfig.nWays,
       nCores = cacheConfig.nCores,
@@ -364,6 +491,20 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
       dataFile = cacheConfig.memFile,
       nHalfMissCmds = cacheConfig.nHalfMissCmds
     )
+
+    (cacheGenFun, cacheConfig.nCores, indexWidth, blockOffsetWidth, byteOffsetWidth)
+  }
+
+  def generateReplacementPolicy(policyConfig: PolicyConfiguration, nWays: Int, nSets: Int, nCores: Int): () => SharedCacheReplacementPolicyType = {
+    val policy = policyConfig match {
+      case BitPlruConfiguration() => () => new BitPlruReplacementPolicy(nWays, nSets, nCores)
+      case TreePlruConfiguration() => () => new TreePlruReplacementPolicy(nWays, nSets, nCores)
+      case ContentionConfiguration(base, mim, precedent, wb) => () => new ContentionReplacementPolicy(nWays, nSets, nCores, generateReplacementPolicy(base, nWays, nSets, nCores), enableMissInMiss = mim, enablePrecedentEvents = precedent, enableWbEvents = wb)
+      case TimeoutConfiguration(base) => () => new TimeoutReplacementPolicy(nWays, nSets, nCores, generateReplacementPolicy(base, nWays, nSets, nCores))
+      case _ => throw new Exception("Unexpected policy configuration")
+    }
+
+    policy
   }
 
   def defaultAssignments(dut: SharedPipelinedCacheTestTop, nCores: Int): Unit = {
@@ -413,16 +554,16 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     dut.io.requests.cores(coreId).resp.rData.expect(expectedData.U, s"Did not receive correct data for a request: $reqId.")
   }
 
-  def assertAccesses[T <: TestAction](
-                                       dut: SharedPipelinedCacheTestTop,
-                                       nCores: Int,
-                                       testActions: Array[T],
-                                       indexWidth: Int,
-                                       blockOffsetWidth: Int,
-                                       byteOffsetWidth: Int,
-                                       maxCCs: Int,
-                                       printResults: Boolean = false
-                                     ): Unit = {
+  def performTestActions[T <: TestAction](
+                                           dut: SharedPipelinedCacheTestTop,
+                                           nCores: Int,
+                                           testActions: Array[T],
+                                           indexWidth: Int,
+                                           blockOffsetWidth: Int,
+                                           byteOffsetWidth: Int,
+                                           maxCCs: Int,
+                                           printResults: Boolean = false
+                                         ): Unit = {
     val responses = mutable.Set[CacheResponse]()
     var previousRequestCore: Option[Int] = None
     var actionIdx = 0
@@ -473,7 +614,14 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
               previousRequestCore = None
               stallCycle = Some(currentCC + cycles)
               actionIdx += 1
+            case PerformSchedulerOperation(addr, rw, wData) =>
+              val wDataVal = wData.getOrElse(0)
+              println(s"Performing scheduler operation at CC $currentCC: ${if (rw) "RW" else "RD"}, for addr: $addr, with data: $wDataVal")
+              performSchedulerOperation(dut, addr, rw, wDataVal)
+              previousRequestCore = None
+              actionIdx += 1
             case ExpectFinishedRejectedResponse(_, _, _) =>
+              previousRequestCore = None
               actionIdx += 1
             case t => throw new Exception(s"Received unexpected action type: ${t.getClass.getSimpleName}")
           }
@@ -535,6 +683,24 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
     }
   }
 
+  def performSchedulerOperation(dut: SharedPipelinedCacheTestTop, addr: Int, rw: Boolean, wData: Int): Unit = {
+    if (rw) {
+      dut.io.scheduler.cmd.poke(SchedulerCmd.WR)
+      dut.io.scheduler.wData.poke(wData.U)
+    } else {
+      dut.io.scheduler.cmd.poke(SchedulerCmd.RD)
+    }
+
+    dut.io.scheduler.addr.poke(addr.U)
+
+    dut.clock.step(1)
+
+    // Reset the signals
+    dut.io.scheduler.cmd.poke(SchedulerCmd.NULL)
+    dut.io.scheduler.addr.poke(0.U)
+    dut.io.scheduler.wData.poke(0.U)
+  }
+
   def checkForResponse(dut: SharedPipelinedCacheTestTop, clockCycle: Int, nCores: Int): Option[CacheResponse] = {
     for (i <- 0 until nCores) {
       if (dut.io.requests.cores(i).resp.reqId.valid.peek().litToBoolean) {
@@ -575,596 +741,5 @@ class SharedPipelinedCacheTest extends AnyFlatSpec with ChiselScalatestTester {
 
     dut.io.requests.cores(coreId).req.wData.poke(wDataValue)
     dut.io.requests.cores(coreId).req.byteEn.poke(byteEnValue)
-  }
-
-  "SharedPipelinedCache" should "process pipelined requests for 8 ways, 128 sets, with bit plru policy" in {
-    val sizeInBytes = 65536 // 64 KiB
-    val nCores = 4
-    val nWays = 8
-    val addressWidth = 25
-    val reqIdWidth = 16
-    val bytesPerBlock = 64
-    val bytesPerSubBlock = 16
-    val nSets = sizeInBytes / (nWays * bytesPerBlock)
-    val l2RepPolicy = () => new BitPlruReplacementPolicy(nWays, nSets, nCores)
-    val memFile = "./hex/test_mem_32w.hex"
-
-    val memBeatSize = 4
-    val memBurstLen = 4
-
-    val byteOffsetWidth = log2Up(bytesPerSubBlock)
-    val blockOffsetWidth = log2Up(bytesPerBlock / bytesPerSubBlock)
-    val indexWidth = log2Up(nSets)
-
-    test(new SharedPipelinedCacheTestTop(
-      sizeInBytes = sizeInBytes,
-      nWays = nWays,
-      nCores = nCores,
-      reqIdWidth = reqIdWidth,
-      addressWidth = addressWidth,
-      bytesPerBlock = bytesPerBlock,
-      bytesPerSubBlock = bytesPerSubBlock,
-      memBeatSize = memBeatSize,
-      memBurstLen = memBurstLen,
-      l2RepPolicyGen = l2RepPolicy,
-      dataFile = Some(memFile)
-    )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      // Default inputs
-      for (i <- 0 until nCores) {
-        dut.io.requests.cores(i).req.reqId.valid.poke(false.B)
-        dut.io.requests.cores(i).req.reqId.bits.poke(0.U)
-        dut.io.requests.cores(i).req.addr.poke(0.U)
-        dut.io.requests.cores(i).req.rw.poke(false.B)
-        dut.io.requests.cores(i).req.wData.poke(0.U)
-      }
-      dut.io.scheduler.cmd.poke(SchedulerCmd.NULL)
-      dut.io.scheduler.addr.poke(0.U)
-
-      dut.clock.step(5)
-
-      assertAccesses(
-        dut,
-        nCores,
-        Tests.testActions1,
-        indexWidth,
-        blockOffsetWidth,
-        byteOffsetWidth,
-        700,
-        printResults = true
-      )
-    }
-  }
-
-  "SharedPipelinedCache" should "process pipelined requests for 8 ways, 128 sets, with tree plru policy" in {
-    val sizeInBytes = 65536 // 64 KiB
-    val nCores = 4
-    val nWays = 8
-    val addressWidth = 25
-    val reqIdWidth = 16
-    val bytesPerBlock = 64
-    val bytesPerSubBlock = 16
-    val nSets = sizeInBytes / (nWays * bytesPerBlock)
-    val l2RepPolicy = () => new TreePlruReplacementPolicy(nWays, nSets, nCores)
-    val memFile = "./hex/test_mem_32w.hex"
-
-    val memBeatSize = 4
-    val memBurstLen = 4
-
-    val byteOffsetWidth = log2Up(bytesPerSubBlock)
-    val blockOffsetWidth = log2Up(bytesPerBlock / bytesPerSubBlock)
-    val indexWidth = log2Up(nSets)
-
-    test(new SharedPipelinedCacheTestTop(
-      sizeInBytes = sizeInBytes,
-      nWays = nWays,
-      nCores = nCores,
-      reqIdWidth = reqIdWidth,
-      addressWidth = addressWidth,
-      bytesPerBlock = bytesPerBlock,
-      bytesPerSubBlock = bytesPerSubBlock,
-      memBeatSize = memBeatSize,
-      memBurstLen = memBurstLen,
-      l2RepPolicyGen = l2RepPolicy,
-      dataFile = Some(memFile)
-    )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      // Default inputs
-      for (i <- 0 until nCores) {
-        dut.io.requests.cores(i).req.reqId.valid.poke(false.B)
-        dut.io.requests.cores(i).req.reqId.bits.poke(0.U)
-        dut.io.requests.cores(i).req.addr.poke(0.U)
-        dut.io.requests.cores(i).req.rw.poke(false.B)
-        dut.io.requests.cores(i).req.wData.poke(0.U)
-      }
-      dut.io.scheduler.cmd.poke(SchedulerCmd.NULL)
-      dut.io.scheduler.addr.poke(0.U)
-
-      dut.clock.step(5)
-
-      assertAccesses(
-        dut,
-        nCores,
-        Tests.testActions1,
-        indexWidth,
-        blockOffsetWidth,
-        byteOffsetWidth,
-        700,
-        printResults = true
-      )
-    }
-  }
-
-  "SharedPipelinedCache" should "process pipelined requests for 8 ways, 128 sets, with contention policy" in {
-    val sizeInBytes = 65536 // 64 KiB
-    val nCores = 4
-    val nWays = 8
-    val addressWidth = 25
-    val reqIdWidth = 16
-    val bytesPerBlock = 64
-    val bytesPerSubBlock = 16
-    val nSets = sizeInBytes / (nWays * bytesPerBlock)
-    val basePolicy = () => new BitPlruReplacementPolicy(nWays, nSets, nCores)
-    val l2RepPolicy = () => new ContentionReplacementPolicy(nWays, nSets, nCores, basePolicy)
-    val memFile = "./hex/test_mem_32w.hex"
-
-    val printResults = true
-
-    val memBeatSize = 4
-    val memBurstLen = 4
-
-    val byteOffsetWidth = log2Up(bytesPerSubBlock)
-    val blockOffsetWidth = log2Up(bytesPerBlock / bytesPerSubBlock)
-    val indexWidth = log2Up(nSets)
-
-    test(new SharedPipelinedCacheTestTop(
-      sizeInBytes = sizeInBytes,
-      nWays = nWays,
-      nCores = nCores,
-      reqIdWidth = reqIdWidth,
-      addressWidth = addressWidth,
-      bytesPerBlock = bytesPerBlock,
-      bytesPerSubBlock = bytesPerSubBlock,
-      memBeatSize = memBeatSize,
-      memBurstLen = memBurstLen,
-      l2RepPolicyGen = l2RepPolicy,
-      dataFile = Some(memFile)
-    )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      // Default inputs
-      for (i <- 0 until nCores) {
-        dut.io.requests.cores(i).req.reqId.valid.poke(false.B)
-        dut.io.requests.cores(i).req.reqId.bits.poke(0.U)
-        dut.io.requests.cores(i).req.addr.poke(0.U)
-        dut.io.requests.cores(i).req.rw.poke(false.B)
-        dut.io.requests.cores(i).req.wData.poke(0.U)
-      }
-      dut.io.scheduler.cmd.poke(SchedulerCmd.NULL)
-      dut.io.scheduler.addr.poke(0.U)
-      dut.io.scheduler.wData.poke(0.U)
-
-      dut.clock.step(5)
-
-      // Set the second core as critical
-      setCoreAsCritical(dut, coreID = 1, contentionLimit = 2)
-
-      dut.clock.step(1)
-
-      // Set the fourth core as critical
-      setCoreAsCritical(dut, coreID = 3, contentionLimit = 10)
-
-      dut.clock.step(1)
-
-      // Issue the first set of requests
-      assertAccesses(
-        dut,
-        nCores,
-        Tests.testActions2,
-        indexWidth,
-        blockOffsetWidth,
-        byteOffsetWidth,
-        900,
-        printResults = printResults
-      )
-
-      dut.clock.step(1)
-
-      // Unset the second core as critical
-      unsetCoreAsCritical(dut, coreID = 1)
-
-      dut.clock.step(1)
-
-      // Evict some previously critical caches
-      assertAccesses(
-        dut,
-        nCores,
-        Tests.testActions3,
-        indexWidth,
-        blockOffsetWidth,
-        byteOffsetWidth,
-        200,
-        printResults = printResults
-      )
-    }
-  }
-
-  "SharedPipelinedCache" should "process pipelined requests for 8 ways, 128 sets, with timeout policy" in {
-    val sizeInBytes = 65536 // 64 KiB
-    val nCores = 4
-    val nWays = 8
-    val addressWidth = 25
-    val reqIdWidth = 16
-    val bytesPerBlock = 64
-    val bytesPerSubBlock = 16
-    val nSets = sizeInBytes / (nWays * bytesPerBlock)
-    val basePolicy = () => new BitPlruReplacementPolicy(nWays, nSets, nCores)
-    val l2RepPolicy = () => new TimeoutReplacementPolicy(nWays, nSets, nCores, basePolicy)
-    val memFile = "./hex/test_mem_32w.hex"
-
-    val printResults = true
-
-    val memBeatSize = 4
-    val memBurstLen = 4
-
-    val byteOffsetWidth = log2Up(bytesPerSubBlock)
-    val blockOffsetWidth = log2Up(bytesPerBlock / bytesPerSubBlock)
-    val indexWidth = log2Up(nSets)
-
-    test(new SharedPipelinedCacheTestTop(
-      sizeInBytes = sizeInBytes,
-      nWays = nWays,
-      nCores = nCores,
-      reqIdWidth = reqIdWidth,
-      addressWidth = addressWidth,
-      bytesPerBlock = bytesPerBlock,
-      bytesPerSubBlock = bytesPerSubBlock,
-      memBeatSize = memBeatSize,
-      memBurstLen = memBurstLen,
-      l2RepPolicyGen = l2RepPolicy,
-      dataFile = Some(memFile)
-    )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      // Default inputs
-      for (i <- 0 until nCores) {
-        dut.io.requests.cores(i).req.reqId.valid.poke(false.B)
-        dut.io.requests.cores(i).req.reqId.bits.poke(0.U)
-        dut.io.requests.cores(i).req.addr.poke(0.U)
-        dut.io.requests.cores(i).req.rw.poke(false.B)
-        dut.io.requests.cores(i).req.wData.poke(0.U)
-      }
-      dut.io.scheduler.cmd.poke(SchedulerCmd.NULL)
-      dut.io.scheduler.addr.poke(0.U)
-      dut.io.scheduler.wData.poke(0.U)
-
-      dut.clock.step(5)
-
-      // Set the second core as critical
-      setCoreAsCritical(dut, coreID = 1, contentionLimit = 450)
-
-      dut.clock.step(1)
-
-      // Set the fourth core as critical
-      setCoreAsCritical(dut, coreID = 3, contentionLimit = 200)
-
-      dut.clock.step(1)
-
-      // Issue the first set of requests
-      assertAccesses(
-        dut,
-        nCores,
-        Tests.testActions2,
-        indexWidth,
-        blockOffsetWidth,
-        byteOffsetWidth,
-        900,
-        printResults = printResults
-      )
-
-      dut.clock.step(1)
-
-      // Unset the second core as critical
-      unsetCoreAsCritical(dut, coreID = 1)
-
-      dut.clock.step(1)
-
-      // Evict some previously critical caches
-      assertAccesses(
-        dut,
-        nCores,
-        Tests.testActions3,
-        indexWidth,
-        blockOffsetWidth,
-        byteOffsetWidth,
-        200,
-        printResults = printResults
-      )
-    }
-  }
-
-  "SharedPipelinedCache" should "work with miss-q and precedent events for 8 ways and 128 sets" in {
-    val sizeInBytes = 65536 // 64 KiB
-    val nCores = 4
-    val nWays = 8
-    val addressWidth = 25
-    val reqIdWidth = 16
-    val bytesPerBlock = 64
-    val bytesPerSubBlock = 16
-    val nSets = sizeInBytes / (nWays * bytesPerBlock)
-    val basePolicy = () => new BitPlruReplacementPolicy(nWays, nSets, nCores)
-    val l2RepPolicy = () => new ContentionReplacementPolicy(nWays, nSets, nCores, basePolicy, enableMissInMiss = true, enablePrecedentEvents = true)
-    val memFile = "./hex/test_mem_32w.hex"
-
-    val printResults = true
-
-    val memBeatSize = 4
-    val memBurstLen = 4
-
-    val byteOffsetWidth = log2Up(bytesPerSubBlock)
-    val blockOffsetWidth = log2Up(bytesPerBlock / bytesPerSubBlock)
-    val indexWidth = log2Up(nSets)
-
-    test(new SharedPipelinedCacheTestTop(
-      sizeInBytes = sizeInBytes,
-      nWays = nWays,
-      nCores = nCores,
-      reqIdWidth = reqIdWidth,
-      addressWidth = addressWidth,
-      bytesPerBlock = bytesPerBlock,
-      bytesPerSubBlock = bytesPerSubBlock,
-      memBeatSize = memBeatSize,
-      memBurstLen = memBurstLen,
-      l2RepPolicyGen = l2RepPolicy,
-      dataFile = Some(memFile)
-    )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-
-      // Default inputs
-      for (i <- 0 until nCores) {
-        dut.io.requests.cores(i).req.reqId.valid.poke(false.B)
-        dut.io.requests.cores(i).req.reqId.bits.poke(0.U)
-        dut.io.requests.cores(i).req.addr.poke(0.U)
-        dut.io.requests.cores(i).req.rw.poke(false.B)
-        dut.io.requests.cores(i).req.wData.poke(0.U)
-      }
-      dut.io.scheduler.cmd.poke(SchedulerCmd.NULL)
-      dut.io.scheduler.addr.poke(0.U)
-      dut.io.scheduler.wData.poke(0.U)
-
-      dut.clock.step(5)
-
-      // Set the third core as critical
-      setCoreAsCritical(dut, coreID = 2, contentionLimit = 10)
-
-      dut.clock.step(1)
-
-      // Set the second core as critical
-      setCoreAsCritical(dut, coreID = 1, contentionLimit = 20)
-
-      dut.clock.step(1)
-
-      // Issue the first set of requests
-      assertAccesses(
-        dut,
-        nCores,
-        Tests.testActions5,
-        indexWidth,
-        blockOffsetWidth,
-        byteOffsetWidth,
-        500,
-        printResults = printResults
-      )
-
-      dut.clock.step(1)
-
-      // Set the third core as no-critical
-      unsetCoreAsCritical(dut, coreID = 2)
-
-      dut.clock.step(1)
-    }
-  }
-
-  "SharedPipelinedCache" should "handle stress test with bit plru policy" in {
-    val sizeInBytes = 65536 // 64 KiB
-    val nCores = 4
-    val nWays = 8
-    val addressWidth = 25
-    val reqIdWidth = 16
-    val bytesPerBlock = 64
-    val bytesPerSubBlock = 16
-    val nSets = sizeInBytes / (nWays * bytesPerBlock)
-    val l2RepPolicy = () => new BitPlruReplacementPolicy(nWays, nSets, nCores)
-    val memFile = "./hex/test_mem_32w.hex"
-
-    val memBeatSize = 4
-    val memBurstLen = 4
-
-    val byteOffsetWidth = log2Up(bytesPerSubBlock)
-    val blockOffsetWidth = log2Up(bytesPerBlock / bytesPerSubBlock)
-    val indexWidth = log2Up(nSets)
-
-    test(new SharedPipelinedCacheTestTop(
-      sizeInBytes = sizeInBytes,
-      nWays = nWays,
-      nCores = nCores,
-      reqIdWidth = reqIdWidth,
-      addressWidth = addressWidth,
-      bytesPerBlock = bytesPerBlock,
-      bytesPerSubBlock = bytesPerSubBlock,
-      memBeatSize = memBeatSize,
-      memBurstLen = memBurstLen,
-      l2RepPolicyGen = l2RepPolicy,
-      dataFile = Some(memFile)
-    )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      // Default inputs
-      for (i <- 0 until nCores) {
-        dut.io.requests.cores(i).req.reqId.valid.poke(false.B)
-        dut.io.requests.cores(i).req.reqId.bits.poke(0.U)
-        dut.io.requests.cores(i).req.addr.poke(0.U)
-        dut.io.requests.cores(i).req.rw.poke(false.B)
-        dut.io.requests.cores(i).req.wData.poke(0.U)
-      }
-      dut.io.scheduler.cmd.poke(SchedulerCmd.NULL)
-      dut.io.scheduler.addr.poke(0.U)
-
-      dut.clock.step(5)
-
-      // Execute the elaborate stress test
-      assertAccesses(
-        dut,
-        nCores,
-        Tests.testActions4,
-        indexWidth,
-        blockOffsetWidth,
-        byteOffsetWidth,
-        1000, // Increased cycles to handle more complex test patterns
-        printResults = true
-      )
-    }
-  }
-
-  "SharedPipelinedCache" should "work with mshr entries that are full of cmds" in {
-    val sizeInBytes = 65536 // 64 KiB
-    val nCores = 4
-    val nWays = 8
-    val addressWidth = 25
-    val reqIdWidth = 16
-    val bytesPerBlock = 64
-    val bytesPerSubBlock = 16
-    val nSets = sizeInBytes / (nWays * bytesPerBlock)
-    val basePolicy = () => new BitPlruReplacementPolicy(nWays, nSets, nCores)
-    val l2RepPolicy = () => new ContentionReplacementPolicy(nWays, nSets, nCores, basePolicy, enableMissInMiss = true, enablePrecedentEvents = true)
-    val memFile = "./hex/test_mem_32w.hex"
-
-    val printResults = true
-
-    val memBeatSize = 4
-    val memBurstLen = 4
-
-    val byteOffsetWidth = log2Up(bytesPerSubBlock)
-    val blockOffsetWidth = log2Up(bytesPerBlock / bytesPerSubBlock)
-    val indexWidth = log2Up(nSets)
-
-    test(new SharedPipelinedCacheTestTop(
-      sizeInBytes = sizeInBytes,
-      nWays = nWays,
-      nCores = nCores,
-      reqIdWidth = reqIdWidth,
-      addressWidth = addressWidth,
-      bytesPerBlock = bytesPerBlock,
-      bytesPerSubBlock = bytesPerSubBlock,
-      memBeatSize = memBeatSize,
-      memBurstLen = memBurstLen,
-      l2RepPolicyGen = l2RepPolicy,
-      dataFile = Some(memFile),
-      nHalfMissCmds = Some(6)
-    )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-
-      // Default inputs
-      for (i <- 0 until nCores) {
-        dut.io.requests.cores(i).req.reqId.valid.poke(false.B)
-        dut.io.requests.cores(i).req.reqId.bits.poke(0.U)
-        dut.io.requests.cores(i).req.addr.poke(0.U)
-        dut.io.requests.cores(i).req.rw.poke(false.B)
-        dut.io.requests.cores(i).req.wData.poke(0.U)
-      }
-      dut.io.scheduler.cmd.poke(SchedulerCmd.NULL)
-      dut.io.scheduler.addr.poke(0.U)
-      dut.io.scheduler.wData.poke(0.U)
-
-      dut.clock.step(5)
-
-      // Set the third core as critical
-      setCoreAsCritical(dut, coreID = 2, contentionLimit = 10)
-
-      dut.clock.step(1)
-
-      // Set the second core as critical
-      setCoreAsCritical(dut, coreID = 1, contentionLimit = 20)
-
-      dut.clock.step(1)
-
-      // Issue the first set of requests
-      assertAccesses(
-        dut,
-        nCores,
-        Tests.testActions6,
-        indexWidth,
-        blockOffsetWidth,
-        byteOffsetWidth,
-        150,
-        printResults = printResults
-      )
-
-      dut.clock.step(1)
-
-      // Set the third core as no-critical
-      unsetCoreAsCritical(dut, coreID = 2)
-
-      dut.clock.step(1)
-    }
-  }
-
-  "SharedPipelinedCache" should "work with wb contention events" in {
-    val sizeInBytes = 65536 // 64 KiB
-    val nCores = 4
-    val nWays = 8
-    val addressWidth = 25
-    val reqIdWidth = 16
-    val bytesPerBlock = 64
-    val bytesPerSubBlock = 16
-    val nSets = sizeInBytes / (nWays * bytesPerBlock)
-    val basePolicy = () => new BitPlruReplacementPolicy(nWays, nSets, nCores)
-    val l2RepPolicy = () => new ContentionReplacementPolicy(nWays, nSets, nCores, basePolicy, enableWbEvents = true)
-    val memFile = "./hex/test_mem_32w.hex"
-
-    val printResults = true
-
-    val memBeatSize = 4
-    val memBurstLen = 4
-
-    val byteOffsetWidth = log2Up(bytesPerSubBlock)
-    val blockOffsetWidth = log2Up(bytesPerBlock / bytesPerSubBlock)
-    val indexWidth = log2Up(nSets)
-
-    test(new SharedPipelinedCacheTestTop(
-      sizeInBytes = sizeInBytes,
-      nWays = nWays,
-      nCores = nCores,
-      reqIdWidth = reqIdWidth,
-      addressWidth = addressWidth,
-      bytesPerBlock = bytesPerBlock,
-      bytesPerSubBlock = bytesPerSubBlock,
-      memBeatSize = memBeatSize,
-      memBurstLen = memBurstLen,
-      l2RepPolicyGen = l2RepPolicy,
-      dataFile = Some(memFile),
-      nHalfMissCmds = Some(6)
-    )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      defaultAssignments(dut, nCores)
-
-      // Set the third core as critical
-      setCoreAsCritical(dut, coreID = 2, contentionLimit = 10)
-
-      dut.clock.step(1)
-
-      // Set the second core as critical
-      setCoreAsCritical(dut, coreID = 1, contentionLimit = 20)
-
-      dut.clock.step(1)
-
-      // Issue the first set of requests
-      assertAccesses(
-        dut,
-        nCores,
-        Tests.testActions7,
-        indexWidth,
-        blockOffsetWidth,
-        byteOffsetWidth,
-        500,
-        printResults = printResults
-      )
-
-      dut.clock.step(1)
-
-      // Set the third core as no-critical
-      unsetCoreAsCritical(dut, coreID = 2)
-
-      dut.clock.step(1)
-    }
   }
 }

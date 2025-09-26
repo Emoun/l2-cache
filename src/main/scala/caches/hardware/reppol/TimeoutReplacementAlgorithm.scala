@@ -40,10 +40,18 @@ class TimeoutReplacementAlgorithm(nWays: Int, nSets: Int, nCores: Int) extends M
     freeRejQueue := true.B
   }
 
+  // TODO: Need to add a way to free a rejection queue once a single line has timed out in the in the set that we were rejected in
+
   // We decrement the current set's timers
   val wayTimes = VecInit(Seq.tabulate(nWays) { i =>
     timers(decIdx)((TIMEOUT_LIMIT_WIDTH * (i + 1)) - 1, TIMEOUT_LIMIT_WIDTH * i)
   })
+
+  // TODO: Keep a bit for each set, that indicates if the whole set has not timed out,
+  //  when at least a single way times out in a set and the bit was set to true we free rejection-q in an attempt to bring in the
+  //  requests again, we then unset a bit. If a whole set times out we set a bit
+
+  // TODO: or we can check if any request in the rejection queue match the index for which we are decrementing now, and then free the queue if this set has timed out ways
 
   // Calculate replacement order
   val wayTimesDecremented = VecInit(Seq.fill(nWays)(0.U(TIMEOUT_LIMIT_WIDTH.W)))

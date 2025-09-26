@@ -18,7 +18,7 @@ class MemoryInterfaceTest extends AnyFlatSpec with ChiselScalatestTester {
       subBlockWidth = 8 * 8,
       beatSize = 4,
       burstLen = 4
-    )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+    )).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation)) { dut =>
       // Default assignments
       dut.io.memController.rChannel.rAddr.ready.poke(false.B)
       dut.io.memController.rChannel.rData.valid.poke(false.B)

@@ -90,6 +90,8 @@ class SharedPipelinedCache(
       s"Number of Cores = $nCores" + "\n"
   )
 
+  repPol.printConfig() // Print configuration of replacement policy
+
   val io = IO(new Bundle{
     val core = new CacheCorePortIO(addressWidth, bytesPerSubBlock * 8, reqIdWidth)
     val inCoreId = Input(UInt(log2Up(nCores).W))
@@ -148,7 +150,7 @@ class SharedPipelinedCache(
   repLogic.io.repPol <> repPol.io.control
   repLogic.io.setLineValid := updateLogic.io.setValidLine
   repLogic.io.nonCritWbPop := memIntPopWb
-  repLogic.io.nonCritWbEntryIsCrit := memIntPopWbEntryIsCrit
+  repLogic.io.nonCritWbEntryIsCrit := wbQueue.io.isFirstInQCrit
   invalidateLine := repLogic.io.invalidate.invalidate
   invalidateWay := repLogic.io.invalidate.way
   invalidateIndex := repLogic.io.invalidate.index
@@ -180,7 +182,7 @@ class SharedPipelinedCache(
   missQueue.io.memIntIdle := memInterface.io.idle
   wbQueue.io.memIntIdle := memInterface.io.idle
   memIntPopWb := memInterface.io.wbFifo.pop
-  memIntPopWbEntryIsCrit := memInterface.io.wbFifo.popEntry.isCrit
+//  memIntPopWbEntryIsCrit := memInterface.io.wbFifo.popEntry.isCrit
 
   updateLogic.io.readStage <> readLogic.io.update
   updateLogic.io.memoryInterface <> memInterface.io.updateLogic

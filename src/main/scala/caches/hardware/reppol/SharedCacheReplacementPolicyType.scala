@@ -33,6 +33,7 @@ class ReplacementPolicyIO(nWays: Int, nSets: Int, nCores: Int, missQueueDepth: I
   val updateCoreId = Input(UInt(log2Up(nCores).W))
   val isValid = Output(Bool()) // To signal if there are no valid ways to replace
   val replaceWay = Output(UInt(log2Up(nWays).W))
+  val isReplacementWayCrit = Output(Bool())
   val replacementSet = Output(Vec(nWays, UInt(log2Up(nWays).W))) // If a replacement policy needs an ordered set of ways, otherwise can be ignored
   val popRejQueue = Valid(UInt((log2Up(nCores) + 1).W)) // For specifying how many entries should be popped from the rejection queue
   val updateCoreReachedLimit = Output(Bool())
@@ -50,8 +51,10 @@ class SharedCacheReplacementIO(nWays: Int, nSets: Int, nCores: Int, dataWidth: I
  * @param nWays number of ways in a single cache set
  * @param nSets number of sets in the whole cache
  */
-class SharedCacheReplacementPolicyType(nWays: Int, nSets: Int, nCores: Int, dataWidth: Int = 1, missQueueDepth: Int = 4) extends Module {
+abstract class SharedCacheReplacementPolicyType(nWays: Int, nSets: Int, nCores: Int, dataWidth: Int = 1, missQueueDepth: Int = 4) extends Module {
   val io = IO(new SharedCacheReplacementIO(nWays, nSets, nCores, dataWidth, missQueueDepth))
 
   val schedulerDataWidth = dataWidth
+
+  def printConfig(): Unit
 }

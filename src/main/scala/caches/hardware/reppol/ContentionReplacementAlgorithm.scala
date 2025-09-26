@@ -32,11 +32,13 @@ class ContentionReplacementAlgorithm(
     val updateCoreLimits = Output(Bool())
     val newCoreLimits = Output(Vec(nCores, UInt(CONTENTION_LIMIT_WIDTH.W)))
     val replacementWay = Output(Valid(UInt(log2Up(nWays).W)))
+    val isReplacementWayCrit = Output(Bool())
   })
 
   // Default signals
   val replaceWay = WireDefault(0.U(log2Up(nWays).W))
   val isValidReplaceWay = WireDefault(false.B)
+  val isReplaceWayCrit = WireDefault(false.B)
   val updateCoreLimits = WireDefault(false.B)
   val criticalWays = VecInit(Seq.fill(nWays)(false.B))
   val unlimitedWays = VecInit(Seq.fill(nWays)(false.B))
@@ -78,9 +80,11 @@ class ContentionReplacementAlgorithm(
     evictionEvent := firstUCSetWayCoreCritical && anyNonCriticalWays
     replacementEvent := firstUCSetWayCoreCritical && !isReqCoreCritical
     replaceWay := firstUCWay
+    isReplaceWayCrit := firstUCSetWayCoreCritical
     isValidReplaceWay := true.B
   }.elsewhen(isReqCoreCritical) {
     replaceWay := io.baseCandidates(0) // Critical core, can evict any line
+    isReplaceWayCrit := criticalWays(io.baseCandidates(0))
     isValidReplaceWay := true.B
   }
 
@@ -106,7 +110,7 @@ class ContentionReplacementAlgorithm(
   }
 
   // Trigger Miss-In-Miss and Miss-Q events
-  val coreContIncrMiM = VecInit(Seq.fill(nCores)(0.U(log2Up(nMshrs).W)))
+  val coreContIncrMiM = VecInit(Seq.fill(nCores)(0.U(nMshrs.W)))
   if (enableMissInMiss) {
     // This will address both miss in miss and miss-q events
     val nonCritMissCnt = VecInit(Seq.fill(nMshrs)(false.B))
@@ -127,18 +131,18 @@ class ContentionReplacementAlgorithm(
   if (enableWbEvents) {
     // If mem interface pops from non-critical wb-q and the popped entry is not critical,
     // we check if there are any critical lines in the miss-q and if so, it is a wb event for each unique core
-    when(io.wbNonCritPop && !io.wbPopEntryCrit) {
-      // Check if the valid missQueueLines have critical cores, and if so that would be an event per each unique core
+    val wbPopNonCrit = io.wbNonCritPop && !io.wbPopEntryCrit
 
-      for (i <- 0 until nMshrs) {
-        val wbEvent = io.missQueueValidCores(i) && io.criticalCores(io.missQueueCores(i))
+    // Check if the valid missQueueLines have critical cores, and if so that would be an event per each unique core
+    for (i <- 0 until nMshrs) {
+      val wbEvent = io.missQueueValidCores(i) && io.criticalCores(io.missQueueCores(i))
 
-        when(wbEvent) {
-          updateCoreLimits := true.B
-          coreContIncrWb(io.missQueueCores(i)) := 1.U
-        }
+      when(wbEvent && wbPopNonCrit) {
+        updateCoreLimits := true.B
+        coreContIncrWb(io.missQueueCores(i)) := 1.U
       }
     }
+
   }
 
   val newCoreLimits = VecInit(Seq.fill(nCores)(0.U(CONTENTION_LIMIT_WIDTH.W)))
@@ -162,4 +166,5 @@ class ContentionReplacementAlgorithm(
   io.newCoreLimits := newCoreLimits
   io.replacementWay.valid := isValidReplaceWay
   io.replacementWay.bits := replaceWay
+  io.isReplacementWayCrit := isReplaceWayCrit // Need to know if the replacement way belongs to a critical core
 }

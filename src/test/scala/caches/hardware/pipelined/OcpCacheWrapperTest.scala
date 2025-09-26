@@ -44,7 +44,7 @@ class OcpCacheWrapperTest extends AnyFlatSpec with ChiselScalatestTester {
       memDataWidth = memDataWidth,
       memBurstLen = memBurstLen,
       l2Cache = l2CacheGen
-    )).withAnnotations(Seq(WriteVcdAnnotation, WriteFstAnnotation)) { dut =>
+    )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default assignments
       for (i <- 0 until nCores) {
         dut.io.cores(i).M.Cmd.poke(OcpCmd.IDLE)

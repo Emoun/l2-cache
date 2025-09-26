@@ -6,7 +6,7 @@ import org.scalatest.flatspec.AnyFlatSpec
 
 class WriteBackFifoTest extends AnyFlatSpec with ChiselScalatestTester {
   "WriteBackFifo" should "push and pop entries correctly" in {
-    test(new WriteBackFifo(queueDepth = 2, tagWidth = 16, indexWidth = 8, blockWidth = 32)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+    test(new WriteBackFifo(queueDepth = 2, tagWidth = 16, indexWidth = 8, blockWidth = 32)).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation)) { dut =>
       // Initialize inputs
       dut.io.push.push.poke(false.B)
       dut.io.pop.pop.poke(false.B)

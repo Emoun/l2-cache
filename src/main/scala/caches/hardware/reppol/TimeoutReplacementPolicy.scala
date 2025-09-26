@@ -6,7 +6,9 @@ import chisel3._
 import chisel3.util._
 
 /**
- * ...
+ * Timeout replacement policy. When critical cores access a line, a counter is initiated for that line.
+ * Any non-critical core can only evict lines whose timer has reached zero, i.e. lines that are owned by non-critical
+ * cores or critical core lines that have timed out.
  *
  * @param nWays      number of ways in a cache set
  * @param nSets      number of sets in a cache
@@ -16,6 +18,8 @@ import chisel3.util._
 class TimeoutReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolicy: () => SharedCacheReplacementPolicyType) extends SharedCacheReplacementPolicyType(nWays, nSets, nCores, TIMEOUT_LIMIT_WIDTH) {
   //--------------- Base Policy ---------------------
   val basePolicyInst = Module(basePolicy())
+
+  override def printConfig(): Unit = println(s"Timeout replacement policy configuration: Base policy: ${basePolicy.getClass.getSimpleName}, ways: $nWays, sets: $nSets, cores: $nCores")
 
   // Default assignments to base policy
   basePolicyInst.io.control <> 0.U.asTypeOf(basePolicyInst.io.control)

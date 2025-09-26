@@ -10,7 +10,7 @@ class OcpBurstSlaveToCacheRequestAdapterTest extends AnyFlatSpec with ChiselScal
     val dataWidth = 32
     val burstLen = 4
 
-    test(new OcpBurstSlaveToCacheRequestAdapter(addrWidth, dataWidth, burstLen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+    test(new OcpBurstSlaveToCacheRequestAdapter(addrWidth, dataWidth, burstLen)).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation)) { dut =>
       // Default Assignments
       // ---- Core Port Inputs
       dut.io.corePort.req.reqId.ready.poke(false.B)
