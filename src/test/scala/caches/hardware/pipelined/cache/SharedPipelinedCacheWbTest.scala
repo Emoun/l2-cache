@@ -1,14 +1,16 @@
 package caches.hardware.pipelined.cache
 
 import caches.hardware.pipelined.cache.SharedPipelinedCacheTest._
+import chisel3.stage.PrintFullStackTraceAnnotation
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
 class SharedPipelinedCacheWbTest extends AnyFlatSpec with ChiselScalatestTester {
   "SharedPipelinedCache" should "work with wb contention events" in {
     val cache = generateDut(CacheConfigs.config64ContWb)
+    val logger = (cmd: Seq[String]) => println(cmd.mkString(" "))
 
-    test(cache._1.apply()).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+    test(cache._1.apply()).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation, PrintFullStackTraceAnnotation)) { dut =>
       defaultAssignments(dut, cache._2)
 
       // Issue the first set of requests

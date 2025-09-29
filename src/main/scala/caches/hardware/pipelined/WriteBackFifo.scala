@@ -30,11 +30,12 @@ class WbQueueIO(tagWidth: Int, indexWidth: Int, blockWidth: Int) extends Bundle 
 
 class WbFifoIO(tagWidth: Int, indexWidth: Int, blockWidth: Int) extends Bundle {
   val pushCrit = Input(Bool())
-  val memIntIdle = Input(Bool())
+  val popQSel = Input(Bool())
   val push = new WbFifoPushIO(tagWidth, indexWidth, blockWidth)
   val pop = new WbFifoPopIO(tagWidth, indexWidth, blockWidth)
+  val critEmpty = Output(Bool())
+  val nonCritEmpty = Output(Bool())
   val isFirstInQCrit = Output(Bool()) // Used to inform contention policy if the currently popped element from the non-critical queue belongs to a critical core
-  val popCrit = Output(Bool()) // Used to tell the memory interface if we are prioritizing critical wb or not
 }
 
 class WbQueue(queueDepth: Int, tagWidth: Int, indexWidth: Int, blockWidth: Int) extends Module {
@@ -89,23 +90,17 @@ class WriteBackFifo(queueDepth: Int, tagWidth: Int, indexWidth: Int, blockWidth:
     critQueue.io.push <> io.push
   }
 
-  // Need a register for controlling multiplexer, since we could interrupt already commenced
-  // non-critical writeback
-  val popSelReg = RegInit(0.U(1.W))
-  when(io.memIntIdle) {
-    popSelReg := Mux(!critQueue.io.pop.empty, 1.U, 0.U)
-  }
-
   // Multiplexer for popping entries
   nonCritQueue.io.pop <> 0.U.asTypeOf(nonCritQueue.io.pop)
   critQueue.io.pop <> 0.U.asTypeOf(critQueue.io.pop)
 
-  when(popSelReg === 0.U) {
+  when(io.popQSel === 0.U) {
     io.pop <> nonCritQueue.io.pop
   }.otherwise {
     io.pop <> critQueue.io.pop
   }
 
-  io.popCrit := popSelReg
-  io.isFirstInQCrit := nonCritQueue.io.isFirstInQCrit
+  io.critEmpty := critQueue.io.pop.empty
+  io.nonCritEmpty := nonCritQueue.io.pop.empty
+  io.isFirstInQCrit := nonCritQueue.io.isFirstInQCrit || critQueue.io.isFirstInQCrit
 }

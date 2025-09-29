@@ -8,7 +8,7 @@ class SharedPipelinedCacheTimeoutTest extends AnyFlatSpec with ChiselScalatestTe
   "SharedPipelinedCache" should "process pipelined requests for 8 ways, 128 sets, with timeout policy" in {
     val cache = generateDut(CacheConfigs.config64TimeOut)
 
-    test(cache._1.apply()).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+    test(cache._1.apply()).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation)) { dut =>
       defaultAssignments(dut, cache._2)
 
       // Issue the first set of requests

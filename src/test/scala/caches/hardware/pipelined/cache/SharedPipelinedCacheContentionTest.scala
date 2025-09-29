@@ -8,7 +8,7 @@ class SharedPipelinedCacheContentionTest extends AnyFlatSpec with ChiselScalates
   "SharedPipelinedCache" should "process pipelined requests for 8 ways, 128 sets, with contention policy" in {
     val cache = generateDut(CacheConfigs.config64Cont)
 
-    test(cache._1.apply()).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+    test(cache._1.apply()).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation)) { dut =>
       defaultAssignments(dut, cache._2)
 
       // Issue the first set of requests

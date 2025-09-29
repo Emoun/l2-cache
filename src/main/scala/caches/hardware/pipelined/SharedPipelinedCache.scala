@@ -175,14 +175,15 @@ class SharedPipelinedCache(
 
   val memInterface = Module(new MemoryInterface(nCores, nWays, halfMissCmdCnt, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, bytesPerBlock * 8, bytesPerSubBlock * 8, beatSize = memBeatSize, burstLen = memBurstLen))
   memInterface.io.missFifo <> missQueue.io.pop
-  memInterface.io.missPopCrit := missQueue.io.popCrit
+  memInterface.io.missCritEmpty := missQueue.io.critEmpty
+  memInterface.io.missNonCritEmpty := missQueue.io.nonCritEmpty
   memInterface.io.wbFifo <> wbQueue.io.pop
-  memInterface.io.wbPopCrit := wbQueue.io.popCrit
+  memInterface.io.wbCritEmpty := wbQueue.io.critEmpty
+  memInterface.io.wbNonCritEmpty := wbQueue.io.nonCritEmpty
   memInterface.io.memController <> io.mem
-  missQueue.io.memIntIdle := memInterface.io.idle
-  wbQueue.io.memIntIdle := memInterface.io.idle
   memIntPopWb := memInterface.io.wbFifo.pop
-//  memIntPopWbEntryIsCrit := memInterface.io.wbFifo.popEntry.isCrit
+  missQueue.io.popQSel := memInterface.io.popQSel
+  wbQueue.io.popQSel := memInterface.io.popQSel
 
   updateLogic.io.readStage <> readLogic.io.update
   updateLogic.io.memoryInterface <> memInterface.io.updateLogic

@@ -5,6 +5,7 @@ import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
 case class ExpectedCmd(reqId: Int, coreId: Int, blockOffset: Int)
+
 case class ExpectedMshrStatus(tags: Array[String], indexes: Array[String], validMSHRs: Array[Boolean], fullSignals: Array[Boolean])
 
 class MissFifoTest extends AnyFlatSpec with ChiselScalatestTester {
@@ -15,10 +16,10 @@ class MissFifoTest extends AnyFlatSpec with ChiselScalatestTester {
     val fullSignals = dut.io.nonCritInfo.fullCmds
 
     for (i <- expectedStatus.indexes.indices) {
-        currentTags(i).expect(expectedStatus.tags(i).U)
-        currentIndexes(i).expect(expectedStatus.indexes(i).U)
-        validMSHRs(i).expect(expectedStatus.validMSHRs(i).B)
-        fullSignals(i).expect(expectedStatus.fullSignals(i).B)
+      currentTags(i).expect(expectedStatus.tags(i).U)
+      currentIndexes(i).expect(expectedStatus.indexes(i).U)
+      validMSHRs(i).expect(expectedStatus.validMSHRs(i).B)
+      fullSignals(i).expect(expectedStatus.fullSignals(i).B)
     }
   }
 
@@ -51,7 +52,7 @@ class MissFifoTest extends AnyFlatSpec with ChiselScalatestTester {
     println("")
   }
 
-  "MissFifo" should "push and pop entries correctly for non critical queue" in {
+  "MissFifo" should "push and pop entries correctly for non critical queue only" in {
     val blockWidth = 64
     val subBlockWidth = 16
 
@@ -66,7 +67,7 @@ class MissFifoTest extends AnyFlatSpec with ChiselScalatestTester {
       blockOffsetWidth = 2,
       subBlockWidth = subBlockWidth,
       blockWidth = blockWidth
-    )).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation)) { dut =>
+    )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Initialize inputs
       dut.io.push.pushReq.poke(false.B)
       dut.io.push.withCmd.poke(false.B)
@@ -376,6 +377,45 @@ class MissFifoTest extends AnyFlatSpec with ChiselScalatestTester {
           fullSignals = Array(false, false, false, false)
         )
       )
+    }
+  }
+
+  "MissFifo" should "push and pop entries correctly for critical and non-critical queues" in {
+    val blockWidth = 64
+    val subBlockWidth = 16
+
+    test(new MissFifo(
+      nCores = 4,
+      nCmds = 4,
+      nMshrs = 4,
+      nWays = 16,
+      reqIdWidth = 16,
+      tagWidth = 8,
+      indexWidth = 4,
+      blockOffsetWidth = 2,
+      subBlockWidth = subBlockWidth,
+      blockWidth = blockWidth
+    )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
+
+      cancel("not finished yet")
+      // Initialize inputs
+      dut.io.push.pushReq.poke(false.B)
+      dut.io.push.withCmd.poke(false.B)
+      dut.io.push.pushReqEntry.tag.poke(0.U)
+      dut.io.push.pushReqEntry.index.poke(0.U)
+      dut.io.push.pushReqEntry.byteEn.poke(0.U) // All bytes disabled
+      dut.io.push.pushReqEntry.replaceWay.poke(0.U)
+      dut.io.push.pushCmd.poke(false.B)
+      dut.io.push.mshrIdx.poke(0.U)
+      dut.io.push.pushCmdEntry.reqId.poke(0.U)
+      dut.io.push.pushCmdEntry.coreId.poke(0.U)
+      dut.io.push.pushCmdEntry.blockOffset.poke(0.U)
+      dut.io.push.updateByteEn.poke(0.U)
+      dut.io.push.updateByteEnRow.poke(0.U)
+      dut.io.push.updateByteEnCol.poke(0.U)
+      dut.io.push.updateByteEnVal.poke(0.U)
+      dut.io.pop.pop.poke(false.B)
+
     }
   }
 }

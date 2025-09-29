@@ -6,7 +6,7 @@ import org.scalatest.flatspec.AnyFlatSpec
 
 class RequestArbiterTest extends AnyFlatSpec with ChiselScalatestTester {
   "RequestArbiter" should "arbitrate between multiple requests" in {
-    test(new RoundRobinRequestArbiter(nReqs = 4, addrWidth = 16, dataWidth = 32, reqIdWidth = 8)).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation)) { dut =>
+    test(new RoundRobinRequestArbiter(nReqs = 4, addrWidth = 16, dataWidth = 32, reqIdWidth = 8)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Initialize inputs
       for (i <- 0 until 4) {
         dut.io.ports(i).reqId.valid.poke(false.B)

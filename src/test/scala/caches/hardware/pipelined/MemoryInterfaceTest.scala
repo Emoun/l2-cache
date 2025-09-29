@@ -5,7 +5,7 @@ import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
 class MemoryInterfaceTest extends AnyFlatSpec with ChiselScalatestTester {
-  "MemoryInterface" should "work" in {
+  "MemoryInterface" should "process non-critical queue requests only" in {
     test(new MemoryInterface(
       nCores = 4,
       nWays = 8,
@@ -18,7 +18,7 @@ class MemoryInterfaceTest extends AnyFlatSpec with ChiselScalatestTester {
       subBlockWidth = 8 * 8,
       beatSize = 4,
       burstLen = 4
-    )).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation)) { dut =>
+    )).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       // Default assignments
       dut.io.memController.rChannel.rAddr.ready.poke(false.B)
       dut.io.memController.rChannel.rData.valid.poke(false.B)
@@ -26,10 +26,14 @@ class MemoryInterfaceTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.io.memController.wChannel.wAddr.ready.poke(false.B)
       dut.io.memController.wChannel.wData.ready.poke(false.B)
       dut.io.wbFifo.empty.poke(true.B)
+      dut.io.missNonCritEmpty.poke(true.B)
+      dut.io.missCritEmpty.poke(true.B)
       dut.io.wbFifo.popEntry.tag.poke(0.U)
       dut.io.wbFifo.popEntry.index.poke(0.U)
       dut.io.wbFifo.popEntry.wbData.poke(0.U)
       dut.io.missFifo.empty.poke(true.B)
+      dut.io.wbNonCritEmpty.poke(true.B)
+      dut.io.wbCritEmpty.poke(true.B)
       dut.io.missFifo.cmdCnt.poke(0.U)
       dut.io.missFifo.popEntry.replaceWay.poke(0.U)
       dut.io.missFifo.popEntry.tag.poke(0.U)
@@ -38,7 +42,7 @@ class MemoryInterfaceTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.clock.step(2)
 
       // Simulate a write-back operation
-      dut.io.wbFifo.empty.poke(false.B)
+      dut.io.wbNonCritEmpty.poke(false.B)
       dut.io.wbFifo.popEntry.tag.poke(1.U)
       dut.io.wbFifo.popEntry.index.poke(2.U)
       dut.io.wbFifo.popEntry.wbData.poke("h7e3fa2c4d9b118fe0a27d6e54c3b98a1f4cd239a5e7b06d1acfe0b8dc4e73190".U)
@@ -171,8 +175,10 @@ class MemoryInterfaceTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.clock.step(1)
 
       // Simulate a fill operation
-      dut.io.wbFifo.empty.poke(true.B)
-      dut.io.missFifo.empty.poke(false.B)
+//      dut.io.wbFifo.empty.poke(true.B)
+      dut.io.wbNonCritEmpty.poke(true.B)
+//      dut.io.missFifo.empty.poke(false.B)
+      dut.io.missNonCritEmpty.poke(false.B)
       dut.io.missFifo.popEntry.tag.poke(5.U)
       dut.io.missFifo.popEntry.index.poke(9.U)
 
@@ -300,6 +306,7 @@ class MemoryInterfaceTest extends AnyFlatSpec with ChiselScalatestTester {
       dut.clock.step(1)
 
       dut.io.missFifo.empty.poke(true.B)
+      dut.io.missNonCritEmpty.poke(true.B)
 
       dut.clock.step(1)
     }

@@ -55,12 +55,14 @@ class MemoryInterface(nCores: Int, nWays: Int, nHalfMissCmds: Int, reqIdWidth: I
 
   val io = IO(new Bundle {
     val missFifo = Flipped(new MshrPopIO(nCores, nHalfMissCmds, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, blockWidth))
-    val missPopCrit = Input(Bool())
+    val missCritEmpty = Input(Bool())
+    val missNonCritEmpty = Input(Bool())
     val wbFifo = Flipped(new WbFifoPopIO(tagWidth, indexWidth, blockWidth))
-    val wbPopCrit = Input(Bool())
+    val wbCritEmpty = Input(Bool())
+    val wbNonCritEmpty = Input(Bool())
     val updateLogic = Flipped(new MemInterfaceToUpdateIO(nCores, nWays, reqIdWidth, tagWidth, indexWidth, blockWidth, subBlockWidth))
     val memController = new CacheMemoryControllerIO(addressWidth, beatSize)
-    val idle = Output(Bool())
+    val popQSel = Output(Bool())
   })
 
   val sIdle :: sRead :: sWrite :: sReadBurst :: sWriteBurst :: sDoneRead :: sDoneWrite :: Nil = Enum(7)
@@ -72,6 +74,7 @@ class MemoryInterface(nCores: Int, nWays: Int, nHalfMissCmds: Int, reqIdWidth: I
   val cmdBurstCount = RegInit(0.U(log2Up(beatSize).W))
   val cmdCounter = RegInit(0.U((log2Up(nCommands)+1).W)) // RAM command counter
   val halfMissCmdCounter = RegInit(0.U((log2Up(nHalfMissCmds) + 1).W)) // Half of the miss command counter
+  val popQSelReg = RegInit(0.U(1.W)) // 0 - non-crit, 1 - crit
 
   val reqIdx = WireDefault(0.U(indexWidth.W))
   val reqTag = WireDefault(0.U(tagWidth.W))
@@ -87,7 +90,6 @@ class MemoryInterface(nCores: Int, nWays: Int, nHalfMissCmds: Int, reqIdWidth: I
   val memWStrb = WireDefault(0.U(beatSize.W))
   val memRDataRegAsUint = memRDataReg.asUInt
   val wbFifoWDataAsVec = VecInit(Seq.fill(blockWidth / (beatSize * 8))(0.U((beatSize * 8).W)))
-  val idle = WireDefault(false.B)
 
   for (i <- 0 until wbFifoWDataAsVec.length) {
     wbFifoWDataAsVec(i) := io.wbFifo.popEntry.wbData(((beatSize * 8) - 1) + (i * (beatSize * 8)), i * (beatSize * 8))
@@ -102,20 +104,18 @@ class MemoryInterface(nCores: Int, nWays: Int, nHalfMissCmds: Int, reqIdWidth: I
 
   switch(stateReg) {
     is(sIdle) {
-
-      idle := true.B
-      when(io.wbPopCrit || io.missPopCrit) {
-        when(io.wbPopCrit) {
-          stateReg := sWrite
-        }.elsewhen(io.missPopCrit) {
-          stateReg := sRead
-        }
-      }.otherwise{
-        when(!io.wbFifo.empty) { // Perform a write-back
-          stateReg := sWrite
-        }.elsewhen(!io.missFifo.empty) { // Perform a fill
-          stateReg := sRead
-        }
+      when(!io.wbCritEmpty) {
+        stateReg := sWrite
+        popQSelReg := 1.U
+      }.elsewhen(!io.missCritEmpty) {
+        stateReg := sRead
+        popQSelReg := 1.U
+      }.elsewhen(!io.wbNonCritEmpty) {
+        stateReg := sWrite
+        popQSelReg := 0.U
+      }.elsewhen(!io.missNonCritEmpty) {
+        stateReg := sRead
+        popQSelReg := 0.U
       }
     }
 
@@ -238,5 +238,5 @@ class MemoryInterface(nCores: Int, nWays: Int, nHalfMissCmds: Int, reqIdWidth: I
   io.memController.wChannel.wStrb := memWStrb
   io.memController.wChannel.wLast := memWLast
 
-  io.idle := idle
+  io.popQSel := popQSelReg
 }

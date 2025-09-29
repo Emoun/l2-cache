@@ -67,13 +67,14 @@ class MshrIO(nCores: Int, nMSHRs: Int, nCmds: Int, nWays: Int, reqIdWidth: Int, 
 }
 
 class MissFifoIO(nCores: Int, nMSHRs: Int, nCmds: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffsetWidth: Int, blockWidth: Int, subBlockWidth: Int) extends Bundle {
-  val memIntIdle = Input(Bool())
   val nonCritInfo = new MshrInfoIO(nCores, nMSHRs, nWays, indexWidth, tagWidth)
   val critInfo = new MshrInfoIO(nCores, nMSHRs, nWays, indexWidth, tagWidth)
   val pushCrit = Input(Bool()) // Indicate if the current request should be pushed to the critical queue
+  val popQSel = Input(Bool()) // Signal for selecting which queue to pop an entry from
   val push = new MshrPushIO(nCores, nMSHRs, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, subBlockWidth)
   val pop = new MshrPopIO(nCores, nCmds, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, blockWidth)
-  val popCrit = Output(Bool()) // Indicate if the current request should be pushed to the critical queue
+  val critEmpty = Output(Bool())
+  val nonCritEmpty = Output(Bool())
   val full = Output(Bool())
 }
 
@@ -351,13 +352,8 @@ class MissFifo(nCores: Int, nCmds: Int, nMshrs: Int, nWays: Int, reqIdWidth: Int
   // Multiplex between the two queues for popping
   val mshrPopDemux = Module(new MshrPopMux(nCores, nCmds, nWays, reqIdWidth, tagWidth, indexWidth, blockOffsetWidth, blockWidth))
 
-  val mshrPopSelReg = RegInit(0.U(1.W))
-  when(io.memIntIdle) {
-    mshrPopSelReg := Mux(!critQueue.io.pop.empty, 1.U, 0.U)
-  }
-
   // Choose to always pop the critical queue as long as it is not empty
-  mshrPopDemux.io.sel := mshrPopSelReg
+  mshrPopDemux.io.sel := io.popQSel
   mshrPopDemux.io.in1 <> nonCritQueue.io.pop
   mshrPopDemux.io.in2 <> critQueue.io.pop
   io.pop <> mshrPopDemux.io.out
@@ -366,5 +362,6 @@ class MissFifo(nCores: Int, nCmds: Int, nMshrs: Int, nWays: Int, reqIdWidth: Int
   io.nonCritInfo <> nonCritQueue.io.info
 
   io.full := critQueue.io.push.full || nonCritQueue.io.push.full
-  io.popCrit := mshrPopSelReg
+  io.critEmpty := critQueue.io.pop.empty
+  io.nonCritEmpty := nonCritQueue.io.pop.empty
 }
