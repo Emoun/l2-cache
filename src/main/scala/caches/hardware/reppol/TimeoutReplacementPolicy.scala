@@ -1,9 +1,38 @@
 package caches.hardware.reppol
 
 import caches.hardware.util.Constants.TIMEOUT_LIMIT_WIDTH
-import caches.hardware.util.PipelineReg
+import caches.hardware.util.{MemBlock, PipelineReg}
 import chisel3._
 import chisel3.util._
+
+class TimerMemory(nWays: Int, nSets: Int) extends Module {
+  val io = IO(new Bundle{
+    val stall = Input(Bool())
+    val rIdx = Input(UInt(log2Up(nSets).W))
+    val wrEn = Input(Bool())
+    val wIdx = Input(UInt(log2Up(nSets).W))
+    val wData = Input(Vec(nWays, UInt(TIMEOUT_LIMIT_WIDTH.W)))
+    val wMask = Input(Vec(nWays, Bool()))
+    val rTimers = Output(Vec(nWays, UInt(TIMEOUT_LIMIT_WIDTH.W)))
+  })
+
+  val timers = Array.fill(nWays)(Module(new MemBlock(nSets, TIMEOUT_LIMIT_WIDTH)))
+
+  val rTimers = VecInit(Seq.fill(nWays)(0.U(TIMEOUT_LIMIT_WIDTH.W)))
+  for (wayIdx <- 0 until nWays) {
+    val wrWayEn = io.wMask(wayIdx)
+
+    timers(wayIdx).io.wrEn := io.wrEn && wrWayEn
+    timers(wayIdx).io.readAddr := io.rIdx
+    timers(wayIdx).io.writeAddr := io.wIdx
+    timers(wayIdx).io.writeData := io.wData(wayIdx)
+    timers(wayIdx).io.stall := io.stall
+
+    rTimers(wayIdx) := timers(wayIdx).io.readData
+  }
+
+  io.rTimers := rTimers
+}
 
 /**
  * Timeout replacement policy. When critical cores access a line, a counter is initiated for that line.
@@ -19,7 +48,7 @@ class TimeoutReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolicy: 
   //--------------- Base Policy ---------------------
   val basePolicyInst = Module(basePolicy())
 
-  override def printConfig(): Unit = println(s"Timeout replacement policy configuration: Base policy: ${basePolicy.getClass.getSimpleName}, ways: $nWays, sets: $nSets, cores: $nCores")
+  override def printConfig(): Unit = println(s"Timeout replacement policy configuration: Base policy: ${basePolicyInst.getClass.getSimpleName}, ways: $nWays, sets: $nSets, cores: $nCores" + "\n")
 
   // Default assignments to base policy
   basePolicyInst.io.control <> 0.U.asTypeOf(basePolicyInst.io.control)
@@ -36,7 +65,6 @@ class TimeoutReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolicy: 
   val setIdxPipeReg = PipelineReg(setIdxDelayReg, 0.U, !io.control.stall) // Delay twice for computing replacement set
 
   //-------------------------------------
-
   val timeoutAlgo = Module(new TimeoutReplacementAlgorithm(nWays = nWays, nSets = nSets, nCores = nCores))
   timeoutAlgo.io.setIdx := setIdxPipeReg
   timeoutAlgo.io.evict := io.control.evict
@@ -48,9 +76,9 @@ class TimeoutReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolicy: 
   // Default output assignments
   io.control <> 0.U.asTypeOf(io.control)
 
-  io.control.isValid := timeoutAlgo.io.isRepValid
   io.control.replaceWay := timeoutAlgo.io.replaceWay
-  io.control.popRejQueue.valid := timeoutAlgo.io.freeRejQueue
-  io.control.popRejQueue.bits := nCores.U // Free the entire rejection queue
-  io.control.updateCoreReachedLimit := false.B // TODO: set this appropriately
+  io.control.isValid := timeoutAlgo.io.isRepValid
+  io.control.isReplacementWayCrit := false.B // TODO: Not sure if relevant
+  io.control.isReplacementWayAtLimit := false.B // TODO: Not sure if relevant
+  io.control.updateCoreReachedLimit := false.B // TODO: Not sure if relevant
 }

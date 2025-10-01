@@ -33,13 +33,16 @@ class ContentionReplacementAlgorithm(
     val newCoreLimits = Output(Vec(nCores, UInt(CONTENTION_LIMIT_WIDTH.W)))
     val replacementWay = Output(Valid(UInt(log2Up(nWays).W)))
     val isReplacementWayCrit = Output(Bool())
+    val isReplacementWayAtLimit = Output(Bool())
   })
 
   // Default signals
   val replaceWay = WireDefault(0.U(log2Up(nWays).W))
   val isValidReplaceWay = WireDefault(false.B)
   val isReplaceWayCrit = WireDefault(false.B)
+  val isRepWayAtLimit = WireDefault(false.B)
   val updateCoreLimits = WireDefault(false.B)
+
   val criticalWays = VecInit(Seq.fill(nWays)(false.B))
   val unlimitedWays = VecInit(Seq.fill(nWays)(false.B))
   val coreAssignments = VecInit(Seq.fill(nWays)(0.U(log2Up(nCores).W)))
@@ -53,8 +56,9 @@ class ContentionReplacementAlgorithm(
 
     val limit = io.coreLimits(assignedCoreIdx)
     val isCriticalWay = hasValidAssignment && io.criticalCores(assignedCoreIdx)
+    val criticalAtLimit = isCriticalWay && limit > 0.U
 
-    val isUnlimited = !isCriticalWay || (isCriticalWay && limit > 0.U)
+    val isUnlimited = !isCriticalWay || criticalAtLimit
 
     unlimitedWays(wayIdx) := isUnlimited
     criticalWays(wayIdx) := isCriticalWay
@@ -82,10 +86,12 @@ class ContentionReplacementAlgorithm(
     replaceWay := firstUCWay
     isReplaceWayCrit := firstUCSetWayCoreCritical
     isValidReplaceWay := true.B
+    isRepWayAtLimit := false.B
   }.elsewhen(isReqCoreCritical) {
     replaceWay := io.baseCandidates(0) // Critical core, can evict any line
     isReplaceWayCrit := criticalWays(io.baseCandidates(0))
     isValidReplaceWay := true.B
+    isRepWayAtLimit := true.B
   }
 
   // Decrement the contention limit when we encounter an eviction or replacement event
@@ -167,4 +173,5 @@ class ContentionReplacementAlgorithm(
   io.replacementWay.valid := isValidReplaceWay
   io.replacementWay.bits := replaceWay
   io.isReplacementWayCrit := isReplaceWayCrit // Need to know if the replacement way belongs to a critical core
+  io.isReplacementWayAtLimit := isRepWayAtLimit // Need to know if the core to which the line belongs to reached limit
 }

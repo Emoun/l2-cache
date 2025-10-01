@@ -18,7 +18,6 @@ class RejectionQueue(nCores: Int, addrWidth: Int, dataWidth: Int, reqIdWidth: In
     val push = Input(Bool())
     val pushEntry = new RejectionQueueEntry(nCores, addrWidth, dataWidth, reqIdWidth)
     val full = Output(Bool())
-    val popRejQueue = Flipped(Valid(UInt((log2Up(depth) + 1).W)))
     val popEntry = Flipped(new CacheRequestIO(addrWidth, dataWidth, reqIdWidth))
     val popCoreId = Output(UInt(log2Up(nCores).W))
   })
@@ -28,15 +27,6 @@ class RejectionQueue(nCores: Int, addrWidth: Int, dataWidth: Int, reqIdWidth: In
 
   val rejectQueue = Module(new RegFifo(UInt(cmdLen.W), depth))
   val pushData = Cat(io.pushEntry.coreId, io.pushEntry.reqId, io.pushEntry.addr, io.pushEntry.rw, io.pushEntry.byteEn, io.pushEntry.wData)
-
-  val popCountReg = RegInit(0.U((log2Up(depth) + 1).W))
-  when(io.popRejQueue.valid) {
-    popCountReg := io.popRejQueue.bits
-  }
-
-  when(popCountReg =/= 0.U) {
-    popCountReg := popCountReg - 1.U
-  }
 
   rejectQueue.io.enq.valid := io.push
   rejectQueue.io.enq.bits := pushData
@@ -51,5 +41,5 @@ class RejectionQueue(nCores: Int, addrWidth: Int, dataWidth: Int, reqIdWidth: In
   io.popCoreId := popData(coreIdWidth - 1 + reqIdWidth + addrWidth + (dataWidth / 8) + dataWidth + 1, reqIdWidth + addrWidth + (dataWidth / 8) + dataWidth + 1)
 
   io.full := !rejectQueue.io.enq.ready
-  io.popEntry.reqId.valid := rejectQueue.io.deq.valid && popCountReg =/= 0.U
+  io.popEntry.reqId.valid := rejectQueue.io.deq.valid // && popCountReg =/= 0.U
 }

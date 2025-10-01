@@ -76,7 +76,6 @@ class SharedPipelinedCache(
   val missFifoCmdCapacity = WireDefault(false.B)
   val repDirtyInvalidStall = WireDefault(false.B)
   val memIntPopWb = WireDefault(false.B)
-  val memIntPopWbEntryIsCrit = WireDefault(false.B)
 
   println(
     s"L2 Cache Configuration: " +
@@ -87,6 +86,8 @@ class SharedPipelinedCache(
       s"Sub-block Size = $bytesPerSubBlock bytes, " +
       s"Memory Beat Size = $memBeatSize bytes, " +
       s"Memory Burst Length = $memBurstLen beats, " +
+      s"Miss Q depth = $mshrCnt, " +
+      s"Miss Q half miss cmds per entry = $halfMissCmdCnt cmds, " +
       s"Number of Cores = $nCores" + "\n"
   )
 
@@ -101,32 +102,31 @@ class SharedPipelinedCache(
   })
 
   val rejectionQueue = Module(new RejectionQueue(nCores = nCores, addrWidth = addressWidth, dataWidth = bytesPerSubBlock * 8, reqIdWidth = reqIdWidth, depth = nCores))
-  val coreReqMux = Module(new CoreReqMux(nCores = nCores, addrWidth = addressWidth, dataWidth = bytesPerSubBlock * 8, reqIdWidth = reqIdWidth))
+  val coreReqArbiter = Module(new CoreReqArbiter(nCores = nCores, addrWidth = addressWidth, dataWidth = bytesPerSubBlock * 8, reqIdWidth = reqIdWidth))
 
   val pipeStall = updateLogic.io.stall || missQueue.io.full || missFifoCmdCapacity || repDirtyInvalidStall
   val reqAccept = !pipeStall
 
   // Connect core request and rejection queue to the core request multiplexer that feeds into the cache pipeline
-  coreReqMux.io.req1 <> io.core.req
-  coreReqMux.io.req2 <> rejectionQueue.io.popEntry
-  coreReqMux.io.req1CoreID := io.inCoreId
-  coreReqMux.io.req2CoreID := rejectionQueue.io.popCoreId
-  coreReqMux.io.out.reqId.ready := reqAccept
+  coreReqArbiter.io.req1 <> io.core.req
+  coreReqArbiter.io.req2 <> rejectionQueue.io.popEntry
+  coreReqArbiter.io.req1CoreID := io.inCoreId
+  coreReqArbiter.io.req2CoreID := rejectionQueue.io.popCoreId
+  coreReqArbiter.io.out.reqId.ready := reqAccept
 
   // Connect replacement policy with the rejection queue
-  rejectionQueue.io.popRejQueue <> repPol.io.control.popRejQueue
   repPol.io.scheduler <> io.scheduler
 
   // ---------------- Decode ----------------
   val decLogic = Module(new Dec(nCores = nCores, nWays = nWays, reqIdWidth = reqIdWidth, tagWidth = tagWidth, indexWidth = indexWidth, blockOffWidth = blockOffsetWidth, byteOffWidth = byteOffsetWidth, subBlockWidth = bytesPerSubBlock * 8))
   decLogic.io.stall := pipeStall
-  decLogic.io.dec.coreId := coreReqMux.io.outCoreID
-  decLogic.io.dec.reqValid := coreReqMux.io.out.reqId.valid
-  decLogic.io.dec.reqId := coreReqMux.io.out.reqId.bits
-  decLogic.io.dec.reqRw := coreReqMux.io.out.rw
-  decLogic.io.dec.addr := coreReqMux.io.out.addr
-  decLogic.io.dec.wData := coreReqMux.io.out.wData
-  decLogic.io.dec.byteEn := coreReqMux.io.out.byteEn
+  decLogic.io.dec.coreId := coreReqArbiter.io.outCoreID
+  decLogic.io.dec.reqValid := coreReqArbiter.io.out.reqId.valid
+  decLogic.io.dec.reqId := coreReqArbiter.io.out.reqId.bits
+  decLogic.io.dec.reqRw := coreReqArbiter.io.out.rw
+  decLogic.io.dec.addr := coreReqArbiter.io.out.addr
+  decLogic.io.dec.wData := coreReqArbiter.io.out.wData
+  decLogic.io.dec.byteEn := coreReqArbiter.io.out.byteEn
 
   // ---------------- Tag and Dirty Lookup ----------------
 

@@ -34,8 +34,8 @@ class ReplacementPolicyIO(nWays: Int, nSets: Int, nCores: Int, missQueueDepth: I
   val isValid = Output(Bool()) // To signal if there are no valid ways to replace
   val replaceWay = Output(UInt(log2Up(nWays).W))
   val isReplacementWayCrit = Output(Bool())
+  val isReplacementWayAtLimit = Output(Bool())
   val replacementSet = Output(Vec(nWays, UInt(log2Up(nWays).W))) // If a replacement policy needs an ordered set of ways, otherwise can be ignored
-  val popRejQueue = Valid(UInt((log2Up(nCores) + 1).W)) // For specifying how many entries should be popped from the rejection queue
   val updateCoreReachedLimit = Output(Bool())
   val updateCoreIsCrit = Output(Bool())
 }

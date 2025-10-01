@@ -225,9 +225,8 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   val blockByteMask = (byteEnReg << byteShift).asUInt
 
   io.read.coreId := coreIdReg
-  io.read.isCoreCrit := io.repPol.updateCoreIsCrit
   io.read.isRepWayCrit := io.repPol.isReplacementWayCrit
-  io.read.coreReachedLimit := io.repPol.updateCoreReachedLimit
+  io.read.repWayAtLimit := io.repPol.isReplacementWayAtLimit
   io.read.reqValid := reqValidReg
   io.read.reqId := reqIdReg
   io.read.reqRw := reqRwReg

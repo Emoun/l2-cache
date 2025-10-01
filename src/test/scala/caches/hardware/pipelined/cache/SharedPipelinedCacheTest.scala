@@ -304,29 +304,59 @@ object Tests {
     CacheRequest(coreId = 1, reqId = 19, tag = 19, index = 74, blockOffset = 0, rw = false, expectedData = Some("7ee704ff89853f610b37152125de93af")), // MISS, way: 6
     CacheRequest(coreId = 2, reqId = 20, tag = 15, index = 74, blockOffset = 0, rw = false, expectedData = Some("7296c2863afadb5b23832ee2be161f15")), // MISS, way: 1, cause critical-wb
     CacheRequest(coreId = 3, reqId = 21, tag = 54, index = 74, blockOffset = 1, rw = true, wData = Some("hcafebabecafebabecafebabecafebabe"), byteEn = Some("b1111000000000000"), rejected = true), // MISS, way: rejected
+    // Fill up another set with non-critical lines
+    CacheRequest(coreId = 3, reqId = 22, tag = 60, index = 73, blockOffset = 0, rw = true, wData = Some("hdeadbeefdeadbeefdeadbeefdeadbeef"), byteEn = Some("b0000000000001111")), // MISS, way: 0
+    CacheRequest(coreId = 3, reqId = 23, tag = 54, index = 73, blockOffset = 1, rw = true, wData = Some("hdeadbeefdeadbeefdeadbeefdeadbeef"), byteEn = Some("b0000000011110000")), // MISS, way: 1
+    CacheRequest(coreId = 0, reqId = 24, tag = 22, index = 73, blockOffset = 0, rw = true, wData = Some("hdeadbeefdeadbeefdeadbeefdeadbeef"), byteEn = Some("b0000111100000000")), // MISS, way: 2
+    CacheRequest(coreId = 0, reqId = 25, tag = 23, index = 73, blockOffset = 2, rw = true, wData = Some("hdeadbeefdeadbeefdeadbeefdeadbeef"), byteEn = Some("b1111000000000000")), // MISS, way: 3
+    CacheRequest(coreId = 3, reqId = 26, tag = 31, index = 73, blockOffset = 3, rw = true, wData = Some("hcafebabecafebabecafebabecafebabe"), byteEn = Some("b0000000000001111")), // MISS, way: 4
+    CacheRequest(coreId = 3, reqId = 27, tag = 44, index = 73, blockOffset = 1, rw = true, wData = Some("hcafebabecafebabecafebabecafebabe"), byteEn = Some("b0000000011110000")), // MISS, way: 5
+    CacheRequest(coreId = 0, reqId = 28, tag = 47, index = 73, blockOffset = 1, rw = true, wData = Some("hcafebabecafebabecafebabecafebabe"), byteEn = Some("b0000111100000000")), // MISS, way: 6,
+    Stall(200),
+    CacheRequest(coreId = 0, reqId = 29, tag = 43, index = 73, blockOffset = 0, rw = true, wData = Some("hcafebabecafebabecafebabecafebabe"), byteEn = Some("b1111000000000000")), // MISS, way: 7,
+    CacheRequest(coreId = 3, reqId = 30, tag = 12, index = 73, blockOffset = 2, rw = true, wData = Some("hdeadbeefdeadbeefdeadbeefdeadbeef"), byteEn = Some("b0000111100000000")), // MISS, way: 0, evict non-critical line, cause non-critical wb
+    CacheRequest(coreId = 2, reqId = 30, tag = 12, index = 74, blockOffset = 2, rw = true, wData = Some("hdeadbeefdeadbeefdeadbeefdeadbeef"), byteEn = Some("b0000111100000000")), // MISS, way: 0, evict critical line, cause critical wb
     Stall(200),
     PerformSchedulerOperation(addr = 2, rw = false),
-    ExpectFinishedRejectedResponse(coreId = 3, reqId = 21, expectedData = "cda5416b8ba4fa4e0d8244282c9b4387")
+    ExpectFinishedRejectedResponse(coreId = 3, reqId = 21, expectedData = "cda5416b8ba4fa4edeadbeef2c9b4387")
   )
 
   // Test action array for timeout policy
   val testActions7: Array[TestAction] = Array(
-    PerformSchedulerOperation(addr = 1, rw = true, wData = Some(100)),
-    PerformSchedulerOperation(addr = 3, rw = true, wData = Some(150)),
-    CacheRequest(coreId = 1, reqId = 0, tag = 0, index = 0, blockOffset = 0, rw = false, expectedData = Some("cafebabebabecafedeadbeefbeefdead")), // Bring new line into the cache (put in way: 0, idx: 0)
-    CacheRequest(coreId = 3, reqId = 1, tag = 1, index = 0, blockOffset = 0, rw = false, expectedData = Some("bbef1226751129196ede4c8a9dc4fbd4")), // Bring new line into the cache (put in way: 1, idx: 0)
-    CacheRequest(coreId = 3, reqId = 2, tag = 2, index = 0, blockOffset = 0, rw = false, expectedData = Some("013bb292b95895f88cde7faf55adaaba")), // Bring new line into the cache (put in way: 2, idx: 0)
-    CacheRequest(coreId = 3, reqId = 3, tag = 3, index = 0, blockOffset = 2, rw = false, expectedData = Some("c70485594aeb67d9904d7f5fd0cbca8d")), // Bring new line into the cache (put in way: 3, idx: 0)
-    CacheRequest(coreId = 3, reqId = 4, tag = 4, index = 0, blockOffset = 1, rw = false, expectedData = Some("734ccecdbe11b44dae6eaf60cb218892")), // Bring new line into the cache (put in way: 4, idx: 0)
-    CacheRequest(coreId = 1, reqId = 5, tag = 5, index = 0, blockOffset = 1, rw = false, expectedData = Some("cc5fd511c237a27e2451003dbc4d8025")), // Bring new line into the cache (put in way: 5, idx: 0),
-    CacheRequest(coreId = 1, reqId = 6, tag = 6, index = 0, blockOffset = 0, rw = false, expectedData = Some("2888e103997223a9003bc584e091cc8a")), // Bring new line into the cache (put in way: 6, idx: 0),
-    CacheRequest(coreId = 3, reqId = 7, tag = 7, index = 0, blockOffset = 1, rw = false, expectedData = Some("040fd41d7771f0535a07ec451db97efb")), // Bring new line into the cache (put in way: 7, idx: 0),
-    CacheRequest(coreId = 2, reqId = 8, tag = 8, index = 0, blockOffset = 0, rw = false, expectedData = Some("39df6c998739192bae26debd84620423"), rejected = true), // Try to evict line 0, get rejected
-    CacheRequest(coreId = 0, reqId = 9, tag = 9, index = 0, blockOffset = 0, rw = false, expectedData = Some("3e653a9dbf432147e4d0eef71a9d9897"), rejected = true), // Try to evict line 1, get rejected too
-    Stall(50), // Wait until the line 0 has timed out
-    ExpectFinishedRejectedResponse(coreId = 2, reqId = 8, expectedData = "39df6c998739192bae26debd84620423"),
-    Stall(50), // Wait until the line 1 has timed out
-    ExpectFinishedRejectedResponse(coreId = 2, reqId = 8, expectedData = "3e653a9dbf432147e4d0eef71a9d9897"),
+    PerformSchedulerOperation(addr = 1, rw = true, wData = Some(4)), // Since we have 128 sets, the timer is equivalent to 128 * 4 = 512
+    PerformSchedulerOperation(addr = 3, rw = true, wData = Some(3)), // Since we have 128 sets, the timer is equivalent to 128 * 3 = 384
+    CacheRequest(coreId = 3, reqId = 0, tag = 0, index = 11, blockOffset = 1, rw = false, expectedData = Some("badf00d1deadd00ddeadf00de00dbabe")), // Bring new line into the cache (put in way: 0, idx: 11)
+    CacheRequest(coreId = 3, reqId = 1, tag = 1, index = 11, blockOffset = 0, rw = false, expectedData = Some("6d5234bd430b687268b113258e2b13c3")), // Bring new line into the cache (put in way: 1, idx: 11)
+    CacheRequest(coreId = 3, reqId = 2, tag = 2, index = 11, blockOffset = 0, rw = false, expectedData = Some("0d88a68af1d314bc0b7f893b5f07e697")), // Bring new line into the cache (put in way: 2, idx: 11)
+    CacheRequest(coreId = 3, reqId = 3, tag = 3, index = 11, blockOffset = 2, rw = false, expectedData = Some("09f60e3ef165ed5677c24d7cea372dff")), // Bring new line into the cache (put in way: 3, idx: 11)
+    CacheRequest(coreId = 3, reqId = 4, tag = 4, index = 11, blockOffset = 1, rw = false, expectedData = Some("8e29b9e854ad844693d8a0f8b5454aa9")), // Bring new line into the cache (put in way: 4, idx: 11)
+    CacheRequest(coreId = 1, reqId = 5, tag = 5, index = 11, blockOffset = 1, rw = false, expectedData = Some("367a3411a5af83df7dea778f062cd679")), // Bring new line into the cache (put in way: 5, idx: 11),
+    CacheRequest(coreId = 1, reqId = 6, tag = 6, index = 11, blockOffset = 0, rw = false, expectedData = Some("2cfadaa323bbabfda24bb33e1ec206ce")), // Bring new line into the cache (put in way: 6, idx: 11),
+    CacheRequest(coreId = 1, reqId = 7, tag = 7, index = 11, blockOffset = 1, rw = false, expectedData = Some("d2a307d0c1ac087497ab025b37b649c9")), // Bring new line into the cache (put in way: 7, idx: 11),
+    CacheRequest(coreId = 1, reqId = 8, tag = 0, index = 23, blockOffset = 1, rw = false, expectedData = Some("1aaa2c0b233399cb31feac1bc7441ed4")), // Bring new line into the cache (put in way: 0, idx: 23)
+    CacheRequest(coreId = 3, reqId = 9, tag = 1, index = 23, blockOffset = 0, rw = false, expectedData = Some("e11ead1d9e8d34255108cc71184e2b66")), // Bring new line into the cache (put in way: 1, idx: 23)
+    CacheRequest(coreId = 3, reqId = 10, tag = 2, index = 23, blockOffset = 0, rw = false, expectedData = Some("5091641e94d2f6dc4746b45ddd688925")), // Bring new line into the cache (put in way: 2, idx: 23)
+    CacheRequest(coreId = 3, reqId = 11, tag = 3, index = 23, blockOffset = 2, rw = false, expectedData = Some("d2cc937fdd555e6504b3a2eb53fa8d0f")), // Bring new line into the cache (put in way: 3, idx: 23)
+    CacheRequest(coreId = 3, reqId = 12, tag = 4, index = 23, blockOffset = 1, rw = false, expectedData = Some("97b9fcd6d0667e10a07a70ac396b6a6e")), // Bring new line into the cache (put in way: 4, idx: 23)
+    CacheRequest(coreId = 1, reqId = 13, tag = 5, index = 23, blockOffset = 1, rw = false, expectedData = Some("f82be0daee1c46e6146420ea53182c39")), // Bring new line into the cache (put in way: 5, idx: 23),
+    CacheRequest(coreId = 1, reqId = 14, tag = 6, index = 23, blockOffset = 0, rw = false, expectedData = Some("bc53babc02c04d57c67acbb6005691ca")), // Bring new line into the cache (put in way: 6, idx: 23),
+    CacheRequest(coreId = 3, reqId = 15, tag = 7, index = 23, blockOffset = 1, rw = false, expectedData = Some("77ba56ed258f3b30282f13b6c3d366bf")), // Bring new line into the cache (put in way: 7, idx: 23),
+    CacheRequest(coreId = 2, reqId = 16, tag = 8, index = 23, blockOffset = 0, rw = false, expectedData = Some("be3f4422beec45cbedee67559c392dcd"), rejected = true), // Try to evict line 0 idx 23, get rejected
+    CacheRequest(coreId = 0, reqId = 17, tag = 9, index = 23, blockOffset = 0, rw = false, expectedData = Some("54e147d27169a16cc978d79543c85c9c"), rejected = true), // Try to evict line 1 idx 23, get rejected too
+    CacheRequest(coreId = 3, reqId = 18, tag = 1, index = 23, blockOffset = 2, rw = false, expectedData = Some("82a59600a82bea69be5a3ea3cb0497e2")), // HIT, way: 1, refresh timer for line: 2 idx 23
+    CacheRequest(coreId = 1, reqId = 19, tag = 2, index = 23, blockOffset = 3, rw = false, expectedData = Some("242af81cdc1d21f9c5e3b2873e607af7")), // HIT, way: 2, refresh timer for line: 3 idx 23
+    CacheRequest(coreId = 0, reqId = 20, tag = 8, index = 11, blockOffset = 0, rw = false, expectedData = Some("62835ec7c17a39e585c08d4880f921f9"), rejected = true), // Try to evict line 0 idx 11, get rejected
+    ExpectFinishedRejectedResponse(coreId = 0, reqId = 20, expectedData = "62835ec7c17a39e585c08d4880f921f9"),
+    ExpectFinishedRejectedResponse(coreId = 2, reqId = 16, expectedData = "be3f4422beec45cbedee67559c392dcd"),
+    ExpectFinishedRejectedResponse(coreId = 0, reqId = 17, expectedData = "54e147d27169a16cc978d79543c85c9c"),
+    Stall(300), // Wait until the lines had timed out
+    CacheRequest(coreId = 0, reqId = 21, tag = 10, index = 23, blockOffset = 2, rw = false, expectedData = Some("f9bfe1b8c3c9caad333403b8dbbd4e8c")), // Bring new line into the cache (put in way: 4, idx: 23)
+    CacheRequest(coreId = 2, reqId = 22, tag = 11, index = 23, blockOffset = 2, rw = false, expectedData = Some("29426de6f805eb9864e32306480eeea4")), // Bring new line into the cache (put in way: 0, idx: 23)
+    CacheRequest(coreId = 2, reqId = 23, tag = 12, index = 23, blockOffset = 2, rw = false, expectedData = Some("db5f5acbd0845670a0fab4f7534923e3")), // Bring new line into the cache (put in way: 0, idx: 23)
+    CacheRequest(coreId = 0, reqId = 24, tag = 9, index = 11, blockOffset = 2, rw = false, expectedData = Some("a0466a0d2b2095e75273964fb1722f88")), // Bring new line into the cache (put in way: 1, idx: 11)
+    CacheRequest(coreId = 0, reqId = 25, tag = 10, index = 11, blockOffset = 2, rw = false, expectedData = Some("820c616bd75be7e222996b21aa8c0d5c")), // Bring new line into the cache (put in way: 2, idx: 11)
+    CacheRequest(coreId = 1, reqId = 26, tag = 0, index = 23, blockOffset = 2, rw = false, expectedData = Some("257d72a73dd426f89ac8f442f232adf6")), // Bring new line into the cache (put in way: 5, idx: 23)
+    CacheRequest(coreId = 2, reqId = 27, tag = 2, index = 23, blockOffset = 2, rw = false, expectedData = Some("126ae598ef7181f2667ae7074b6c8ab2")), // HIT
   )
 
   // Test action array for contention, precedent, mim and wb events
@@ -349,7 +379,6 @@ object Tests {
     CacheRequest(coreId = 3, reqId = 13, tag = 39, index = 74, blockOffset = 3, rw = false, expectedData = Some("b638aaa4ef343eee6a4757cb65a2f78c")), // MISS, way: 3, contention event, critical wb, reach contention limit for core 1
     CacheRequest(coreId = 1, reqId = 14, tag = 57, index = 74, blockOffset = 2, rw = false, expectedData = Some("26f4756810b9c7b7fc87a234ac62fee6")), // MISS, way: 2,
     CacheRequest(coreId = 2, reqId = 15, tag = 41, index = 74, blockOffset = 1, rw = false, expectedData = Some("8f2a3009871c1b8fb22ed80f63229d0f")), // MISS, way: 3,
-    // TODO: Test the critical wb queue
     CacheRequest(coreId = 0, reqId = 16, tag = 8, index = 74, blockOffset = 0, rw = false, expectedData = Some("e83fb23952953ff164bdb8d5685d2bd3"), rejected = true), // MISS, way: rejected
     Stall(300),
     PerformSchedulerOperation(2, false),
@@ -594,6 +623,7 @@ object SharedPipelinedCacheTest {
 
           action match {
             case CacheRequest(coreId, reqId, rw, tag, index, blockOffset, byteOffset, _, byteEn, wData, _) =>
+              dut.io.requests.cores(coreId).req.reqId.valid.poke(true.B)
               if (dut.io.requests.cores(coreId).req.reqId.ready.peekBoolean()) {
                 val addr = tag << (indexWidth + blockOffsetWidth + byteOffsetWidth) |
                   index << (blockOffsetWidth + byteOffsetWidth) |
@@ -644,6 +674,9 @@ object SharedPipelinedCacheTest {
       dut.clock.step(1)
       currentCC += 1
     }
+
+    println(s"Test ran for: $currentCC CCs")
+    println(s"Expected number of responses: $expectedRespCnt")
 
     if (printResults) {
       println("")

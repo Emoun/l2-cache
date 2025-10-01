@@ -12,10 +12,11 @@ class OcpCacheWrapperPort(
                            coreBurstLen: Int,
                            memDataWidth: Int,
                            memBurstLen: Int,
+                           schedulerDataWidth: Int
                          ) extends Bundle {
   val cores = Vec(nCores, new OcpBurstSlavePort(addrWidth, coreDataWidth, coreBurstLen))
   val mem = new OcpBurstMasterPort(addrWidth, memDataWidth, memBurstLen)
-  val scheduler = new OcpCoreSlavePort(log2Up(nCores), CONTENTION_LIMIT_WIDTH)
+  val scheduler = new OcpCoreSlavePort(log2Up(nCores), schedulerDataWidth)
 }
 
 class OcpCacheWrapper(
@@ -27,13 +28,15 @@ class OcpCacheWrapper(
                                 memBurstLen: Int,
                                 l2Cache: () => SharedPipelinedCache
                               ) extends Module {
-  val io = IO(new OcpCacheWrapperPort(nCores, addrWidth, coreDataWidth, coreBurstLen, memDataWidth, memBurstLen))
 
   val cache = Module(l2Cache())
+  val l2SchedulerDataWidth = cache.schedulerDataWidth
+
+  val io = IO(new OcpCacheWrapperPort(nCores, addrWidth, coreDataWidth, coreBurstLen, memDataWidth, memBurstLen, l2SchedulerDataWidth))
 
   val coresOcpAdapter = Array.fill(nCores)(Module(new OcpBurstSlaveToCacheRequestAdapter(addrWidth, coreDataWidth, coreBurstLen)))
   val memOcpAdapter = Module(new CacheMemToOcpBurstMasterAdapter(addrWidth, memDataWidth, memBurstLen))
-  val schedulerOcpAdapter = Module(new OcpCoreSlaveToSchedulerAdapter(nCores, cache.schedulerDataWidth))
+  val schedulerOcpAdapter = Module(new OcpCoreSlaveToSchedulerAdapter(nCores, l2SchedulerDataWidth))
 
   // Connection between the scheduler and the cache through the OCP interface
   schedulerOcpAdapter.io.core <> io.scheduler

@@ -8,7 +8,6 @@ import org.scalatest.flatspec.AnyFlatSpec
 class SharedPipelinedCacheWbTest extends AnyFlatSpec with ChiselScalatestTester {
   "SharedPipelinedCache" should "work with wb contention events" in {
     val cache = generateDut(CacheConfigs.config64ContWb)
-    val logger = (cmd: Seq[String]) => println(cmd.mkString(" "))
 
     test(cache._1.apply()).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation, PrintFullStackTraceAnnotation)) { dut =>
       defaultAssignments(dut, cache._2)
@@ -21,7 +20,7 @@ class SharedPipelinedCacheWbTest extends AnyFlatSpec with ChiselScalatestTester 
         cache._3,
         cache._4,
         cache._5,
-        900,
+        1500,
         printResults = PRINT_RESULTS
       )
 

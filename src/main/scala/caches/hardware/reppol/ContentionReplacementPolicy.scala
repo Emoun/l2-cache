@@ -125,7 +125,7 @@ class ContentionReplacementPolicy(
   // Base policy instantiation
   val basePolicyInst = Module(basePolicy())
 
-  override def printConfig(): Unit = println(s"Contention replacement policy configuration: Base policy: ${basePolicyInst.getClass.getSimpleName}, ways: $nWays, sets: $nSets, cores: $nCores, mim events: $enableMissInMiss, precedent events: $enablePrecedentEvents, wb events: $enableWbEvents")
+  override def printConfig(): Unit = println(s"Contention replacement policy configuration: Base policy: ${basePolicyInst.getClass.getSimpleName}, ways: $nWays, sets: $nSets, cores: $nCores, mim events: $enableMissInMiss, precedent events: $enablePrecedentEvents, wb events: $enableWbEvents" + "\n")
 
   // Default assignments to base policy
   basePolicyInst.io.control <> 0.U.asTypeOf(basePolicyInst.io.control)
@@ -184,10 +184,8 @@ class ContentionReplacementPolicy(
   io.control.replaceWay := contAlgorithm.io.replacementWay.bits
   io.control.isValid := contAlgorithm.io.replacementWay.valid
   io.control.isReplacementWayCrit := contAlgorithm.io.isReplacementWayCrit
+  io.control.isReplacementWayAtLimit := contAlgorithm.io.isReplacementWayAtLimit
   io.control.replacementSet := VecInit(Seq.fill(nWays)(0.U(log2Up(nWays).W)))
-
-  io.control.popRejQueue.valid := coreTable.io.freeRejectionQueue
-  io.control.popRejQueue.bits := nCores.U // Free the entire rejection queue
   io.control.updateCoreReachedLimit := coreTable.io.rCritCores(io.control.updateCoreId) && (coreTable.io.rLimits(io.control.updateCoreId) === 0.U)
   io.control.updateCoreIsCrit := coreTable.io.rCritCores(io.control.updateCoreId)
 }

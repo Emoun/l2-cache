@@ -19,7 +19,7 @@ class SharedPipelinedCacheTimeoutTest extends AnyFlatSpec with ChiselScalatestTe
         cache._3,
         cache._4,
         cache._5,
-        300,
+        1100,
         printResults = PRINT_RESULTS
       )
 

@@ -14,8 +14,7 @@ class DirtyCtrlIO(nWays: Int, indexWidth: Int) extends Bundle {
 
 class ReadIO(nCores: Int, nWays: Int, reqIdWidth: Int, tagWidth: Int, indexWidth: Int, blockOffWidth: Int, blockWidth: Int, subBlockWidth: Int) extends Bundle() {
   val coreId = Input(UInt(log2Up(nCores).W))
-  val isCoreCrit = Input(Bool())
-  val coreReachedLimit = Input(Bool())
+  val repWayAtLimit = Input(Bool())
   val isRepWayCrit = Input(Bool())
   val reqValid = Input(Bool())
   val reqId = Input(UInt(reqIdWidth.W))
@@ -56,9 +55,8 @@ class Read(memSizeInBytes: Int, nCores: Int, nWays: Int, reqIdWidth: Int, tagWid
   dataMem.io.stall := io.stall
 
   val coreIdReg = PipelineReg(io.read.coreId, 0.U, !io.stall)
-  val isCoreCritReg = PipelineReg(io.read.isCoreCrit, false.B, !io.stall)
-  val coreReachedLimitReg = PipelineReg(io.read.coreReachedLimit, false.B, !io.stall)
-  val isRepWayCrit = PipelineReg(io.read.isRepWayCrit, false.B, !io.stall)
+  val repWayAtLimitReg = PipelineReg(io.read.repWayAtLimit, false.B, !io.stall)
+  val isRepWayCritReg = PipelineReg(io.read.isRepWayCrit, false.B, !io.stall)
   val reqValidReg = PipelineReg(io.read.reqValid, false.B, !io.stall)
   val reqIdReg = PipelineReg(io.read.reqId, 0.U, !io.stall)
   val reqRwReg = PipelineReg(io.read.reqRw, false.B, !io.stall)
@@ -76,12 +74,12 @@ class Read(memSizeInBytes: Int, nCores: Int, nWays: Int, reqIdWidth: Int, tagWid
 
   val wb = reqValidReg && !isHitReg && isRepDirtyReg && repValidReg
 
-  io.wbQueuePushCrit := isCoreCritReg && coreReachedLimitReg // TODO: This is wrong, we want to push here an assignee if it is critical and reached it's limit
+  io.wbQueuePushCrit := isRepWayCritReg && repWayAtLimitReg
   io.wbQueue.push := wb && !io.stall
   io.wbQueue.pushEntry.wbData := dataMem.io.rData.asUInt
   io.wbQueue.pushEntry.tag := dirtyTagReg
   io.wbQueue.pushEntry.index := indexReg
-  io.wbQueue.pushEntry.isCrit := isRepWayCrit
+  io.wbQueue.pushEntry.isCrit := isRepWayCritReg
 
   io.dirtyCtrl.unset := wb
   io.dirtyCtrl.set := reqValidReg && reqRwReg && (isHitReg || repValidReg)

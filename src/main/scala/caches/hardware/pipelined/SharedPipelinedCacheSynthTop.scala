@@ -22,8 +22,6 @@ class SharedPipelinedCacheSynthTop(
   private val coreDataWidth = 32
   private val coreBurstLen = bytesPerSubBlock / (coreDataWidth / 8)
 
-  val io = IO(new OcpCacheWrapperPort(nCores, addrWidth, coreDataWidth, coreBurstLen, memBeatSize * 8, memBurstLen))
-
   val l2CacheGen = () => new SharedPipelinedCache(
     sizeInBytes = sizeInBytes,
     nWays = nWays,
@@ -48,6 +46,8 @@ class SharedPipelinedCacheSynthTop(
     memBurstLen = memBurstLen,
     l2Cache = l2CacheGen
   ))
+
+  val io = IO(new OcpCacheWrapperPort(nCores, addrWidth, coreDataWidth, coreBurstLen, memBeatSize * 8, memBurstLen, l2Cache.l2SchedulerDataWidth))
 
   l2Cache.io.mem <> io.mem
   l2Cache.io.scheduler <> io.scheduler

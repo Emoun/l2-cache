@@ -9,7 +9,7 @@ import caches.hardware.util.{MemBlock, PipelineReg}
  * @param nSets number of sets in the whole cache
  */
 class BitPlruReplacementPolicy(nWays: Int, nSets: Int, nCores: Int) extends SharedCacheReplacementPolicyType(nWays, nSets, nCores) {
-  override def printConfig(): Unit = println(s"Bit PLRU replacement policy configuration: ways: $nWays, sets: $nSets, cores: $nCores")
+  override def printConfig(): Unit = println(s"Bit PLRU replacement policy configuration: ways: $nWays, sets: $nSets, cores: $nCores" + "\n")
 
   // ---------------- Base policy stage ----------------
   def plruBits(rIdx: UInt, wrEn: Bool, wIdx: UInt, wData: Vec[Bool], stall: Bool): Vec[Bool] = {
