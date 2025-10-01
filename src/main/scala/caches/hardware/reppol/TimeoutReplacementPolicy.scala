@@ -1,37 +1,64 @@
 package caches.hardware.reppol
 
 import caches.hardware.util.Constants.TIMEOUT_LIMIT_WIDTH
-import caches.hardware.util.{MemBlock, PipelineReg}
+import caches.hardware.util.{PipelineReg, TwoReadMemBlock}
 import chisel3._
 import chisel3.util._
+
+class CoreTimeoutTable(nCores: Int) extends Module {
+  val io = IO(new Bundle {
+    val scheduler = new SchedulerControlIO(nCores, TIMEOUT_LIMIT_WIDTH)
+    val rCoreTimeouts = Output(Vec(nCores, UInt(TIMEOUT_LIMIT_WIDTH.W)))
+  })
+
+  val coreTimeouts = RegInit(VecInit(Seq.fill(nCores)(0.U(TIMEOUT_LIMIT_WIDTH.W))))
+  val schedulerRData = WireDefault(0.U(TIMEOUT_LIMIT_WIDTH.W))
+
+  // Connection to scheduler
+  when(io.scheduler.cmd === SchedulerCmd.WR) {
+    coreTimeouts(io.scheduler.addr) := io.scheduler.wData
+  }.elsewhen(io.scheduler.cmd === SchedulerCmd.RD) {
+    schedulerRData := coreTimeouts(io.scheduler.addr)
+    coreTimeouts(io.scheduler.addr) := 0.U
+  }
+
+  io.scheduler.rData := schedulerRData
+  io.rCoreTimeouts := coreTimeouts
+}
 
 class TimerMemory(nWays: Int, nSets: Int) extends Module {
   val io = IO(new Bundle{
     val stall = Input(Bool())
-    val rIdx = Input(UInt(log2Up(nSets).W))
+    val rIdx1 = Input(UInt(log2Up(nSets).W))
+    val rIdx2 = Input(UInt(log2Up(nSets).W))
     val wrEn = Input(Bool())
     val wIdx = Input(UInt(log2Up(nSets).W))
     val wData = Input(Vec(nWays, UInt(TIMEOUT_LIMIT_WIDTH.W)))
-    val wMask = Input(Vec(nWays, Bool()))
-    val rTimers = Output(Vec(nWays, UInt(TIMEOUT_LIMIT_WIDTH.W)))
+//    val wMask = Input(Vec(nWays, Bool()))
+    val rTimers1 = Output(Vec(nWays, UInt(TIMEOUT_LIMIT_WIDTH.W)))
+    val rTimers2 = Output(Vec(nWays, UInt(TIMEOUT_LIMIT_WIDTH.W)))
   })
 
-  val timers = Array.fill(nWays)(Module(new MemBlock(nSets, TIMEOUT_LIMIT_WIDTH)))
+  val timers = Array.fill(nWays)(Module(new TwoReadMemBlock(nSets, TIMEOUT_LIMIT_WIDTH, stallReg1 = false)))
 
-  val rTimers = VecInit(Seq.fill(nWays)(0.U(TIMEOUT_LIMIT_WIDTH.W)))
+  val rTimers1 = VecInit(Seq.fill(nWays)(0.U(TIMEOUT_LIMIT_WIDTH.W)))
+  val rTimers2 = VecInit(Seq.fill(nWays)(0.U(TIMEOUT_LIMIT_WIDTH.W)))
   for (wayIdx <- 0 until nWays) {
-    val wrWayEn = io.wMask(wayIdx)
+//    val wrWayEn = io.wMask(wayIdx)
 
-    timers(wayIdx).io.wrEn := io.wrEn && wrWayEn
-    timers(wayIdx).io.readAddr := io.rIdx
+    timers(wayIdx).io.wrEn := io.wrEn //&& wrWayEn
+    timers(wayIdx).io.readAddr1 := io.rIdx1
+    timers(wayIdx).io.readAddr2 := io.rIdx2
     timers(wayIdx).io.writeAddr := io.wIdx
     timers(wayIdx).io.writeData := io.wData(wayIdx)
     timers(wayIdx).io.stall := io.stall
 
-    rTimers(wayIdx) := timers(wayIdx).io.readData
+    rTimers1(wayIdx) := timers(wayIdx).io.readData1
+    rTimers2(wayIdx) := timers(wayIdx).io.readData2
   }
 
-  io.rTimers := rTimers
+  io.rTimers1 := rTimers1
+  io.rTimers2 := rTimers2
 }
 
 /**
@@ -65,20 +92,38 @@ class TimeoutReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolicy: 
   val setIdxPipeReg = PipelineReg(setIdxDelayReg, 0.U, !io.control.stall) // Delay twice for computing replacement set
 
   //-------------------------------------
+  val decIdx = WireDefault(0.U(log2Up(nSets).W))
+  val timerMemWrEn = WireDefault(false.B)
+  val timerMemWrData = VecInit(Seq.fill(nWays)(0.U(TIMEOUT_LIMIT_WIDTH.W)))
+  val timerMemWrIdx = WireDefault(0.U(log2Up(nSets).W))
+
+  val timerMemory = Module(new TimerMemory(nWays, nSets))
+  timerMemory.io.stall := io.control.stall
+  timerMemory.io.rIdx1 := decIdx
+  timerMemory.io.rIdx2 := setIdxDelayReg
+  timerMemory.io.wrEn := timerMemWrEn
+  timerMemory.io.wIdx := timerMemWrIdx
+  timerMemory.io.wData := timerMemWrData
+
+  val coreTimeoutTable = Module(new CoreTimeoutTable(nCores))
+  coreTimeoutTable.io.scheduler <> io.scheduler
+
   val timeoutAlgo = Module(new TimeoutReplacementAlgorithm(nWays = nWays, nSets = nSets, nCores = nCores))
   timeoutAlgo.io.setIdx := setIdxPipeReg
-  timeoutAlgo.io.evict := io.control.evict
   timeoutAlgo.io.update := io.control.update
   timeoutAlgo.io.updateCoreId := io.control.updateCoreId
   timeoutAlgo.io.baseCandidates := basePolicyInst.io.control.replacementSet
-  timeoutAlgo.io.scheduler <> io.scheduler
+  timeoutAlgo.io.coreTimeouts := coreTimeoutTable.io.rCoreTimeouts
+  timeoutAlgo.io.decIdxTimers := timerMemory.io.rTimers1
+  timeoutAlgo.io.updateIdxTimers := timerMemory.io.rTimers2
+  decIdx := timeoutAlgo.io.decIdx
+  timerMemWrEn := true.B // TODO: ???
+  timerMemWrData := timeoutAlgo.io.wTimers
+  timerMemWrIdx := timeoutAlgo.io.wIdx
 
   // Default output assignments
   io.control <> 0.U.asTypeOf(io.control)
 
   io.control.replaceWay := timeoutAlgo.io.replaceWay
   io.control.isValid := timeoutAlgo.io.isRepValid
-  io.control.isReplacementWayCrit := false.B // TODO: Not sure if relevant
-  io.control.isReplacementWayAtLimit := false.B // TODO: Not sure if relevant
-  io.control.updateCoreReachedLimit := false.B // TODO: Not sure if relevant
 }

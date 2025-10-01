@@ -6,58 +6,29 @@ import chisel3.util._
 
 class TimeoutReplacementAlgorithm(nWays: Int, nSets: Int, nCores: Int) extends Module {
   val io = IO(new Bundle {
-//    val timers = Input(Vec(nSets, UInt((nWays * TIMEOUT_LIMIT_WIDTH).W)))
-//    val coreTimeouts = Input(Vec(nSets, UInt(TIMEOUT_LIMIT_WIDTH.W)))
     val setIdx = Input(UInt(log2Up(nSets).W))
-    val evict = Input(Bool())
     val update = Input(Valid(UInt(log2Up(nWays).W)))
     val updateCoreId = Input(UInt(log2Up(nCores).W))
     val baseCandidates = Input(Vec(nWays, UInt(log2Up(nWays).W)))
-    val scheduler = new SchedulerControlIO(nCores, TIMEOUT_LIMIT_WIDTH)
+    val coreTimeouts = Input(Vec(nCores, UInt(TIMEOUT_LIMIT_WIDTH.W)))
+    val decIdxTimers = Input(Vec(nWays, UInt(TIMEOUT_LIMIT_WIDTH.W)))
+    val updateIdxTimers = Input(Vec(nWays, UInt(TIMEOUT_LIMIT_WIDTH.W)))
     val isRepValid = Output(Bool())
     val replaceWay = Output(UInt(log2Up(nWays).W))
-    val freeRejQueue = Output(Bool())
+    val wTimers = Output(Vec(nWays, UInt(TIMEOUT_LIMIT_WIDTH.W)))
+    val wIdx = Output(UInt(log2Up(nSets).W))
+    val decIdx = Output(UInt(log2Up(nSets).W))
   })
+
+  def isCritical(coreIdx: UInt, coreTmts: Vec[UInt]): Bool = coreTmts(coreIdx) =/= 0.U
 
   val isRepValid = WireDefault(false.B)
   val replaceWay = WireDefault(0.U(log2Up(nWays).W))
   val freeRejQueue = WireDefault(false.B)
 
-  val timers = RegInit(VecInit(Seq.fill(nSets)(0.U((nWays * TIMEOUT_LIMIT_WIDTH).W))))
-  val coreTimeouts = RegInit(VecInit(Seq.fill(nCores)(0.U(TIMEOUT_LIMIT_WIDTH.W))))
+  val decIdx = RegInit(0.U(log2Up(nSets).W))  // A counter to manage which next set needs its timers decremented
 
-  def isCritical(coreIdx: UInt, coreTmts: Vec[UInt]): Bool = coreTmts(coreIdx) =/= 0.U
-
-  // A counter manages which next set needs its timers decremented
-  val decIdx = RegInit(0.U(log2Up(nSets).W))
-  decIdx := decIdx + 1.U // TODO: Do not increment if we are updating
-
-  // Connect scheduler
-  when(io.scheduler.cmd === SchedulerCmd.WR) {
-    coreTimeouts(io.scheduler.addr) := io.scheduler.wData
-  }.elsewhen(io.scheduler.cmd === SchedulerCmd.RD) {
-    coreTimeouts(io.scheduler.addr) := 0.U
-    freeRejQueue := true.B
-  }
-
-  // We decrement the current set's timers
-  val wayTimes = VecInit(Seq.tabulate(nWays) { i =>
-    timers(decIdx)((TIMEOUT_LIMIT_WIDTH * (i + 1)) - 1, TIMEOUT_LIMIT_WIDTH * i)
-  })
-
-  // Calculate replacement order
-  val wayTimesDecremented = VecInit(Seq.fill(nWays)(0.U(TIMEOUT_LIMIT_WIDTH.W)))
-  for (i <- 0 until nWays) {
-    when(wayTimes(i) =/= 0.U) {
-      wayTimesDecremented(i) := wayTimes(i) - 1.U
-    }
-  }
-
-  // TODO: Add a multiplexer before a memory read address, that selects if we are reading current set timers or decrement timers
-  val currentSetWayTimes = VecInit(Seq.tabulate(nWays) { i =>
-    timers(io.setIdx)((TIMEOUT_LIMIT_WIDTH * (i + 1)) - 1, TIMEOUT_LIMIT_WIDTH * i)
-  })
-
+  val currentSetWayTimes = io.updateIdxTimers
   val timedOutWays = VecInit(Seq.fill(nWays)(true.B))
   for (i <- 0 until nWays) {
     val wayIdx = io.baseCandidates(i)
@@ -67,13 +38,23 @@ class TimeoutReplacementAlgorithm(nWays: Int, nSets: Int, nCores: Int) extends M
   }
 
   val firstTimedOutBaseCandIdx = PriorityEncoder(timedOutWays)
-
   val firstTimedOutWay = io.baseCandidates(firstTimedOutBaseCandIdx)
   val anyTimedOutWays = timedOutWays.reduce((x, y) => x || y)
   val refreshWayEnable = io.update.valid
 
-  isRepValid := anyTimedOutWays || isCritical(io.updateCoreId, coreTimeouts) // Can be switched out with update core id once more pipeline registers are added
-  when(!anyTimedOutWays && isCritical(io.updateCoreId, coreTimeouts)) {
+  // We decrement the current set's timers
+  val wayTimes = io.decIdxTimers
+
+  // Calculate replacement order
+  val wayTimesDecremented = VecInit(Seq.fill(nWays)(0.U(TIMEOUT_LIMIT_WIDTH.W)))
+  for (i <- 0 until nWays) {
+    when(wayTimes(i) =/= 0.U) {
+      wayTimesDecremented(i) := wayTimes(i) - 1.U
+    }
+  }
+
+  isRepValid := anyTimedOutWays || isCritical(io.updateCoreId, io.coreTimeouts) // Can be switched out with update core id once more pipeline registers are added
+  when(!anyTimedOutWays && isCritical(io.updateCoreId, io.coreTimeouts)) {
     replaceWay := io.baseCandidates(0)
   }.otherwise {
     replaceWay := firstTimedOutWay
@@ -81,14 +62,18 @@ class TimeoutReplacementAlgorithm(nWays: Int, nSets: Int, nCores: Int) extends M
 
   //------------- Timers update -----------------
   val refreshWayIdx = io.update.bits
-  val refreshSetIdx = io.setIdx
   val refreshCoreId = io.updateCoreId
-  val refreshEvict = io.evict
-  val refreshTime = coreTimeouts(refreshCoreId)
+  val refreshTime = io.coreTimeouts(refreshCoreId)
+  val wTimers = VecInit(Seq.fill(nWays)(0.U(TIMEOUT_LIMIT_WIDTH.W)))
+  val wIdx = WireDefault(0.U(log2Up(nSets).W))
+  val rDecIdx = WireDefault(0.U(log2Up(nSets).W))
 
   when(!refreshWayEnable) {
-    timers(decIdx) := Cat(wayTimesDecremented.reverse)
-  }.elsewhen(refreshWayEnable && (decIdx === refreshSetIdx)) { // refresh a set while its being decremented
+    wTimers := wayTimesDecremented
+    decIdx := decIdx + 1.U
+    wIdx := decIdx
+    rDecIdx := decIdx + 1.U
+  }.elsewhen(refreshWayEnable && (decIdx === io.setIdx)) { // refresh a set while its being decremented
     val wayTimesFinal = VecInit(Seq.fill(nWays)(0.U(TIMEOUT_LIMIT_WIDTH.W)))
     for (i <- 0 until nWays) {
       when(i.U === refreshWayIdx && (refreshTime > wayTimesDecremented(i))) {
@@ -97,10 +82,12 @@ class TimeoutReplacementAlgorithm(nWays: Int, nSets: Int, nCores: Int) extends M
         wayTimesFinal(i) := wayTimesDecremented(i)
       }
     }
-    timers(decIdx) := Cat(wayTimesFinal.reverse)
-  }.otherwise { // Accessing a set that is not being refreshed
-    timers(decIdx) := Cat(wayTimesDecremented.reverse)
 
+    wTimers := wayTimesFinal
+    decIdx := decIdx + 1.U
+    wIdx := decIdx
+    rDecIdx := decIdx + 1.U
+  }.otherwise { // When a set is being refreshed, and It's different from decrement index, we simply do not decrement the index
     val updatedWays = VecInit(Seq.fill(nWays)(0.U(TIMEOUT_LIMIT_WIDTH.W)))
     for (i <- 0 until nWays) {
       when(i.U === refreshWayIdx && (refreshTime > currentSetWayTimes(i))) {
@@ -109,12 +96,15 @@ class TimeoutReplacementAlgorithm(nWays: Int, nSets: Int, nCores: Int) extends M
         updatedWays(i) := currentSetWayTimes(i)
       }
     }
-    timers(refreshSetIdx) := Cat(updatedWays.reverse)
+
+    wTimers := updatedWays
+    wIdx := io.setIdx
+    rDecIdx := decIdx
   }
 
   io.isRepValid := isRepValid
   io.replaceWay := replaceWay
-  io.freeRejQueue := freeRejQueue
-
-  io.scheduler.rData := DontCare
+  io.wTimers := wTimers
+  io.wIdx := wIdx
+  io.decIdx := rDecIdx
 }
