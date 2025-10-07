@@ -1,9 +1,9 @@
 package caches.hardware.pipelined
 
-import caches.hardware.reppol.{SchedulerCmd, SchedulerControlIO}
+import caches.hardware.ocp._
+import caches.hardware.reppol._
 import chisel3._
 import chisel3.util._
-import ocp.OcpCoreSlavePort
 
 class OcpCoreSlaveToSchedulerAdapter(nCores: Int, dataWidth: Int) extends Module() {
   val io = IO(new Bundle {
@@ -15,22 +15,22 @@ class OcpCoreSlaveToSchedulerAdapter(nCores: Int, dataWidth: Int) extends Module
   val addr = RegNext(io.core.M.Addr, 0.U)
   val wData = RegNext(io.core.M.Data, 0.U)
 
-  val sResp = WireDefault(ocp.OcpResp.NULL)
+  val sResp = WireDefault(OcpResp.NULL)
   val sData = WireDefault(0.U(dataWidth.W))
 
-  when(cmd === ocp.OcpCmd.WR || cmd === ocp.OcpCmd.RD) {
-    sResp := ocp.OcpResp.DVA
+  when(cmd === OcpCmd.WR || cmd === OcpCmd.RD) {
+    sResp := OcpResp.DVA
   }
 
   val schCmd = WireDefault(SchedulerCmd.NULL)
   switch(cmd) {
-    is(ocp.OcpCmd.IDLE) {
+    is(OcpCmd.IDLE) {
       schCmd := SchedulerCmd.NULL
     }
-    is(ocp.OcpCmd.WR) {
+    is(OcpCmd.WR) {
       schCmd := SchedulerCmd.WR
     }
-    is(ocp.OcpCmd.RD) {
+    is(OcpCmd.RD) {
       schCmd := SchedulerCmd.RD
     }
   }

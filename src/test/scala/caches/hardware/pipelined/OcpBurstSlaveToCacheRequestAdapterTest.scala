@@ -3,6 +3,7 @@ package caches.hardware.pipelined
 import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
+import caches.hardware.ocp.{OcpCmd, OcpResp}
 
 class OcpBurstSlaveToCacheRequestAdapterTest extends AnyFlatSpec with ChiselScalatestTester {
   "OcpBurstSlaveAdapter" should "work" in {
@@ -18,7 +19,7 @@ class OcpBurstSlaveToCacheRequestAdapterTest extends AnyFlatSpec with ChiselScal
       dut.io.corePort.resp.reqId.bits.poke(0.U)
       dut.io.corePort.resp.rData.poke(0.U)
       // ---- Memory Interface Inputs
-      dut.io.ocpBurst.M.Cmd.poke(ocp.OcpCmd.IDLE)
+      dut.io.ocpBurst.M.Cmd.poke(OcpCmd.IDLE)
       dut.io.ocpBurst.M.Addr.poke(0.U)
       dut.io.ocpBurst.M.Data.poke(0.U)
       dut.io.ocpBurst.M.DataByteEn.poke(0.U)
@@ -29,21 +30,21 @@ class OcpBurstSlaveToCacheRequestAdapterTest extends AnyFlatSpec with ChiselScal
       dut.clock.step(1)
 
       // Issue a read request from the OCP interface
-      dut.io.ocpBurst.M.Cmd.poke(ocp.OcpCmd.RD)
+      dut.io.ocpBurst.M.Cmd.poke(OcpCmd.RD)
       dut.io.ocpBurst.M.Addr.poke("h0040".U)
 
       // Expect the OCP interface to accept the request
       dut.io.ocpBurst.S.CmdAccept.expect(true.B)
-      dut.io.ocpBurst.S.Resp.expect(ocp.OcpResp.NULL)
+      dut.io.ocpBurst.S.Resp.expect(OcpResp.NULL)
 
       dut.clock.step(1)
 
-      dut.io.ocpBurst.M.Cmd.poke(ocp.OcpCmd.IDLE)
+      dut.io.ocpBurst.M.Cmd.poke(OcpCmd.IDLE)
       dut.io.ocpBurst.M.Addr.poke(0.U)
 
       // Expect no response from OCP
       dut.io.ocpBurst.S.CmdAccept.expect(false.B)
-      dut.io.ocpBurst.S.Resp.expect(ocp.OcpResp.NULL)
+      dut.io.ocpBurst.S.Resp.expect(OcpResp.NULL)
 
       // Expect a valid read request at core port
       dut.io.corePort.req.reqId.valid.expect(true.B)
@@ -72,29 +73,29 @@ class OcpBurstSlaveToCacheRequestAdapterTest extends AnyFlatSpec with ChiselScal
 
       // Expect the OCP interface to return the first element of the read data
       dut.io.ocpBurst.S.Data.expect("hbbadbeef".U)
-      dut.io.ocpBurst.S.Resp.expect(ocp.OcpResp.DVA)
+      dut.io.ocpBurst.S.Resp.expect(OcpResp.DVA)
 
       dut.clock.step(1)
 
       // Expect the OCP interface to return the second element of the read data
       dut.io.ocpBurst.S.Data.expect("hbeefbbad".U)
-      dut.io.ocpBurst.S.Resp.expect(ocp.OcpResp.DVA)
+      dut.io.ocpBurst.S.Resp.expect(OcpResp.DVA)
 
       dut.clock.step(1)
 
       // Expect the OCP interface to return the third element of the read data
       dut.io.ocpBurst.S.Data.expect("he0ddf00d".U)
-      dut.io.ocpBurst.S.Resp.expect(ocp.OcpResp.DVA)
+      dut.io.ocpBurst.S.Resp.expect(OcpResp.DVA)
 
       dut.clock.step(1)
 
       // Expect the OCP interface to return the fourth and last element of the read data
       dut.io.ocpBurst.S.Data.expect("hbadc0ffe".U)
-      dut.io.ocpBurst.S.Resp.expect(ocp.OcpResp.DVA)
+      dut.io.ocpBurst.S.Resp.expect(OcpResp.DVA)
 
       dut.clock.step(1)
 
-      dut.io.ocpBurst.S.Resp.expect(ocp.OcpResp.NULL)
+      dut.io.ocpBurst.S.Resp.expect(OcpResp.NULL)
       dut.io.ocpBurst.S.Data.expect(0.U)
       dut.io.ocpBurst.S.CmdAccept.expect(0.U)
       dut.io.ocpBurst.S.DataAccept.expect(0.U)
@@ -103,7 +104,7 @@ class OcpBurstSlaveToCacheRequestAdapterTest extends AnyFlatSpec with ChiselScal
       dut.clock.step(1)
 
       // Issue a write request to OCP interface
-      dut.io.ocpBurst.M.Cmd.poke(ocp.OcpCmd.WR)
+      dut.io.ocpBurst.M.Cmd.poke(OcpCmd.WR)
       dut.io.ocpBurst.M.Addr.poke("h0030".U)
       dut.io.ocpBurst.M.Data.poke("hbeefdead".U)
       dut.io.ocpBurst.M.DataByteEn.poke("b1010".U)
@@ -116,7 +117,7 @@ class OcpBurstSlaveToCacheRequestAdapterTest extends AnyFlatSpec with ChiselScal
       dut.clock.step(1)
 
       // Send the second element of the write data
-      dut.io.ocpBurst.M.Cmd.poke(ocp.OcpCmd.IDLE)
+      dut.io.ocpBurst.M.Cmd.poke(OcpCmd.IDLE)
       dut.io.ocpBurst.M.Addr.poke(0.U)
       dut.io.ocpBurst.M.Data.poke("hdeadbeef".U)
       dut.io.ocpBurst.M.DataByteEn.poke("b0111".U)
@@ -176,7 +177,7 @@ class OcpBurstSlaveToCacheRequestAdapterTest extends AnyFlatSpec with ChiselScal
       dut.io.corePort.resp.reqId.valid.poke(true.B)
 
       // Expect the acknowledgement of the OCP WR transaction
-      dut.io.ocpBurst.S.Resp.expect(ocp.OcpResp.DVA)
+      dut.io.ocpBurst.S.Resp.expect(OcpResp.DVA)
       dut.io.ocpBurst.S.Data.expect(0.U)
       dut.io.ocpBurst.S.CmdAccept.expect(0.U)
       dut.io.ocpBurst.S.DataAccept.expect(0.U)

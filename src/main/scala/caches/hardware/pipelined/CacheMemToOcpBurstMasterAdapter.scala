@@ -1,6 +1,6 @@
 package caches.hardware.pipelined
 
-import ocp._
+import caches.hardware.ocp._
 import chisel3._
 import chisel3.util._
 
@@ -22,7 +22,7 @@ class CacheMemToOcpBurstMasterAdapter(addrWidth: Int, dataWidth: Int, burstLen: 
   val wBurstCountReg = RegInit(0.U(log2Up(burstLen).W))
   val wAddrDelayReg = RegInit(0.U(addrWidth.W))
 
-  val mCmd = WireDefault(ocp.OcpCmd.IDLE)
+  val mCmd = WireDefault(OcpCmd.IDLE)
   val mAddr = WireDefault(0.U(addrWidth.W))
   val mDataByteEn = WireDefault(0.U((dataWidth / 8).W))
   val rAddrReady = WireDefault(false.B)
@@ -33,14 +33,14 @@ class CacheMemToOcpBurstMasterAdapter(addrWidth: Int, dataWidth: Int, burstLen: 
     is(sIdle) {
 
       when(io.cache.rChannel.rAddr.valid) {
-        mCmd := ocp.OcpCmd.RD
+        mCmd := OcpCmd.RD
         mAddr := io.cache.rChannel.rAddr.bits
 
         when(io.ocpBurst.S.CmdAccept.asBool) {
           rAddrReady := true.B
           stateReg := sReadBurst
         }
-      } .elsewhen (io.cache.wChannel.wAddr.valid) {
+      }.elsewhen(io.cache.wChannel.wAddr.valid) {
         wAddrReady := true.B // Need to force the memory interface to enter a state where it provides valid data
         wAddrDelayReg := io.cache.wChannel.wAddr.bits
 
@@ -50,7 +50,7 @@ class CacheMemToOcpBurstMasterAdapter(addrWidth: Int, dataWidth: Int, burstLen: 
 
     is(sReadBurst) {
       val nextBurstCount = WireDefault(0.U(log2Up(burstLen).W))
-      nextBurstCount := Mux(io.ocpBurst.S.Resp === ocp.OcpResp.DVA, rBurstCountReg + 1.U, rBurstCountReg)
+      nextBurstCount := Mux(io.ocpBurst.S.Resp === OcpResp.DVA, rBurstCountReg + 1.U, rBurstCountReg)
 
       when(rBurstCountReg === (burstLen - 1).U) {
         rLast := true.B
@@ -62,7 +62,7 @@ class CacheMemToOcpBurstMasterAdapter(addrWidth: Int, dataWidth: Int, burstLen: 
     }
 
     is(sWriteDelay) {
-      mCmd := ocp.OcpCmd.WR
+      mCmd := OcpCmd.WR
       mAddr := wAddrDelayReg
       mDataByteEn := (math.pow(2, dataWidth / 8) - 1).toInt.U
 
@@ -86,7 +86,7 @@ class CacheMemToOcpBurstMasterAdapter(addrWidth: Int, dataWidth: Int, burstLen: 
     }
 
     is(sWriteAccept) {
-      when(io.ocpBurst.S.Resp === ocp.OcpResp.DVA) {
+      when(io.ocpBurst.S.Resp === OcpResp.DVA) {
         stateReg := sIdle
       }
     }
@@ -99,7 +99,7 @@ class CacheMemToOcpBurstMasterAdapter(addrWidth: Int, dataWidth: Int, burstLen: 
   io.ocpBurst.M.DataValid := io.cache.wChannel.wData.valid
 
   io.cache.rChannel.rAddr.ready := rAddrReady
-  io.cache.rChannel.rData.valid := io.ocpBurst.S.Resp === ocp.OcpResp.DVA
+  io.cache.rChannel.rData.valid := io.ocpBurst.S.Resp === OcpResp.DVA
   io.cache.rChannel.rData.bits := io.ocpBurst.S.Data
   io.cache.rChannel.rLast := rLast
 

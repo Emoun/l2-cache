@@ -1,9 +1,8 @@
 package caches.hardware.pipelined
 
-import ocp._
+import caches.hardware.ocp._
 import chisel3._
 import chisel3.util._
-import caches.hardware.util.Constants.CONTENTION_LIMIT_WIDTH
 
 class OcpCacheWrapperPort(
                            nCores: Int,
@@ -20,14 +19,14 @@ class OcpCacheWrapperPort(
 }
 
 class OcpCacheWrapper(
-                                nCores: Int,
-                                addrWidth: Int,
-                                coreDataWidth: Int,
-                                coreBurstLen: Int,
-                                memDataWidth: Int,
-                                memBurstLen: Int,
-                                l2Cache: () => SharedPipelinedCache
-                              ) extends Module {
+                       nCores: Int,
+                       addrWidth: Int,
+                       coreDataWidth: Int,
+                       coreBurstLen: Int,
+                       memDataWidth: Int,
+                       memBurstLen: Int,
+                       l2Cache: () => SharedPipelinedCache
+                     ) extends Module {
 
   val cache = Module(l2Cache())
   val l2SchedulerDataWidth = cache.schedulerDataWidth

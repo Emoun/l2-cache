@@ -1,11 +1,11 @@
 package caches.hardware.pipelined
 
-import ocp._
+import caches.hardware.ocp._
 import chisel3._
 import chisel3.util._
 
 class OcpBurstSlaveToCacheRequestAdapter(addrWidth: Int, dataWidth: Int, burstLen: Int) extends Module {
-  val io = IO(new Bundle{
+  val io = IO(new Bundle {
     val ocpBurst = new OcpBurstSlavePort(addrWidth, dataWidth, burstLen)
     val corePort = Flipped(new CacheCorePortIO(addrWidth, dataWidth * burstLen, reqIdWidth = 1))
   })
@@ -22,7 +22,7 @@ class OcpBurstSlaveToCacheRequestAdapter(addrWidth: Int, dataWidth: Int, burstLe
   val dateByteEnRegs = RegInit(VecInit(Seq.fill(burstLen)(0.U((dataWidth / 8).W))))
 
   // Default signal assignments
-  val ocpSResp = WireDefault(ocp.OcpResp.NULL)
+  val ocpSResp = WireDefault(OcpResp.NULL)
   val ocpSData = WireDefault(0.U(dataWidth.W))
   val ocpSCmdAccept = WireDefault(0.U(1.W))
   val ocpSDataAccept = WireDefault(0.U(1.W))
@@ -35,11 +35,11 @@ class OcpBurstSlaveToCacheRequestAdapter(addrWidth: Int, dataWidth: Int, burstLe
   switch(stateReg) {
     is(sIdle) {
 
-      when(io.ocpBurst.M.Cmd === ocp.OcpCmd.RD) {
+      when(io.ocpBurst.M.Cmd === OcpCmd.RD) {
         ocpSCmdAccept := 1.U
         addrReg := io.ocpBurst.M.Addr
         stateReg := sWaitReadAccept
-      } .elsewhen (io.ocpBurst.M.Cmd === ocp.OcpCmd.WR) {
+      }.elsewhen(io.ocpBurst.M.Cmd === OcpCmd.WR) {
         // Need to latch rest of the data over multiple cycles
         ocpSDataAccept := 1.U
         ocpSCmdAccept := 1.U
@@ -79,7 +79,7 @@ class OcpBurstSlaveToCacheRequestAdapter(addrWidth: Int, dataWidth: Int, burstLe
         nextDataCount := 0.U
       }
 
-      ocpSResp := ocp.OcpResp.DVA
+      ocpSResp := OcpResp.DVA
       ocpSData := dataRegs(dataCountReg)
       dataCountReg := nextDataCount
     }
@@ -113,9 +113,9 @@ class OcpBurstSlaveToCacheRequestAdapter(addrWidth: Int, dataWidth: Int, burstLe
       }
     }
 
-    is (sWaitWriteResp) {
+    is(sWaitWriteResp) {
       when(io.corePort.resp.reqId.valid) {
-        ocpSResp := ocp.OcpResp.DVA
+        ocpSResp := OcpResp.DVA
         stateReg := sIdle
       }
     }

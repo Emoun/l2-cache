@@ -5,12 +5,13 @@ import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 import caches.hardware.util.Constants.CONTENTION_LIMIT_WIDTH
+import caches.hardware.ocp.{OcpCmd, OcpResp}
 
 class OcpCoreSlaveToSchedulerAdapterTest extends AnyFlatSpec with ChiselScalatestTester {
   "OcpCoreSlaveToSchedulerAdapter" should "adapt OCP core slave signals to scheduler signals" in {
     test(new OcpCoreSlaveToSchedulerAdapter(nCores = 4, dataWidth = CONTENTION_LIMIT_WIDTH)) { dut =>
       // Default assignments
-      dut.io.core.M.Cmd.poke(ocp.OcpCmd.IDLE)
+      dut.io.core.M.Cmd.poke(OcpCmd.IDLE)
       dut.io.core.M.Addr.poke(0.U)
       dut.io.core.M.Data.poke(0.U)
       dut.io.core.M.ByteEn.poke(0.U)
@@ -18,7 +19,7 @@ class OcpCoreSlaveToSchedulerAdapterTest extends AnyFlatSpec with ChiselScalates
       dut.clock.step(1)
 
       // Issue an OCP write command (set the second core as critical)
-      dut.io.core.M.Cmd.poke(ocp.OcpCmd.WR)
+      dut.io.core.M.Cmd.poke(OcpCmd.WR)
       dut.io.core.M.Addr.poke(1.U)
       dut.io.core.M.Data.poke(12.U)
 
@@ -30,11 +31,11 @@ class OcpCoreSlaveToSchedulerAdapterTest extends AnyFlatSpec with ChiselScalates
       dut.io.scheduler.wData.expect(12.U)
 
       // Check if the OCP response is correct
-      dut.io.core.S.Resp.expect(ocp.OcpResp.DVA)
+      dut.io.core.S.Resp.expect(OcpResp.DVA)
       dut.io.core.S.Data.expect(0.U)
 
       // Issue another OCP write command (set the fourth core as critical)
-      dut.io.core.M.Cmd.poke(ocp.OcpCmd.WR)
+      dut.io.core.M.Cmd.poke(OcpCmd.WR)
       dut.io.core.M.Addr.poke(3.U)
       dut.io.core.M.Data.poke(28.U)
 
@@ -46,17 +47,17 @@ class OcpCoreSlaveToSchedulerAdapterTest extends AnyFlatSpec with ChiselScalates
       dut.io.scheduler.wData.expect(28.U)
 
       // Check if the OCP response is correct
-      dut.io.core.S.Resp.expect(ocp.OcpResp.DVA)
+      dut.io.core.S.Resp.expect(OcpResp.DVA)
       dut.io.core.S.Data.expect(0.U)
 
-      dut.io.core.M.Cmd.poke(ocp.OcpCmd.IDLE)
+      dut.io.core.M.Cmd.poke(OcpCmd.IDLE)
       dut.io.core.M.Addr.poke(0.U)
       dut.io.core.M.Data.poke(0.U)
 
       dut.clock.step(1)
 
       // Issue OCP read command (set the second core as non-critical)
-      dut.io.core.M.Cmd.poke(ocp.OcpCmd.RD)
+      dut.io.core.M.Cmd.poke(OcpCmd.RD)
       dut.io.core.M.Addr.poke(1.U)
 
       dut.clock.step(1)
@@ -67,11 +68,11 @@ class OcpCoreSlaveToSchedulerAdapterTest extends AnyFlatSpec with ChiselScalates
       dut.io.scheduler.wData.expect(0.U)
 
       // Check if the OCP response is correct
-      dut.io.core.S.Resp.expect(ocp.OcpResp.DVA)
+      dut.io.core.S.Resp.expect(OcpResp.DVA)
       dut.io.core.S.Data.expect(0.U)
 
       // Issue OCP read command (set the second core as non-critical)
-      dut.io.core.M.Cmd.poke(ocp.OcpCmd.IDLE)
+      dut.io.core.M.Cmd.poke(OcpCmd.IDLE)
       dut.io.core.M.Addr.poke(0.U)
 
       dut.clock.step(1)

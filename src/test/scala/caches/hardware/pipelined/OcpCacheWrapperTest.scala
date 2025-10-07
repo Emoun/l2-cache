@@ -4,7 +4,7 @@ import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 import caches.hardware.reppol.{BitPlruReplacementPolicy, ContentionReplacementPolicy}
-import ocp.{OcpCmd, OcpResp}
+import caches.hardware.ocp.{OcpCmd, OcpResp}
 
 class OcpCacheWrapperTest extends AnyFlatSpec with ChiselScalatestTester {
   "OcpCacheWrapper" should "accept OCP burst commands and issue OCP burst commands to external memory" in {
