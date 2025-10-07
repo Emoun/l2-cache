@@ -28,11 +28,10 @@ class TimeoutReplacementAlgorithm(nWays: Int, nSets: Int, nCores: Int) extends M
 
   val decIdx = RegInit(0.U(log2Up(nSets).W))  // A counter to manage which next set needs its timers decremented
 
-  val currentSetWayTimes = io.updateIdxTimers
   val timedOutWays = VecInit(Seq.fill(nWays)(true.B))
   for (i <- 0 until nWays) {
     val wayIdx = io.baseCandidates(i)
-    val timedOut = currentSetWayTimes(wayIdx) === 0.U
+    val timedOut =  io.updateIdxTimers(wayIdx) === 0.U
 
     timedOutWays(i) := timedOut
   }
@@ -43,17 +42,14 @@ class TimeoutReplacementAlgorithm(nWays: Int, nSets: Int, nCores: Int) extends M
   val refreshWayEnable = io.update.valid
 
   // We decrement the current set's timers
-  val wayTimes = io.decIdxTimers
-
-  // Calculate replacement order
   val wayTimesDecremented = VecInit(Seq.fill(nWays)(0.U(TIMEOUT_LIMIT_WIDTH.W)))
   for (i <- 0 until nWays) {
-    when(wayTimes(i) =/= 0.U) {
-      wayTimesDecremented(i) := wayTimes(i) - 1.U
+    when(io.decIdxTimers(i) =/= 0.U) {
+      wayTimesDecremented(i) := io.decIdxTimers(i) - 1.U
     }
   }
 
-  isRepValid := anyTimedOutWays || isCritical(io.updateCoreId, io.coreTimeouts) // Can be switched out with update core id once more pipeline registers are added
+  isRepValid := anyTimedOutWays || isCritical(io.updateCoreId, io.coreTimeouts)
   when(!anyTimedOutWays && isCritical(io.updateCoreId, io.coreTimeouts)) {
     replaceWay := io.baseCandidates(0)
   }.otherwise {
@@ -90,10 +86,10 @@ class TimeoutReplacementAlgorithm(nWays: Int, nSets: Int, nCores: Int) extends M
   }.otherwise { // When a set is being refreshed, and It's different from decrement index, we simply do not decrement the index
     val updatedWays = VecInit(Seq.fill(nWays)(0.U(TIMEOUT_LIMIT_WIDTH.W)))
     for (i <- 0 until nWays) {
-      when(i.U === refreshWayIdx && (refreshTime > currentSetWayTimes(i))) {
+      when(i.U === refreshWayIdx && (refreshTime > io.updateIdxTimers(i))) {
         updatedWays(i) := refreshTime
       }.otherwise {
-        updatedWays(i) := currentSetWayTimes(i)
+        updatedWays(i) := io.updateIdxTimers(i)
       }
     }
 

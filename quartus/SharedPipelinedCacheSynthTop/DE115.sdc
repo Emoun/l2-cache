@@ -19,7 +19,8 @@ set_time_format -unit ns -decimal_places 3
 # Create Clock
 #**************************************************************
 
-create_clock -name {CLK} -period 20.000 -waveform { 0.000 10.000 } [get_ports {clock}]
+#create_clock -name {CLK} -period 20.000 -waveform { 0.000 10.000 } [get_ports {clock}]
+create_clock -name {CLK} -period 14.285 -waveform { 0.000 7.142 } [get_ports {clock}]
 
 derive_pll_clocks
 derive_clock_uncertainty
