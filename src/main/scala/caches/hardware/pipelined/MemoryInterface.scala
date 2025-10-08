@@ -99,8 +99,6 @@ class MemoryInterface(nCores: Int, nWays: Int, nHalfMissCmds: Int, reqIdWidth: I
   val missFifoPop = WireDefault(false.B)
   val updateLogicValid = WireDefault(false.B)
   val updateLogicValidCmd = WireDefault(false.B)
-  val cacheRData = WireDefault(0.U(blockWidth.W))
-  val cacheRespStatus = WireDefault(0.U(1.W))
 
   switch(stateReg) {
     is(sIdle) {

@@ -3,7 +3,7 @@ package caches.hardware.reppol
 import chisel3._
 import chisel3.util._
 import caches.hardware.util.Constants.CONTENTION_LIMIT_WIDTH
-import caches.hardware.util.{MemBlock, PipelineReg, UpdateSingleVecElem}
+import caches.hardware.util.{MemBlock, PipelineReg}
 
 class LineAssignmentsArray(nWays: Int, nSets: Int, nCores: Int) extends Module() {
   val io = IO(new Bundle {
@@ -188,26 +188,4 @@ class ContentionReplacementPolicy(
   io.control.replacementSet := VecInit(Seq.fill(nWays)(0.U(log2Up(nWays).W)))
   io.control.updateCoreReachedLimit := coreTable.io.rCritCores(io.control.updateCoreId) && (coreTable.io.rLimits(io.control.updateCoreId) === 0.U)
   io.control.updateCoreIsCrit := coreTable.io.rCritCores(io.control.updateCoreId)
-}
-
-object ContentionReplacementPolicy extends App {
-  //  val l2Size = 262144 // 256 KiB
-  //  val l2Size = 16384 // 16 KiB
-  val l2Size = 131072 // 128 KiB
-  val l2Ways = 8
-  val nCores = 4
-  val l2BytesPerBlock = 64
-  val l2nSets = l2Size / (l2Ways * l2BytesPerBlock)
-
-  val plruL2RepPolicy = () => new BitPlruReplacementPolicy(l2Ways, l2nSets, nCores)
-
-  (new chisel3.stage.ChiselStage).emitVerilog(
-    new ContentionReplacementPolicy(
-      l2Ways,
-      l2nSets,
-      nCores,
-      plruL2RepPolicy
-    ),
-    Array("--target-dir", "generated")
-  )
 }

@@ -41,5 +41,5 @@ class RejectionQueue(nCores: Int, addrWidth: Int, dataWidth: Int, reqIdWidth: In
   io.popCoreId := popData(coreIdWidth - 1 + reqIdWidth + addrWidth + (dataWidth / 8) + dataWidth + 1, reqIdWidth + addrWidth + (dataWidth / 8) + dataWidth + 1)
 
   io.full := !rejectQueue.io.enq.ready
-  io.popEntry.reqId.valid := rejectQueue.io.deq.valid // && popCountReg =/= 0.U
+  io.popEntry.reqId.valid := rejectQueue.io.deq.valid
 }
