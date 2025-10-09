@@ -85,6 +85,7 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   val updateStageValid = WireDefault(false.B)
   val updateStageIsHit = WireDefault(false.B)
   val updateStageIsCrit = WireDefault(false.B)
+  val updateStageMshrIdx = WireDefault(0.U(log2Up(nWays).W))
 
   def updateValidAndDirtyBits(inValid: Vec[Bool], inDirty: Vec[Bool], inTags: Vec[UInt], currIdx: UInt, useInvalidate: Boolean = true): (Vec[Bool], Vec[Bool], Vec[UInt]) = {
     val newValidBits = VecInit(Seq.fill(nWays)(false.B))
@@ -126,19 +127,28 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   // We compute a half miss check here, since we do not need to know the replacement way either way
   val halfMissCheckInMissFifoNonCrit = halfMissCheck(io.rep.index, io.rep.tag, io.missNonCritInfo.currentIndexes, io.missNonCritInfo.currentTags, io.missNonCritInfo.validMSHRs)
   val halfMissCheckInMissFifoCrit = halfMissCheck(io.rep.index, io.rep.tag, io.missCritInfo.currentIndexes, io.missCritInfo.currentTags, io.missCritInfo.validMSHRs)
-  val halfMissCheckInMissFifo = (halfMissCheckInMissFifoCrit._1 || halfMissCheckInMissFifoNonCrit._1, Mux(halfMissCheckInMissFifoCrit._1, halfMissCheckInMissFifoCrit._2, halfMissCheckInMissFifoNonCrit._2))
 
   val halfMissCheckInUpdateStage = io.rep.index === updateStageIndex && io.rep.tag === updateStageTag && updateStageValid && !updateStageIsHit
-  val halfMissIdxInUpdateStage = Mux(updateStageIsCrit, io.missCritInfo.wrPtr, io.missNonCritInfo.wrPtr)
 
-  val isHalfMiss = halfMissCheckInMissFifo._1 || halfMissCheckInUpdateStage
-  val halfMissIdx = Mux(halfMissCheckInMissFifo._1, halfMissCheckInMissFifo._2, halfMissIdxInUpdateStage)
+  val isHalfMiss = halfMissCheckInMissFifoNonCrit._1 || halfMissCheckInMissFifoCrit._1 || halfMissCheckInUpdateStage
+  val halfMissIdx = WireDefault(0.U(log2Up(nMshrs).W))
+  val isHalfMissInCrit = WireDefault(false.B)
+  when(halfMissCheckInUpdateStage) {
+    halfMissIdx := updateStageMshrIdx
+    isHalfMissInCrit := updateStageIsCrit
+  } .elsewhen (halfMissCheckInMissFifoCrit._1) {
+   halfMissIdx := halfMissCheckInMissFifoCrit._2
+   isHalfMissInCrit := true.B
+  } .elsewhen (halfMissCheckInMissFifoNonCrit._1) {
+   halfMissIdx := halfMissCheckInMissFifoNonCrit._2
+   isHalfMissInCrit := false.B
+  }
 
   val coreIdReg = PipelineReg(io.rep.coreId, 0.U, !io.stall)
   val reqValidReg = PipelineReg(io.rep.reqValid, false.B, !io.stall)
   val isHalfMissReg = PipelineReg(isHalfMiss, false.B, !io.stall)
   val halfMissIdxReg = PipelineReg(halfMissIdx, 0.U, !io.stall)
-  val halfMissInCritReg = PipelineReg(updateStageIsCrit || halfMissCheckInMissFifoCrit._1, false.B, !io.stall)
+  val halfMissInCritReg = PipelineReg(isHalfMissInCrit, false.B, !io.stall)
   val reqIdReg = PipelineReg(io.rep.reqId, 0.U, !io.stall)
   val reqRwReg = PipelineReg(io.rep.reqRw, false.B, !io.stall)
   val wDataReg = PipelineReg(io.rep.wData, 0.U, !io.stall)
@@ -154,18 +164,14 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
 
   val validAndDirtyBits2 = updateValidAndDirtyBits(validBitsReg, dirtyBitsReg, setTagsReg, indexReg, useInvalidate = false)
   val isHit = checkIfHit(validAndDirtyBits2._1, validAndDirtyBits2._3, tagReg) // Long combinational path // TODO: Move one pipeline register back instead
-
-  updateStageIndex := indexReg
-  updateStageTag := tagReg
-  updateStageValid := reqValidReg
-  updateStageIsHit := isHit._1
+  val isHalfMissInUpdateStage = isHalfMissReg && !(!halfMissInCritReg && io.repPol.updateCoreReachedLimit) // If the core has reached limit and there is already a request in the non-critical q then we turn it into a full new request
 
   val repWay = io.repPol.replaceWay
   val repWayValid = io.repPol.isValid
   val isRepDirty = validAndDirtyBits2._2(repWay)
   val isRepLineValid = validAndDirtyBits2._1(repWay)
   val dirtyTag = validAndDirtyBits2._3(repWay)
-  val evict = reqValidReg && (!isHit._1 && repWayValid && !isHalfMissReg) && !io.stall
+  val evict = reqValidReg && (!isHit._1 && repWayValid && !isHalfMissInUpdateStage) && !io.stall
 
   // Replacement policy connections
 
@@ -184,7 +190,7 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   io.repPol.nonCritWbEntryIsCrit := io.nonCritWbEntryIsCrit
 
   // Push request or a command to the miss fifo
-  io.isMissPushCrit := halfMissInCritReg || io.repPol.updateCoreReachedLimit
+  io.isMissPushCrit := (isHalfMissInUpdateStage && halfMissInCritReg) || io.repPol.updateCoreReachedLimit
   updateStageIsCrit := io.repPol.updateCoreReachedLimit && reqValidReg
 
   // Miss fifo connections
@@ -197,13 +203,13 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   io.missFifoPush.pushReqEntry.incidentCoreId := coreIdReg
   io.missFifoPush.pushReqEntry.isCrit := io.repPol.updateCoreIsCrit
 
-  io.missFifoPush.pushCmd := isHalfMissReg && reqValidReg && !isHit._1 && !io.stall // Push a half miss command
+  io.missFifoPush.pushCmd := isHalfMissInUpdateStage && reqValidReg && !isHit._1 && !io.stall // Push a half miss command
   io.missFifoPush.mshrIdx := halfMissIdxReg
   io.missFifoPush.pushCmdEntry.reqId := reqIdReg
   io.missFifoPush.pushCmdEntry.coreId := coreIdReg
   io.missFifoPush.pushCmdEntry.blockOffset := blockOffsetReg
 
-  io.missFifoPush.updateByteEn := (isHalfMissReg && reqValidReg && !isHit._1 && reqRwReg && !io.stall) // Update a byte mask if it is a write request and a half miss
+  io.missFifoPush.updateByteEn := (isHalfMissInUpdateStage && reqValidReg && !isHit._1 && reqRwReg && !io.stall) // Update a byte mask if it is a write request and a half miss
   io.missFifoPush.updateByteEnVal := byteEnReg
   io.missFifoPush.updateByteEnCol := blockOffsetReg
   io.missFifoPush.updateByteEnRow := halfMissIdxReg
@@ -233,7 +239,7 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   io.read.wData := wDataReg
   io.read.byteEn := blockByteMask((blockWidth / 8) -1, 0)
   io.read.repValid := repWayValid
-  io.read.repWay := Mux(isHalfMissReg, Mux(halfMissInCritReg, io.missCritInfo.replacementWays(halfMissIdxReg), io.missNonCritInfo.replacementWays(halfMissIdxReg)), repWay) // If it is a half miss we give the replacement way of the full miss for a write request
+  io.read.repWay := Mux(isHalfMissInUpdateStage, Mux(halfMissInCritReg, io.missCritInfo.replacementWays(halfMissIdxReg), io.missNonCritInfo.replacementWays(halfMissIdxReg)), repWay) // If it is a half miss we give the replacement way of the full miss for a write request
   io.read.isHit := isHit._1
   io.read.hitWay := isHit._2
   io.read.isRepDirty := isRepDirty
@@ -251,6 +257,13 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   io.invalidate.way := invalidateWay
   io.invalidate.index := invalidateIndex
 
+  // Forwarding signals to the previous stage
+  updateStageIndex := indexReg
+  updateStageTag := tagReg
+  updateStageValid := reqValidReg
+  updateStageIsHit := isHit._1
+  updateStageMshrIdx := Mux(evict, Mux(io.repPol.updateCoreReachedLimit, io.missCritInfo.wrPtr, io.missNonCritInfo.wrPtr), halfMissIdxReg)
+
   // ---------------- Stalls due to hazards ----------------
 
   // If the replacement way is dirty but the line is not valid---stall the pipeline
@@ -258,8 +271,8 @@ class Rep(nCores: Int, nSets: Int, nWays: Int, nMshrs: Int, reqIdWidth: Int, tag
   io.dirtyInvalidStall := stallDueToDirtyInvalid
 
   // If a single mshr register is full of commands then we stall the pipeline until the line is brought in
-  val cmdCapacityNonCrit = io.missNonCritInfo.fullCmds(halfMissIdxReg) && io.missNonCritInfo.validMSHRs(halfMissIdxReg) && isHalfMissReg && !isHit._1
-  val cmdCapacityCrit = io.missCritInfo.fullCmds(halfMissIdxReg) && io.missCritInfo.validMSHRs(halfMissIdxReg) && isHalfMissReg && !isHit._1
+  val cmdCapacityNonCrit = io.missNonCritInfo.fullCmds(halfMissIdxReg) && io.missNonCritInfo.validMSHRs(halfMissIdxReg) && isHalfMissInUpdateStage && !isHit._1
+  val cmdCapacityCrit = io.missCritInfo.fullCmds(halfMissIdxReg) && io.missCritInfo.validMSHRs(halfMissIdxReg) && isHalfMissInUpdateStage && !isHit._1
   val halfMissCapacity = Mux(halfMissInCritReg, cmdCapacityCrit, cmdCapacityNonCrit)
   io.halfMissCapacity := halfMissCapacity
 }

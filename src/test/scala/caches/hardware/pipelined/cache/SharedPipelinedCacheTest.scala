@@ -26,6 +26,8 @@ case class CacheRequest(
                          expectedData: Option[String] = None
                        ) extends TestAction
 
+// TODO: Should add an optional parameter that says that a response for a request should be received after a response to some other request has been received
+
 case class Stall(stallCycles: Int = 0) extends TestAction()
 
 case class ExpectFinishedRejectedResponse(coreId: Int, reqId: Int, expectedData: String) extends TestAction()
@@ -379,10 +381,13 @@ object Tests {
     CacheRequest(coreId = 3, reqId = 13, tag = 39, index = 74, blockOffset = 3, rw = false, expectedData = Some("b638aaa4ef343eee6a4757cb65a2f78c")), // MISS, way: 3, contention event, critical wb, reach contention limit for core 1
     CacheRequest(coreId = 1, reqId = 14, tag = 57, index = 74, blockOffset = 2, rw = false, expectedData = Some("26f4756810b9c7b7fc87a234ac62fee6")), // MISS, way: 2,
     CacheRequest(coreId = 2, reqId = 15, tag = 41, index = 74, blockOffset = 1, rw = false, expectedData = Some("8f2a3009871c1b8fb22ed80f63229d0f")), // MISS, way: 3,
-    CacheRequest(coreId = 0, reqId = 16, tag = 8, index = 74, blockOffset = 0, rw = false, expectedData = Some("e83fb23952953ff164bdb8d5685d2bd3"), rejected = true), // MISS, way: rejected
+    CacheRequest(coreId = 0, reqId = 16, tag = 41, index = 72, blockOffset = 1, rw = false, expectedData = Some("abbd90af6dbb29366ec5bd141df45023")), // MISS, way: 0,
+    CacheRequest(coreId = 1, reqId = 17, tag = 41, index = 72, blockOffset = 0, rw = false, expectedData = Some("a64a45812e63b4001eafac68edee5dd6")), // MISS, way: 1, not a half-miss since the core reached contention limit
+    CacheRequest(coreId = 2, reqId = 18, tag = 41, index = 72, blockOffset = 2, rw = false, expectedData = Some("b1a10cf29e0b684ae2dd8277b34d19f1")), // MISS, way: 2, not a half-miss since the core reached contention limit
+    CacheRequest(coreId = 0, reqId = 19, tag = 8, index = 74, blockOffset = 0, rw = false, expectedData = Some("e83fb23952953ff164bdb8d5685d2bd3"), rejected = true), // MISS, way: rejected
     Stall(300),
     PerformSchedulerOperation(2, false),
-    ExpectFinishedRejectedResponse(coreId = 0, reqId = 16, expectedData = "e83fb23952953ff164bdb8d5685d2bd3")
+    ExpectFinishedRejectedResponse(coreId = 0, reqId = 19, expectedData = "e83fb23952953ff164bdb8d5685d2bd3")
   )
 }
 

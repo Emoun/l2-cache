@@ -8,7 +8,7 @@ class SharedPipelinedCacheContWithAllEvents extends AnyFlatSpec with ChiselScala
   "SharedPipelinedCache" should "work with all contention events" in {
     val cache = generateDut(CacheConfigs.config64ContMimPrecWb)
 
-    test(cache._1.apply()).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation)) { dut =>
+    test(cache._1.apply()).withAnnotations(Seq(WriteFstAnnotation, VerilatorBackendAnnotation)) { dut =>
       defaultAssignments(dut, cache._2)
 
       // Issue the first set of requests
@@ -19,7 +19,7 @@ class SharedPipelinedCacheContWithAllEvents extends AnyFlatSpec with ChiselScala
         cache._3,
         cache._4,
         cache._5,
-        600,
+        1000,
         printResults = PRINT_RESULTS
       )
 

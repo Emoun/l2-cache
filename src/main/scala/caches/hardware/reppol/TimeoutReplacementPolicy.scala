@@ -117,7 +117,7 @@ class TimeoutReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolicy: 
   timeoutAlgo.io.decIdxTimers := timerMemory.io.rTimers1
   timeoutAlgo.io.updateIdxTimers := timerMemory.io.rTimers2
   decIdx := timeoutAlgo.io.decIdx
-  timerMemWrEn := true.B // TODO: ???
+  timerMemWrEn := true.B // TODO: Should write enable always be high since we are always decrementing something ???
   timerMemWrData := timeoutAlgo.io.wTimers
   timerMemWrIdx := timeoutAlgo.io.wIdx
 

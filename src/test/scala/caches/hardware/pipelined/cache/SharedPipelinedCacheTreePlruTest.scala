@@ -8,7 +8,7 @@ class SharedPipelinedCacheTreePlruTest extends AnyFlatSpec with ChiselScalatestT
   "SharedPipelinedCache" should "process pipelined requests for 8 ways, 128 sets, with tree plru policy" in {
     val cache = generateDut(CacheConfigs.config64TreePlru)
 
-    test(cache._1.apply()).withAnnotations(Seq(WriteVcdAnnotation, VerilatorBackendAnnotation)) { dut =>
+    test(cache._1.apply()).withAnnotations(Seq(WriteFstAnnotation, VerilatorBackendAnnotation)) { dut =>
       defaultAssignments(dut, cache._2)
 
       performTestActions(
@@ -18,7 +18,7 @@ class SharedPipelinedCacheTreePlruTest extends AnyFlatSpec with ChiselScalatestT
         cache._3,
         cache._4,
         cache._5,
-        700,
+        1000,
         printResults = PRINT_RESULTS
       )
 
