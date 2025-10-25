@@ -4,21 +4,53 @@ import caches.hardware.util.Constants.TIMEOUT_LIMIT_WIDTH
 import chisel3._
 import chisel3.util._
 
-class TimeoutReplacementAlgorithm(nWays: Int, nSets: Int, nCores: Int) extends Module {
-  val io = IO(new Bundle {
-    val setIdx = Input(UInt(log2Up(nSets).W))
-    val update = Input(Valid(UInt(log2Up(nWays).W)))
-    val updateCoreId = Input(UInt(log2Up(nCores).W))
-    val baseCandidates = Input(Vec(nWays, UInt(log2Up(nWays).W)))
-    val coreTimeouts = Input(Vec(nCores, UInt(TIMEOUT_LIMIT_WIDTH.W)))
-    val decIdxTimers = Input(Vec(nWays, UInt(TIMEOUT_LIMIT_WIDTH.W)))
-    val updateIdxTimers = Input(Vec(nWays, UInt(TIMEOUT_LIMIT_WIDTH.W)))
-    val isRepValid = Output(Bool())
-    val replaceWay = Output(UInt(log2Up(nWays).W))
-    val wTimers = Output(Vec(nWays, UInt(TIMEOUT_LIMIT_WIDTH.W)))
-    val wIdx = Output(UInt(log2Up(nSets).W))
-    val decIdx = Output(UInt(log2Up(nSets).W))
-  })
+class TimeoutFilterIO(nWays: Int, nSets: Int, nCores: Int, repSetFormat: BaseReplacementSetFormat) extends Bundle {
+  val setIdx = Input(UInt(log2Up(nSets).W))
+  val update = Input(Valid(UInt(log2Up(nWays).W)))
+  val updateCoreId = Input(UInt(log2Up(nCores).W))
+  val baseCandidates = repSetFormat match {
+    case NumericalFormat() => Input(Vec(nWays, UInt(log2Up(nWays).W)))
+    case MruFormat() => Input(Vec(nWays, UInt(1.W)))
+    case _ => throw new IllegalArgumentException("Unrecognized replacement set format.")
+  }
+  val coreTimeouts = Input(Vec(nCores, UInt(TIMEOUT_LIMIT_WIDTH.W)))
+  val decIdxTimers = Input(Vec(nWays, UInt(TIMEOUT_LIMIT_WIDTH.W)))
+  val updateIdxTimers = Input(Vec(nWays, UInt(TIMEOUT_LIMIT_WIDTH.W)))
+  val isRepValid = Output(Bool())
+  val replaceWay = Output(UInt(log2Up(nWays).W))
+  val wTimers = Output(Vec(nWays, UInt(TIMEOUT_LIMIT_WIDTH.W)))
+  val wIdx = Output(UInt(log2Up(nSets).W))
+  val decIdx = Output(UInt(log2Up(nSets).W))
+}
+
+class TimeoutFilter(nWays: Int, nSets: Int, nCores: Int, repSetFormat: BaseReplacementSetFormat) extends Module {
+  val io = IO(new TimeoutFilterIO(nWays, nSets, nCores, repSetFormat))
+
+  def mruFilter(baseCandidates: Vec[UInt], timeoutMask: Vec[Bool]): UInt = {
+    val anyTimeoutInFirstSet = (~baseCandidates.asUInt).asUInt & timeoutMask.asUInt
+    val anyTimeoutInSecondSet = baseCandidates.asUInt & timeoutMask.asUInt
+    val baseCandMask = WireDefault(0.U(nWays.W))
+
+    when(anyTimeoutInFirstSet.asUInt.orR) {
+      baseCandMask := anyTimeoutInFirstSet
+    } .otherwise {
+      baseCandMask := anyTimeoutInSecondSet
+    }
+
+    PriorityEncoder(baseCandMask)
+  }
+
+  def numericalFilter(baseCandidates: Vec[UInt], timeoutMask: Vec[Bool]): UInt = {
+    val baseCandMask = VecInit(Seq.fill(nWays)(true.B))
+    for (i <- 0 until nWays) {
+      val wayIdx = baseCandidates(i)
+      val timedOut = timeoutMask(wayIdx)
+
+      baseCandMask(i) := timedOut
+    }
+
+    baseCandidates(PriorityEncoder(baseCandMask))
+  }
 
   def isCritical(coreIdx: UInt, coreTmts: Vec[UInt]): Bool = coreTmts(coreIdx) =/= 0.U
 
@@ -29,15 +61,16 @@ class TimeoutReplacementAlgorithm(nWays: Int, nSets: Int, nCores: Int) extends M
   val decIdx = RegInit(0.U(log2Up(nSets).W))  // A counter to manage which next set needs its timers decremented
 
   val timedOutWays = VecInit(Seq.fill(nWays)(true.B))
-  for (i <- 0 until nWays) {
-    val wayIdx = io.baseCandidates(i)
-    val timedOut =  io.updateIdxTimers(wayIdx) === 0.U
-
-    timedOutWays(i) := timedOut
+  for (wayIdx <- 0 until nWays) {
+    timedOutWays(wayIdx) := io.updateIdxTimers(wayIdx) === 0.U
   }
 
-  val firstTimedOutBaseCandIdx = PriorityEncoder(timedOutWays)
-  val firstTimedOutWay = io.baseCandidates(firstTimedOutBaseCandIdx)
+  val firstTimedOutWay = repSetFormat match {
+    case NumericalFormat() => numericalFilter(io.baseCandidates, timedOutWays)
+    case MruFormat() => mruFilter(io.baseCandidates, timedOutWays)
+    case _ => throw new IllegalArgumentException("Unrecognized replacement set format.")
+  }
+
   val anyTimedOutWays = timedOutWays.reduce((x, y) => x || y)
   val refreshWayEnable = io.update.valid
 

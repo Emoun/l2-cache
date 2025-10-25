@@ -69,9 +69,10 @@ object SharedPipelinedCacheSynthTop extends App {
   val memBurstLen = 4
 
   val l2nSets = l2Size / (nWays * bytesPerBlock)
-
-  val plruL2RepPolicy = () => new BitPlruReplacementPolicy(nWays, l2nSets, nCores)
-  val contL2RepPolicy = () => new TimeoutReplacementPolicy(nWays, l2nSets, nCores, plruL2RepPolicy)
+//  val l2RepPolicy = () => new BitPlruReplacementPolicy(nWays, l2nSets, nCores)
+//  val l2RepPolicy = () => new TreePlruReplacementPolicy(nWays, l2nSets, nCores)
+//  val l2RepPolicy = () => new TimeoutReplacementPolicy(nWays, l2nSets, nCores, BasePolicies.BIT_PLRU, repSetFormat = new MruFormat)
+  val l2RepPolicy = () => new ContentionReplacementPolicy(nWays, l2nSets, nCores, BasePolicies.BIT_PLRU, true, true, true, repSetFormat = new MruFormat)
 
   println("Generating the L2 cache hardware for synthesis...")
   (new chisel3.stage.ChiselStage).emitVerilog(
@@ -84,7 +85,7 @@ object SharedPipelinedCacheSynthTop extends App {
       bytesPerSubBlock = bytesPerSubBlock,
       memBeatSize = memBeatSize,
       memBurstLen = memBurstLen,
-      l2RepPolicyGen = contL2RepPolicy
+      l2RepPolicyGen = l2RepPolicy
     ),
     Array("--target-dir", "generated")
   )

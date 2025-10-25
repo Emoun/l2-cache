@@ -1,5 +1,10 @@
 scalaVersion := "2.13.10"
 
+// library name
+name := "l2-cache"
+
+Compile / unmanagedSourceDirectories += baseDirectory.value / "../soc-comm/src"
+
 scalacOptions ++= Seq(
   "-deprecation",
   "-feature",
@@ -14,10 +19,6 @@ libraryDependencies += "edu.berkeley.cs" %% "chiseltest" % "0.5.6"
 
 // For FIFO buffers
 libraryDependencies += "edu.berkeley.cs" % "ip-contributions" % "0.5.4"
-
-libraryDependencies += "org.scalatest" %% "scalatest" % "3.2.19" % "test"
-
-// library name
-name := "l2-cache"
+libraryDependencies += "com.fazecast" % "jSerialComm" % "[2.0.0,3.0.0)"
 
 lazy val l2_cache = project in file(".")

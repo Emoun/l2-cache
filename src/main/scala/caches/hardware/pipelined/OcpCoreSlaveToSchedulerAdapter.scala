@@ -1,6 +1,6 @@
 package caches.hardware.pipelined
 
-import caches.hardware.ocp._
+import ocp._
 import caches.hardware.reppol._
 import chisel3._
 import chisel3.util._

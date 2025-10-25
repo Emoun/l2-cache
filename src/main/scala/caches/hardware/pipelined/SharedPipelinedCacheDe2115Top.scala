@@ -84,9 +84,7 @@ object SharedPipelinedCacheDe2115Top extends App {
   val memBurstLen = 4
 
   val l2nSets = l2Size / (l2Ways * l2BytesPerBlock)
-
-  val plruL2RepPolicy = () => new BitPlruReplacementPolicy(l2Ways, l2nSets, nCores)
-  val contL2RepPolicy = () => new ContentionReplacementPolicy(l2Ways, l2nSets, nCores, plruL2RepPolicy)
+  val l2RepPolicy = () => new ContentionReplacementPolicy(l2Ways, l2nSets, nCores, BasePolicies.BIT_PLRU)
 
   println("Generating the L2 cache hardware for the DE2-115 board...")
   (new chisel3.stage.ChiselStage).emitVerilog(
@@ -102,7 +100,7 @@ object SharedPipelinedCacheDe2115Top extends App {
       memBurstLen = memBurstLen,
       freq = freq,
       uartBaud = uartBaud,
-      l2RepPolicy = plruL2RepPolicy,
+      l2RepPolicy = l2RepPolicy,
       dataFile = Some("./test_mem_32w.hex")
     ),
     Array("--target-dir", "generated")

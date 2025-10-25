@@ -1,9 +1,9 @@
 package caches.hardware.reppol
 
-import chisel3._
-import chisel3.util._
 import caches.hardware.util.Constants.CONTENTION_LIMIT_WIDTH
 import caches.hardware.util.{MemBlock, PipelineReg}
+import chisel3._
+import chisel3.util._
 
 class LineAssignmentsArray(nWays: Int, nSets: Int, nCores: Int) extends Module() {
   val io = IO(new Bundle {
@@ -104,88 +104,102 @@ class CoreContentionTable(nCores: Int) extends Module() {
 
 /**
  * On a hit we update only the base policy, on an eviction we update the contention policy.
- *
- * @param nWays      number of ways in a cache set
- * @param nSets      number of sets in a cache
- * @param nCores     number of cores sharing the cache
- * @param basePolicy the base replacement policy module generating function
  */
 class ContentionReplacementPolicy(
                                    nWays: Int,
                                    nSets: Int,
                                    nCores: Int,
-                                   basePolicy: () => SharedCacheReplacementPolicyType,
-                                   missQueueDepth: Int = 4,
+                                   basePolicyType: BasePolicyType,
                                    enableMissInMiss: Boolean = false,
                                    enablePrecedentEvents: Boolean = false,
-                                   enableWbEvents: Boolean = false
-                                 ) extends SharedCacheReplacementPolicyType(nWays, nSets, nCores, CONTENTION_LIMIT_WIDTH, missQueueDepth) {
-  // ---------------- Base policy stage ----------------
+                                   enableWbEvents: Boolean = false,
+                                   missQueueDepth: Int = 4,
+                                   repSetFormat: BaseReplacementSetFormat = new NumericalFormat,
+                                 ) extends SharedCacheReplacementPolicyType(nWays, nSets, nCores, CONTENTION_LIMIT_WIDTH, missQueueDepth, repSetFormat) {
+  // ---------------- Read Stage ----------------
+  override def printConfig(): Unit = println(s"Contention replacement policy configuration: " +
+    s"base policy type: ${basePolicyType.getName}, " +
+    s"replacement set format: ${repSetFormat.getName}, " +
+    s"ways: $nWays, " +
+    s"sets: $nSets, " +
+    s"cores: $nCores, " +
+    s"mim events: $enableMissInMiss, " +
+    s"precedent events: $enablePrecedentEvents, " +
+    s"wb events: $enableWbEvents" + "\n")
 
-  // Base policy instantiation
-  val basePolicyInst = Module(basePolicy())
-
-  override def printConfig(): Unit = println(s"Contention replacement policy configuration: Base policy: ${basePolicyInst.getClass.getSimpleName}, ways: $nWays, sets: $nSets, cores: $nCores, mim events: $enableMissInMiss, precedent events: $enablePrecedentEvents, wb events: $enableWbEvents" + "\n")
-
-  // Default assignments to base policy
-  basePolicyInst.io.control <> 0.U.asTypeOf(basePolicyInst.io.control)
-  basePolicyInst.io.scheduler <> 0.U.asTypeOf(basePolicyInst.io.scheduler)
-
-  // Update base policy
-  basePolicyInst.io.control.setIdx := io.control.setIdx
-  basePolicyInst.io.control.update.valid := io.control.update.valid
-  basePolicyInst.io.control.update.bits := io.control.update.bits
-  basePolicyInst.io.control.stall := io.control.stall
+  // TODO: Need to provide core ID at the input to the replacement policy
+  val basePolRead = Module(basePolicyType.buildBasePolicyRead(nWays, nSets, repSetFormat))
+  val assignArr = Module(new LineAssignmentsArray(nWays, nSets, nCores))
 
   // Need to delay this signal by two CCs since the bit plru uses memory to store the MRU bits
-  val setIdxDelayReg = PipelineReg(io.control.setIdx, 0.U, !io.control.stall)
-  val setIdxPipeReg = PipelineReg(setIdxDelayReg, 0.U, !io.control.stall)
+  val idxDelayReg = PipelineReg(io.control.setIdx, 0.U, !io.control.stall)
+  val wbStageSetIdx = WireDefault(0.U(log2Up(nSets).W))
+  val wbStageMruBits = WireDefault(0.U(basePolRead.stateWidth.W))
+  val wbStageRepWay = WireDefault(0.U(log2Up(nWays).W))
+  val wbStageUpdateCore = WireDefault(0.U(log2Up(nCores).W))
+  val repWayValid = WireDefault(false.B)
 
-  // ---------------- Eviction stage ----------------
-  val contAlgorithm = Module(new ContentionReplacementAlgorithm(nWays, nCores, nMshrs = missQueueDepth, enableMissInMiss, enablePrecedentEvents, enableWbEvents))
+  basePolRead.io.stall := io.control.stall
+  basePolRead.io.rIdx := io.control.setIdx
+  basePolRead.io.wrEn := io.control.update.valid
+  basePolRead.io.wIdx := wbStageSetIdx
+  basePolRead.io.wData := wbStageMruBits
+  basePolRead.io.fwd := wbStageSetIdx === idxDelayReg && io.control.update.valid
 
-  val assignArr = Module(new LineAssignmentsArray(nWays, nSets, nCores))
   assignArr.io.stall := io.control.stall
-  assignArr.io.rSet := setIdxDelayReg
+  assignArr.io.rSet := idxDelayReg
   assignArr.io.wrEn := io.control.evict
-  assignArr.io.wrSet := setIdxPipeReg
-  assignArr.io.wrWay := contAlgorithm.io.replacementWay.bits
-  assignArr.io.wrLineAssign := io.control.updateCoreId
+  assignArr.io.wrSet := wbStageSetIdx
+  assignArr.io.wrWay := wbStageRepWay
+  assignArr.io.wrLineAssign := wbStageUpdateCore
 
-  // ---------------------------------------------------
+  val replaceSetPipeReg = PipelineReg(basePolRead.io.replacementSet, getDefaultRepSet, !io.control.stall)
+  val mruBitsPipeReg = PipelineReg(basePolRead.io.readState, 0.U, !io.control.stall)
+  val setIdxPipeReg = PipelineReg(idxDelayReg, 0.U, !io.control.stall)
 
+  // ---------------- Update stage ----------------
   val coreTable = Module(new CoreContentionTable(nCores))
+  val critFilter = Module(new CriticalityFilter(nWays, nCores, nMshrs = missQueueDepth, repSetFormat, enableMissInMiss, enablePrecedentEvents, enableWbEvents))
+  val basePolUpdate = Module(basePolicyType.buildBasePolicyUpdate(nWays))
+
+  critFilter.io.evict := io.control.evict
+  critFilter.io.update := io.control.update.valid
+  critFilter.io.hit := io.info.isHit
+  critFilter.io.hitWayIdx := io.control.update.bits
+  critFilter.io.reqCore := io.info.updateCoreId
+  critFilter.io.baseCandidates := replaceSetPipeReg
+  critFilter.io.lineAssignments := assignArr.io.rLineAssign
+  critFilter.io.validLineAssignments := assignArr.io.rValidAssign
+  critFilter.io.coreLimits := coreTable.io.rLimits
+  critFilter.io.criticalCores := coreTable.io.rCritCores
+  critFilter.io.missQueueCores := io.info.missQueueCores
+  critFilter.io.missQueueValidCores := io.info.missQueueValidCores
+  critFilter.io.wbNonCritPop := io.info.nonCritWbPop
+  critFilter.io.wbPopEntryCrit := io.info.nonCritWbEntryIsCrit
+
   coreTable.io.schedCoreId := io.scheduler.addr
   coreTable.io.setCritical := io.scheduler.cmd === SchedulerCmd.WR
   coreTable.io.unsetCritical := io.scheduler.cmd === SchedulerCmd.RD
-  coreTable.io.wrEn := contAlgorithm.io.updateCoreLimits
-  coreTable.io.wrCoreLimits := contAlgorithm.io.newCoreLimits
+  coreTable.io.wrEn := critFilter.io.updateCoreLimits && critFilter.io.replacementWay.valid
+  coreTable.io.wrCoreLimits := critFilter.io.newCoreLimits
   coreTable.io.setContLimit := io.scheduler.wData
   io.scheduler.rData := coreTable.io.readData
 
-  // Compute the eviction for each set
-  contAlgorithm.io.evict := io.control.evict
-  contAlgorithm.io.update := io.control.update.valid
-  contAlgorithm.io.hit := io.control.isHit
-  contAlgorithm.io.hitWayIdx := io.control.update.bits
-  contAlgorithm.io.reqCore := io.control.updateCoreId
-  contAlgorithm.io.baseCandidates := basePolicyInst.io.control.replacementSet
-  contAlgorithm.io.lineAssignments := assignArr.io.rLineAssign
-  contAlgorithm.io.validLineAssignments := assignArr.io.rValidAssign
-  contAlgorithm.io.coreLimits := coreTable.io.rLimits
-  contAlgorithm.io.criticalCores := coreTable.io.rCritCores
-  contAlgorithm.io.missQueueEmpty := io.control.missQueueEmpty
-  contAlgorithm.io.missQueueCores := io.control.missQueueCores
-  contAlgorithm.io.missQueueValidCores := io.control.missQueueValidCores
-  contAlgorithm.io.missQueueCritCores := io.control.missQueueValidCores
-  contAlgorithm.io.wbNonCritPop := io.control.nonCritWbPop
-  contAlgorithm.io.wbPopEntryCrit := io.control.nonCritWbEntryIsCrit
+  // Update base policy
+  basePolUpdate.io.hitWay := io.control.update.bits
+  basePolUpdate.io.stateIn := mruBitsPipeReg
 
-  io.control.replaceWay := contAlgorithm.io.replacementWay.bits
-  io.control.isValid := contAlgorithm.io.replacementWay.valid
-  io.control.isReplacementWayCrit := contAlgorithm.io.isReplacementWayCrit
-  io.control.isReplacementWayAtLimit := contAlgorithm.io.isReplacementWayAtLimit
-  io.control.replacementSet := VecInit(Seq.fill(nWays)(0.U(log2Up(nWays).W)))
-  io.control.updateCoreReachedLimit := coreTable.io.rCritCores(io.control.updateCoreId) && (coreTable.io.rLimits(io.control.updateCoreId) === 0.U)
-  io.control.updateCoreIsCrit := coreTable.io.rCritCores(io.control.updateCoreId)
+  // Base policy forwarding signals
+  wbStageSetIdx := setIdxPipeReg
+  wbStageRepWay := critFilter.io.replacementWay.bits
+  wbStageMruBits := basePolUpdate.io.stateOut
+  wbStageUpdateCore := io.info.updateCoreId
+
+  io.control.replaceWay := critFilter.io.replacementWay.bits
+  io.control.isValid := critFilter.io.replacementWay.valid
+
+  io.info.isReplacementWayCrit := critFilter.io.isReplacementWayCrit
+  io.info.isReplacementWayAtLimit := critFilter.io.isReplacementWayAtLimit
+  io.info.updateCoreReachedLimit := coreTable.io.rCritCores(io.info.updateCoreId) && (coreTable.io.rLimits(io.info.updateCoreId) === 0.U)
+  io.info.updateCoreIsCrit := coreTable.io.rCritCores(io.info.updateCoreId)
 }

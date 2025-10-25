@@ -5,7 +5,7 @@ import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 import caches.hardware.util.Constants.CONTENTION_LIMIT_WIDTH
-import caches.hardware.ocp.{OcpCmd, OcpResp}
+import ocp.{OcpCmd, OcpResp}
 
 class OcpCoreSlaveToSchedulerAdapterTest extends AnyFlatSpec with ChiselScalatestTester {
   "OcpCoreSlaveToSchedulerAdapter" should "adapt OCP core slave signals to scheduler signals" in {

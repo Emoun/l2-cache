@@ -1,17 +1,16 @@
 package caches.hardware.reppol
 
+import caches.hardware.reppol.ReplacementPolicyTest._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
-import caches.hardware.reppol.ReplacementPolicyTest._
+
 import scala.util.Random
 
 class TimeoutReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTester {
-
   "TimeoutReplacementPolicy" should "Without critical uses PLRU" in {
     val (nWays, nSets, nCores) = (4, 2, 3)
-    test(new TimeoutReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores))).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      defaultAssignments(dut)
-
+    val polGen = () => new TimeoutReplacementPolicy(nWays, nSets, nCores, BasePolicies.BIT_PLRU, repSetFormat = new MruFormat)
+    test(new PolicyTestWrapper(polGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       val workingSet = 1
       dut.clock.step()
 
@@ -30,7 +29,6 @@ class TimeoutReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTeste
       performEvictionRequest(dut, coreId = 1, setIdx = workingSet, expectedEvictionCandidate = Some(3))
       dut.clock.step()
       performUpdateRequest(dut, coreId = 1, setIdx = workingSet, hitWay = 3)
-
 
       performEvictionRequest(dut, coreId = 2, setIdx = workingSet, expectedEvictionCandidate = Some(0))
       dut.clock.step()
@@ -60,9 +58,8 @@ class TimeoutReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTeste
 
   "TimeoutReplacementPolicy" should "Reject non-critical when all reserved" in {
     val (nWays, nSets, nCores) = (4, 2, 3)
-    test(new TimeoutReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores))).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      defaultAssignments(dut)
-
+    val polGen = () => new TimeoutReplacementPolicy(nWays, nSets, nCores, BasePolicies.BIT_PLRU, repSetFormat = new MruFormat)
+    test(new PolicyTestWrapper(polGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       val workingSet = 1
       dut.clock.step()
 
@@ -87,7 +84,7 @@ class TimeoutReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTeste
       dut.clock.step()
       performUpdateRequest(dut, coreId = 0, setIdx = workingSet, hitWay = 3)
 
-      dut.clock.step(Random.between(1, longTimeout/2))
+      dut.clock.step(Random.between(1, longTimeout / 2))
 
       performEvictionRequest(dut, coreId = 1, setIdx = workingSet, expectedEvictionCandidate = None)
       performEvictionRequest(dut, coreId = 2, setIdx = workingSet, expectedEvictionCandidate = None)
@@ -96,9 +93,8 @@ class TimeoutReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTeste
 
   "TimeoutReplacementPolicy" should "Critical may evict critical using PLRU" in {
     val (nWays, nSets, nCores) = (4, 2, 3)
-    test(new TimeoutReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores))).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      defaultAssignments(dut)
-
+    val polGen = () => new TimeoutReplacementPolicy(nWays, nSets, nCores, BasePolicies.BIT_PLRU, repSetFormat = new MruFormat)
+    test(new PolicyTestWrapper(polGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       val workingSet = 1
       dut.clock.step()
 
@@ -135,9 +131,8 @@ class TimeoutReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTeste
 
   "TimeoutReplacementPolicy" should "Critical prioritized timed out" in {
     val (nWays, nSets, nCores) = (4, 2, 3)
-    test(new TimeoutReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores))).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      defaultAssignments(dut)
-
+    val polGen = () => new TimeoutReplacementPolicy(nWays, nSets, nCores, BasePolicies.BIT_PLRU, repSetFormat = new MruFormat)
+    test(new PolicyTestWrapper(polGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       val workingSet = 1
       dut.clock.step()
 
@@ -174,9 +169,8 @@ class TimeoutReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTeste
 
   "TimeoutReplacementPolicy" should "Non-critical can evict timed out" in {
     val (nWays, nSets, nCores) = (4, 2, 3)
-    test(new TimeoutReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores))).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      defaultAssignments(dut)
-
+    val polGen = () => new TimeoutReplacementPolicy(nWays, nSets, nCores, BasePolicies.BIT_PLRU, repSetFormat = new MruFormat)
+    test(new PolicyTestWrapper(polGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       val workingSet = 1
       dut.clock.step()
 
@@ -213,9 +207,8 @@ class TimeoutReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTeste
 
   "TimeoutReplacementPolicy" should "Eventually time out" in {
     val (nWays, nSets, nCores) = (4, 2, 3)
-    test(new TimeoutReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores))).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      defaultAssignments(dut)
-
+    val polGen = () => new TimeoutReplacementPolicy(nWays, nSets, nCores, BasePolicies.BIT_PLRU, repSetFormat = new MruFormat)
+    test(new PolicyTestWrapper(polGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       val workingSet = 1
       dut.clock.step()
 
@@ -272,9 +265,8 @@ class TimeoutReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTeste
 
   "TimeoutReplacementPolicy" should "Update refreshes timeout" in {
     val (nWays, nSets, nCores) = (4, 2, 3)
-    test(new TimeoutReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores))).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      defaultAssignments(dut)
-
+    val polGen = () => new TimeoutReplacementPolicy(nWays, nSets, nCores, BasePolicies.BIT_PLRU, repSetFormat = new MruFormat)
+    test(new PolicyTestWrapper(polGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       val workingSet = 1
       dut.clock.step()
 
@@ -327,9 +319,8 @@ class TimeoutReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTeste
 
   "TimeoutReplacementPolicy" should "Critical with short timeout doesn't refresh long timeout" in {
     val (nWays, nSets, nCores) = (4, 2, 3)
-    test(new TimeoutReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores))).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      defaultAssignments(dut)
-
+    val polGen = () => new TimeoutReplacementPolicy(nWays, nSets, nCores, BasePolicies.BIT_PLRU, repSetFormat = new MruFormat)
+    test(new PolicyTestWrapper(polGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       val workingSet = 1
       dut.clock.step()
 
@@ -360,7 +351,7 @@ class TimeoutReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTeste
       performUpdateRequest(dut, coreId = 1, setIdx = workingSet, hitWay = 0)
 
       // Tick enough to pass short timeout
-      dut.clock.step(shortTimeout*2)
+      dut.clock.step(shortTimeout * 2)
 
       // Non-critical should still not be able to evict
       performEvictionRequest(dut, coreId = 0, setIdx = workingSet, expectedEvictionCandidate = None)
@@ -369,9 +360,8 @@ class TimeoutReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTeste
 
   "TimeoutReplacementPolicy" should "Critical with long timeout refreshes short timeout" in {
     val (nWays, nSets, nCores) = (4, 2, 3)
-    test(new TimeoutReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores))).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      defaultAssignments(dut)
-
+    val polGen = () => new TimeoutReplacementPolicy(nWays, nSets, nCores, BasePolicies.BIT_PLRU, repSetFormat = new MruFormat)
+    test(new PolicyTestWrapper(polGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       val workingSet = 1
       dut.clock.step()
 
@@ -402,7 +392,7 @@ class TimeoutReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTeste
       performUpdateRequest(dut, coreId = 1, setIdx = workingSet, hitWay = 1)
 
       // Tick enough to pass short timeout
-      dut.clock.step(shortTimeout*2)
+      dut.clock.step(shortTimeout * 2)
 
       // Non-critical should be able to evict short timeouts
       performEvictionRequest(dut, coreId = 0, setIdx = workingSet, expectedEvictionCandidate = Some(0))

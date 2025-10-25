@@ -3,12 +3,24 @@ package caches.hardware.reppol
 import chisel3._
 import chisel3.util._
 
+trait BaseReplacementSetFormat {
+  def getName: String
+}
+
+case class MruFormat() extends BaseReplacementSetFormat {
+  override def getName: String = "MRU_FORMAT"
+}
+
+case class NumericalFormat() extends BaseReplacementSetFormat {
+  override def getName: String = "NUMERICAL_FORMAT"
+}
+
 object SchedulerCmd {
   val schedulerCmdWidth = 2
 
   val NULL = "b00".U(schedulerCmdWidth.W)
   val RD = "b01".U(schedulerCmdWidth.W)
-  val WR  = "b10".U(schedulerCmdWidth.W)
+  val WR = "b10".U(schedulerCmdWidth.W)
 }
 
 class SchedulerControlIO(nCores: Int, dataWidth: Int) extends Bundle {
@@ -18,43 +30,82 @@ class SchedulerControlIO(nCores: Int, dataWidth: Int) extends Bundle {
   val rData = Output(UInt(dataWidth.W))
 }
 
-class ReplacementPolicyIO(nWays: Int, nSets: Int, nCores: Int, missQueueDepth: Int = 4) extends Bundle {
-  val stall = Input(Bool())
-  val evict = Input(Bool()) // Some policies may need to know if when the line is being evicted
+class ReplacementPolicyInfoIO(nCores: Int, missQueueDepth: Int) extends Bundle {
   val isHit = Input(Bool())
-  val missQueueEmpty = Input(Bool())
+  val updateCoreId = Input(UInt(log2Up(nCores).W))
   val missQueueCores = Input(Vec(missQueueDepth, UInt(log2Up(nCores).W)))
   val missQueueValidCores = Input(Vec(missQueueDepth, Bool()))
-  val missQueueCritCores = Input(Vec(missQueueDepth, Bool()))
   val nonCritWbPop = Input(Bool())
   val nonCritWbEntryIsCrit = Input(Bool())
-  val update = Input(Valid(UInt(log2Up(nWays).W)))
-  val setIdx = Input(UInt(log2Up(nSets).W))
-  val updateCoreId = Input(UInt(log2Up(nCores).W))
-  val isValid = Output(Bool()) // To signal if there are no valid ways to replace
-  val replaceWay = Output(UInt(log2Up(nWays).W))
   val isReplacementWayCrit = Output(Bool())
   val isReplacementWayAtLimit = Output(Bool())
-  val replacementSet = Output(Vec(nWays, UInt(log2Up(nWays).W))) // If a replacement policy needs an ordered set of ways, otherwise can be ignored
   val updateCoreReachedLimit = Output(Bool())
   val updateCoreIsCrit = Output(Bool())
 }
 
-class SharedCacheReplacementIO(nWays: Int, nSets: Int, nCores: Int, dataWidth: Int, missQueueDepth: Int) extends Bundle {
-  val control = new ReplacementPolicyIO(nWays, nSets, nCores, missQueueDepth)
-  val scheduler = new SchedulerControlIO(nCores, dataWidth)
+class ReplacementPolicyControlIO(nWays: Int, nSets: Int) extends Bundle {
+  val stall = Input(Bool())
+  val evict = Input(Bool()) // Some policies may need to know if when the line is being evicted
+  val update = Input(Valid(UInt(log2Up(nWays).W)))
+  val setIdx = Input(UInt(log2Up(nSets).W))
+  val isValid = Output(Bool()) // To signal if there are no valid ways to replace
+  val replaceWay = Output(UInt(log2Up(nWays).W))
+}
+
+class SharedCacheReplacementIO(nWays: Int, nSets: Int, nCores: Int, schedulerDataWidth: Int, missQueueDepth: Int = 4) extends Bundle {
+  val control = new ReplacementPolicyControlIO(nWays, nSets)
+  val info = new ReplacementPolicyInfoIO(nCores, missQueueDepth)
+  val scheduler = new SchedulerControlIO(nCores, schedulerDataWidth)
 }
 
 /**
- * A replacement policy for a shared set associate cache.
+ * A replacement policy type for a shared set associate cache.
  *
- * @param nWays number of ways in a single cache set
- * @param nSets number of sets in the whole cache
+ * @param nWays          number of ways in a single cache set
+ * @param nSets          number of sets in the whole cache
+ * @param nCores         number of cores sharing the cache
+ * @param dataWidth      scheduler data transfer width
+ * @param missQueueDepth number of queue elements in the miss fifo
+ * @param repSetFormat   replacement set representation format
  */
-abstract class SharedCacheReplacementPolicyType(nWays: Int, nSets: Int, nCores: Int, dataWidth: Int = 1, missQueueDepth: Int = 4) extends Module {
+abstract class SharedCacheReplacementPolicyType(
+                                                 nWays: Int,
+                                                 nSets: Int,
+                                                 nCores: Int,
+                                                 dataWidth: Int = 1,
+                                                 missQueueDepth: Int = 4,
+                                                 repSetFormat: BaseReplacementSetFormat = new NumericalFormat
+                                               ) extends Module {
   val io = IO(new SharedCacheReplacementIO(nWays, nSets, nCores, dataWidth, missQueueDepth))
 
-  val schedulerDataWidth = dataWidth
+  val repSet = getDefaultRepSet
+
+  def getWays: Int = {
+    nWays
+  }
+
+  def getSets: Int = {
+    nSets
+  }
+
+  def getCores: Int = {
+    nCores
+  }
+
+  def getSchedulerDataWidth: Int = {
+    dataWidth
+  }
+
+  def getReplacementSetFormat: BaseReplacementSetFormat = {
+    repSetFormat
+  }
+
+  def getDefaultRepSet: Vec[UInt] = {
+    repSetFormat match {
+      case NumericalFormat() => VecInit(Seq.fill(nWays)(0.U(log2Up(nWays).W)))
+      case MruFormat() => VecInit(Seq.fill(nWays)(0.U(1.W)))
+    }
+  }
 
   def printConfig(): Unit
 }

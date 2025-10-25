@@ -1,10 +1,10 @@
 package caches.hardware.pipelined
 
+import ocp.{OcpCmd, OcpResp}
+import caches.hardware.reppol.{BasePolicies, ContentionReplacementPolicy}
 import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
-import caches.hardware.reppol.{BitPlruReplacementPolicy, ContentionReplacementPolicy}
-import caches.hardware.ocp.{OcpCmd, OcpResp}
 
 class OcpCacheWrapperTest extends AnyFlatSpec with ChiselScalatestTester {
   "OcpCacheWrapper" should "accept OCP burst commands and issue OCP burst commands to external memory" in {
@@ -18,10 +18,9 @@ class OcpCacheWrapperTest extends AnyFlatSpec with ChiselScalatestTester {
     val l2Size = 1024
     val nWays = 8
     val bytesPerBlock = 32
-    val l2Sets = l2Size  / (nWays * bytesPerBlock)
+    val l2Sets = l2Size / (nWays * bytesPerBlock)
 
-    val l2RepPolGen = () => new BitPlruReplacementPolicy(nWays, l2Sets, nCores)
-    val l2ContPolGen = () => new ContentionReplacementPolicy(nWays, l2Sets, nCores, l2RepPolGen)
+    val l2ContPolGen = () => new ContentionReplacementPolicy(nWays, l2Sets, nCores, BasePolicies.BIT_PLRU)
 
     val l2CacheGen = () => new SharedPipelinedCache(
       sizeInBytes = l2Size,

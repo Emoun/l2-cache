@@ -361,7 +361,27 @@ class MissFifo(nCores: Int, nCmds: Int, nMshrs: Int, nWays: Int, reqIdWidth: Int
   io.critInfo <> critQueue.io.info
   io.nonCritInfo <> nonCritQueue.io.info
 
+  // Since the critical queue is always given priority over non-critical queue, a hazards occurs when a replacement policy
+  // instructs a non-critical request to evict a way that then a critical request that has reached contention limit is
+  // told to evict too. For instance, a non-critical request can evict way 2, so it is pushed to non-critical fifo; then
+  // a critical request whose core has reached contention limit is told to evict the same way: 2 (most likely since any
+  // other ways are already owned by critical cores); then the critical way evicts this line first followed by a
+  // non-critical way evicting this line later on. This creates a additional contention, since if this line is later on
+  // needed by a critical core, it will have to refetch again, thus resulting in two line accesses from the main memory
+  // for a critical core.
+  // NOTE: This is a rather rare case.
+
+  val anyMatchingReqsInNonCrit = VecInit(Seq.fill(nMshrs)(false.B))
+  val critPopValid = !critQueue.io.pop.empty
+  for (mshrIdx <- 0 until nMshrs) {
+    val nonCritValid = nonCritQueue.io.info.validMSHRs(mshrIdx)
+    val conflict = critPopValid && nonCritValid && nonCritQueue.io.info.currentIndexes(mshrIdx) === critQueue.io.pop.popEntry.index && nonCritQueue.io.info.replacementWays(mshrIdx) === critQueue.io.pop.popEntry.replaceWay
+    anyMatchingReqsInNonCrit(mshrIdx) := conflict
+  }
+
+  val queueConflict = anyMatchingReqsInNonCrit.reduce((x, y) => x || y)
+
   io.full := critQueue.io.push.full || nonCritQueue.io.push.full
-  io.critEmpty := critQueue.io.pop.empty
+  io.critEmpty := critQueue.io.pop.empty || queueConflict
   io.nonCritEmpty := nonCritQueue.io.pop.empty
 }

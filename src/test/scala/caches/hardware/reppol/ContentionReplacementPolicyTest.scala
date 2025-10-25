@@ -1,22 +1,22 @@
 package caches.hardware.reppol
 
+import caches.hardware.reppol.ReplacementPolicyTest._
 import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
-import caches.hardware.reppol.ReplacementPolicyTest._
 
 class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTester {
 
   "ContentionReplacementPolicy" should "Reach contention limit for BitPlru" in {
     val (nWays, nSets, nCores) = (4, 2, 3)
-    test(new ContentionReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores))).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      defaultAssignments(dut)
+    val polGen = () => new ContentionReplacementPolicy(nWays, nSets, nCores, BasePolicies.BIT_PLRU, repSetFormat = new MruFormat)
+    test(new PolicyTestWrapper(polGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       val workingSet = 1
       dut.clock.step(1)
 
       // Expect the policy to output the first way of the base policy as the LRU way
-      dut.io.control.replaceWay.expect(0.U)
-      dut.io.control.isValid.expect(true.B)
+      dut.io.policy.control.replaceWay.expect(0.U)
+      dut.io.policy.control.isValid.expect(true.B)
 
       // Set the first core as critical with a contention limit of 2
       setCoreAsCritical(dut, coreID = 1, wData = 2)
@@ -111,9 +111,8 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
 
   "ContentionReplacementPolicy" should "Critical evicted by non-critical" in {
     val (nWays, nSets, nCores) = (4, 2, 3)
-    test(new ContentionReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores))).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      defaultAssignments(dut)
-
+    val polGen = () => new ContentionReplacementPolicy(nWays, nSets, nCores, BasePolicies.BIT_PLRU, repSetFormat = new MruFormat)
+    test(new PolicyTestWrapper(polGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       val workingSet = 1
       dut.clock.step()
 
@@ -150,9 +149,8 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
 
   "ContentionReplacementPolicy" should "Critical evicted by critical" in {
     val (nWays, nSets, nCores) = (4, 2, 3)
-    test(new ContentionReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores))).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      defaultAssignments(dut)
-
+    val polGen = () => new ContentionReplacementPolicy(nWays, nSets, nCores, BasePolicies.BIT_PLRU, repSetFormat = new MruFormat)
+    test(new PolicyTestWrapper(polGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       val workingSet = 1
       dut.clock.step()
 
@@ -183,9 +181,8 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
 
   "ContentionReplacementPolicy" should "Miss-in-Miss" in {
     val (nWays, nSets, nCores) = (4, 2, 3)
-    test(new ContentionReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores), enableMissInMiss = true)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      defaultAssignments(dut)
-
+    val polGen = () => new ContentionReplacementPolicy(nWays, nSets, nCores, BasePolicies.BIT_PLRU, repSetFormat = new MruFormat, enableMissInMiss = true)
+    test(new PolicyTestWrapper(polGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       val workingSet = 1
       dut.clock.step()
 
@@ -210,18 +207,16 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
       performUpdateRequest(dut, coreId = 1, setIdx = workingSet, hitWay = 3)
 
       // Perform eviction using critical core during a miss, which should trigger an event
-      dut.io.control.missQueueEmpty.poke(false.B)
-      dut.io.control.missQueueCores(0).poke(2.U)
-      dut.io.control.missQueueValidCores(0).poke(true.B)
+      dut.io.policy.info.missQueueCores(0).poke(2.U)
+      dut.io.policy.info.missQueueValidCores(0).poke(true.B)
 
       performEvictionRequest(dut, coreId = 1, setIdx = workingSet, expectedEvictionCandidate = Some(0))
       dut.clock.step()
       performUpdateRequest(dut, coreId = 1, setIdx = workingSet, hitWay = 0)
       dut.clock.step()
 
-      dut.io.control.missQueueEmpty.poke(true.B)
-      dut.io.control.missQueueCores(0).poke(0.U)
-      dut.io.control.missQueueValidCores(0).poke(false.B)
+      dut.io.policy.info.missQueueCores(0).poke(0.U)
+      dut.io.policy.info.missQueueValidCores(0).poke(false.B)
 
       // Now try to evict the critical core using non-critical
       performEvictionRequest(dut, coreId = 2, setIdx = workingSet, expectedEvictionCandidate = None)
@@ -230,9 +225,8 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
 
   "ContentionReplacementPolicy" should "Miss-in-Miss No Unlimited" in {
     val (nWays, nSets, nCores) = (4, 2, 3)
-    test(new ContentionReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores), enableMissInMiss = true)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      defaultAssignments(dut)
-
+    val polGen = () => new ContentionReplacementPolicy(nWays, nSets, nCores, BasePolicies.BIT_PLRU, repSetFormat = new MruFormat, enableMissInMiss = true)
+    test(new PolicyTestWrapper(polGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       val workingSet = 1
       dut.clock.step()
 
@@ -259,18 +253,16 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
       performUpdateRequest(dut, coreId = 2, setIdx = workingSet, hitWay = 3)
 
       // Perform eviction using unlimited critical core during a miss, which should trigger an event
-      dut.io.control.missQueueEmpty.poke(false.B)
-      dut.io.control.missQueueCores(0).poke(0.U)
-      dut.io.control.missQueueValidCores(0).poke(true.B)
+      dut.io.policy.info.missQueueCores(0).poke(0.U)
+      dut.io.policy.info.missQueueValidCores(0).poke(true.B)
 
       performEvictionRequest(dut, coreId = 1, setIdx = workingSet, expectedEvictionCandidate = Some(0))
       dut.clock.step()
       performUpdateRequest(dut, coreId = 1, setIdx = workingSet, hitWay = 0)
       dut.clock.step()
 
-      dut.io.control.missQueueEmpty.poke(true.B)
-      dut.io.control.missQueueCores(0).poke(0.U)
-      dut.io.control.missQueueValidCores(0).poke(false.B)
+      dut.io.policy.info.missQueueCores(0).poke(0.U)
+      dut.io.policy.info.missQueueValidCores(0).poke(false.B)
 
       // Now try to evict the critical core using non-critical
       performEvictionRequest(dut, coreId = 0, setIdx = workingSet, expectedEvictionCandidate = None)
@@ -279,9 +271,8 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
 
   "ContentionReplacementPolicy" should "Miss-in-Miss with eviction event" in {
     val (nWays, nSets, nCores) = (4, 2, 3)
-    test(new ContentionReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores), enableMissInMiss = true)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      defaultAssignments(dut)
-
+    val polGen = () => new ContentionReplacementPolicy(nWays, nSets, nCores, BasePolicies.BIT_PLRU, repSetFormat = new MruFormat, enableMissInMiss = true)
+    test(new PolicyTestWrapper(polGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       val workingSet = 1
       dut.clock.step()
 
@@ -307,18 +298,16 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
 
       // Perform eviction using unlimited critical core during a miss, which should trigger 2 events:
       // One eviction event and one miss-in-miss
-      dut.io.control.missQueueEmpty.poke(false.B)
-      dut.io.control.missQueueCores(0).poke(2.U)
-      dut.io.control.missQueueValidCores(0).poke(true.B)
+      dut.io.policy.info.missQueueCores(0).poke(2.U)
+      dut.io.policy.info.missQueueValidCores(0).poke(true.B)
 
       performEvictionRequest(dut, coreId = 0, setIdx = workingSet, expectedEvictionCandidate = Some(0))
       dut.clock.step()
       performUpdateRequest(dut, coreId = 0, setIdx = workingSet, hitWay = 0)
       dut.clock.step()
 
-      dut.io.control.missQueueEmpty.poke(true.B)
-      dut.io.control.missQueueCores(0).poke(0.U)
-      dut.io.control.missQueueValidCores(0).poke(false.B)
+      dut.io.policy.info.missQueueCores(0).poke(0.U)
+      dut.io.policy.info.missQueueValidCores(0).poke(false.B)
 
       // Now use all the non-critical lines to reset the critical core to least recently used
       performUpdateRequest(dut, coreId = 2, setIdx = workingSet, hitWay = 1)
@@ -332,9 +321,8 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
 
   "ContentionReplacementPolicy" should "Precedent events" in {
     val (nWays, nSets, nCores) = (4, 2, 3)
-    test(new ContentionReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores), enablePrecedentEvents = true)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      defaultAssignments(dut)
-
+    val polGen = () => new ContentionReplacementPolicy(nWays, nSets, nCores, BasePolicies.BIT_PLRU, repSetFormat = new MruFormat, enablePrecedentEvents = true)
+    test(new PolicyTestWrapper(polGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       val workingSet = 1
       dut.clock.step()
 
@@ -359,7 +347,7 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
       performUpdateRequest(dut, coreId = 2, setIdx = workingSet, hitWay = 3)
 
       // Bring the contention limit up by accessing a line that was brought in by a non-critical core
-      dut.io.control.isHit.poke(true.B)
+      dut.io.policy.info.isHit.poke(true.B)
       performUpdateRequest(dut, coreId = 0, setIdx = workingSet, hitWay = 3)
       dut.clock.step()
 
@@ -395,9 +383,8 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
 
   "ContentionReplacementPolicy" should "Miss-queue events" in {
     val (nWays, nSets, nCores) = (4, 2, 3)
-    test(new ContentionReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores), missQueueDepth = 4, enableMissInMiss = true)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      defaultAssignments(dut)
-
+    val polGen = () => new ContentionReplacementPolicy(nWays, nSets, nCores, BasePolicies.BIT_PLRU, repSetFormat = new MruFormat, missQueueDepth = 4, enableMissInMiss = true)
+    test(new PolicyTestWrapper(polGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       val workingSet = 1
       dut.clock.step()
 
@@ -425,21 +412,19 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
       performUpdateRequest(dut, coreId = 1, setIdx = workingSet, hitWay = 0)
 
       // Bring the contention limit down by indicating that there is currently two outstanding misses in the queue
-      dut.io.control.missQueueEmpty.poke(false.B)
-      dut.io.control.missQueueCores(0).poke(1.U)
-      dut.io.control.missQueueCores(1).poke(0.U)
-      dut.io.control.missQueueValidCores(0).poke(true.B)
-      dut.io.control.missQueueValidCores(1).poke(true.B)
+      dut.io.policy.info.missQueueCores(0).poke(1.U)
+      dut.io.policy.info.missQueueCores(1).poke(0.U)
+      dut.io.policy.info.missQueueValidCores(0).poke(true.B)
+      dut.io.policy.info.missQueueValidCores(1).poke(true.B)
 
       performEvictionRequest(dut, coreId = 2, setIdx = workingSet, expectedEvictionCandidate = Some(1))
       dut.clock.step()
       performUpdateRequest(dut, coreId = 2, setIdx = workingSet, hitWay = 1)
 
-      dut.io.control.missQueueEmpty.poke(true.B)
-      dut.io.control.missQueueCores(0).poke(0.U)
-      dut.io.control.missQueueCores(1).poke(0.U)
-      dut.io.control.missQueueValidCores(0).poke(false.B)
-      dut.io.control.missQueueValidCores(1).poke(false.B)
+      dut.io.policy.info.missQueueCores(0).poke(0.U)
+      dut.io.policy.info.missQueueCores(1).poke(0.U)
+      dut.io.policy.info.missQueueValidCores(0).poke(false.B)
+      dut.io.policy.info.missQueueValidCores(1).poke(false.B)
 
       // Get the plru to point to the critical core's line
       performUpdateRequest(dut, coreId = 2, setIdx = workingSet, hitWay = 2)
@@ -454,9 +439,8 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
 
   "ContentionReplacementPolicy" should "WB events" in {
     val (nWays, nSets, nCores) = (4, 2, 3)
-    test(new ContentionReplacementPolicy(nWays, nSets, nCores, () => new BitPlruReplacementPolicy(nWays, nSets, nCores), missQueueDepth = 4, enableMissInMiss = true, enableWbEvents = true)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
-      defaultAssignments(dut)
-
+    val polGen = () => new ContentionReplacementPolicy(nWays, nSets, nCores, BasePolicies.BIT_PLRU, repSetFormat = new MruFormat, missQueueDepth = 4, enableMissInMiss = true, enableWbEvents = true)
+    test(new PolicyTestWrapper(polGen)).withAnnotations(Seq(WriteVcdAnnotation)) { dut =>
       val workingSet = 1
       dut.clock.step()
 
@@ -481,19 +465,19 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
       performUpdateRequest(dut, coreId = 0, setIdx = workingSet, hitWay = 3)
 
       // Simulate a WB, the wb entry is critical, thus a wb event should not be triggered
-      dut.io.control.nonCritWbPop.poke(true.B)
-      dut.io.control.nonCritWbEntryIsCrit.poke(true.B)
+      dut.io.policy.info.nonCritWbPop.poke(true.B)
+      dut.io.policy.info.nonCritWbEntryIsCrit.poke(true.B)
       // Simulate a critical core being in the miss-q
-      dut.io.control.missQueueCores(1).poke(2.U)
-      dut.io.control.missQueueValidCores(1).poke(true.B)
+      dut.io.policy.info.missQueueCores(1).poke(2.U)
+      dut.io.policy.info.missQueueValidCores(1).poke(true.B)
       // Add a non-critical core in the miss-q too
-      dut.io.control.missQueueCores(0).poke(1.U)
-      dut.io.control.missQueueValidCores(0).poke(true.B)
+      dut.io.policy.info.missQueueCores(0).poke(1.U)
+      dut.io.policy.info.missQueueValidCores(0).poke(true.B)
 
       dut.clock.step(1)
 
-      dut.io.control.nonCritWbPop.poke(false.B)
-      dut.io.control.nonCritWbEntryIsCrit.poke(false.B)
+      dut.io.policy.info.nonCritWbPop.poke(false.B)
+      dut.io.policy.info.nonCritWbEntryIsCrit.poke(false.B)
 
       // Trigger a replacement event
       performEvictionRequest(dut, coreId = 1, setIdx = workingSet, expectedEvictionCandidate = Some(0))
@@ -501,13 +485,13 @@ class ContentionReplacementPolicyTest extends AnyFlatSpec with ChiselScalatestTe
       performUpdateRequest(dut, coreId = 1, setIdx = workingSet, hitWay = 0)
 
       // Simulate a WB again, the wb entry is non-critical, thus a wb event should be triggered
-      dut.io.control.nonCritWbPop.poke(true.B)
-      dut.io.control.nonCritWbEntryIsCrit.poke(false.B)
+      dut.io.policy.info.nonCritWbPop.poke(true.B)
+      dut.io.policy.info.nonCritWbEntryIsCrit.poke(false.B)
 
       dut.clock.step(1)
 
-      dut.io.control.nonCritWbPop.poke(false.B)
-      dut.io.control.nonCritWbEntryIsCrit.poke(false.B)
+      dut.io.policy.info.nonCritWbPop.poke(false.B)
+      dut.io.policy.info.nonCritWbEntryIsCrit.poke(false.B)
 
       // Make a critical core evict a new line
       performEvictionRequest(dut, coreId = 2, setIdx = workingSet, expectedEvictionCandidate = Some(1))

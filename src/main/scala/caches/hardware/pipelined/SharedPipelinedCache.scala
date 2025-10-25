@@ -67,7 +67,7 @@ class SharedPipelinedCache(
   val updateLogic = Module(new UpdateUnit(nCores, nWays, reqIdWidth, tagWidth, indexWidth, bytesPerBlock * 8, bytesPerSubBlock * 8))
   val repPol = Module(l2RepPolicy())
 
-  val schedulerDataWidth = repPol.schedulerDataWidth
+  val schedulerDataWidth = repPol.getSchedulerDataWidth
   val l2CacheBytesPerSubBlock = bytesPerSubBlock
 
   val invalidateLine = WireDefault(false.B)
@@ -75,6 +75,7 @@ class SharedPipelinedCache(
   val invalidateIndex = WireDefault(0.U(indexWidth.W))
   val missFifoCmdCapacity = WireDefault(false.B)
   val repDirtyInvalidStall = WireDefault(false.B)
+  val writeMissHazard = WireDefault(false.B)
   val memIntPopWb = WireDefault(false.B)
 
   println(
@@ -104,7 +105,7 @@ class SharedPipelinedCache(
   val rejectionQueue = Module(new RejectionQueue(nCores = nCores, addrWidth = addressWidth, dataWidth = bytesPerSubBlock * 8, reqIdWidth = reqIdWidth, depth = nCores))
   val coreReqArbiter = Module(new CoreReqArbiter(nCores = nCores, addrWidth = addressWidth, dataWidth = bytesPerSubBlock * 8, reqIdWidth = reqIdWidth))
 
-  val pipeStall = updateLogic.io.stall || missQueue.io.full || missFifoCmdCapacity || repDirtyInvalidStall
+  val pipeStall = updateLogic.io.stall || missQueue.io.full || missFifoCmdCapacity || repDirtyInvalidStall || writeMissHazard
   val reqAccept = !pipeStall
 
   // Connect core request and rejection queue to the core request multiplexer that feeds into the cache pipeline
@@ -141,13 +142,14 @@ class SharedPipelinedCache(
 
   // ---------------- Replacement ----------------
 
-  val repLogic = Module(new Rep(nCores = nCores, nSets = nSets, nWays = nWays, nMshrs = mshrCnt, reqIdWidth = reqIdWidth, tagWidth = tagWidth, indexWidth = indexWidth, blockOffWidth = blockOffsetWidth, blockWidth = bytesPerBlock * 8, subBlockWidth = bytesPerSubBlock * 8))
+  val repLogic = Module(new Rep(nCores = nCores, nSets = nSets, nWays = nWays, nMshrs = mshrCnt, reqIdWidth = reqIdWidth, tagWidth = tagWidth, indexWidth = indexWidth, blockWidth = bytesPerBlock * 8, subBlockWidth = bytesPerSubBlock * 8))
   repLogic.io.stall := pipeStall
   repLogic.io.rep <> tagLogic.io.rep
   repLogic.io.missFifoPush <> missQueue.io.push
   repLogic.io.missCritInfo <> missQueue.io.critInfo
   repLogic.io.missNonCritInfo <> missQueue.io.nonCritInfo
-  repLogic.io.repPol <> repPol.io.control
+  repLogic.io.repPolCtrl <> repPol.io.control
+  repLogic.io.repPolInfo <> repPol.io.info
   repLogic.io.setLineValid := updateLogic.io.setValidLine
   repLogic.io.nonCritWbPop := memIntPopWb
   repLogic.io.nonCritWbEntryIsCrit := wbQueue.io.isFirstInQCrit
@@ -159,6 +161,7 @@ class SharedPipelinedCache(
   repDirtyInvalidStall := repLogic.io.dirtyInvalidStall
   rejectionQueue.io.push := repLogic.io.pushReject
   rejectionQueue.io.pushEntry := repLogic.io.pushRejectEntry
+  writeMissHazard := repLogic.io.writeMissHazard
 
   // ---------------- Read ----------------
 

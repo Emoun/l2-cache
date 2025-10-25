@@ -4,27 +4,21 @@ import caches.hardware.util.Constants._
 import chisel3._
 import chisel3.util._
 
-class ContentionReplacementAlgorithm(
-                                      nWays: Int,
-                                      nCores: Int,
-                                      nMshrs: Int = 4,
-                                      enableMissInMiss: Boolean = false,
-                                      enablePrecedentEvents: Boolean = false,
-                                      enableWbEvents: Boolean = false
-                                    ) extends Module {
-  val io = IO(new Bundle {
+class CriticalityFilterIO(nWays: Int, nCores: Int, nMshrs: Int, repSetFormat: BaseReplacementSetFormat) extends Bundle {
     val evict = Input(Bool())
     val update = Input(Bool())
     val hit = Input(Bool())
     val hitWayIdx = Input(UInt(log2Up(nWays).W))
     val reqCore = Input(UInt(log2Up(nCores).W))
-    val missQueueEmpty = Input(Bool())
     val missQueueCores = Input(Vec(nMshrs, UInt(log2Up(nCores).W)))
     val wbNonCritPop = Input(Bool())
     val wbPopEntryCrit = Input(Bool())
     val missQueueValidCores = Input(Vec(nMshrs, Bool()))
-    val missQueueCritCores = Input(Vec(nMshrs, Bool())) // Instead of having to multiplex, we can just take the criticality flag directly from the miss-q
-    val baseCandidates = Input(Vec(nWays, UInt(log2Up(nWays).W))) // TODO: Instead of giving order list of way indexes, give a list where the first element refers to the index of the first way in the list
+    val baseCandidates = repSetFormat match {
+      case NumericalFormat() => Input(Vec(nWays, UInt(log2Up(nWays).W)))
+      case MruFormat() => Input(Vec(nWays, UInt(1.W)))
+      case _ => throw new IllegalArgumentException("Unrecognized replacement set format.")
+    }
     val validLineAssignments = Input(Vec(nWays, Bool()))
     val lineAssignments = Input(Vec(nWays, UInt(log2Up(nCores).W)))
     val coreLimits = Input(Vec(nCores, UInt(CONTENTION_LIMIT_WIDTH.W)))
@@ -34,7 +28,42 @@ class ContentionReplacementAlgorithm(
     val replacementWay = Output(Valid(UInt(log2Up(nWays).W)))
     val isReplacementWayCrit = Output(Bool())
     val isReplacementWayAtLimit = Output(Bool())
-  })
+}
+
+class CriticalityFilter(
+                                      nWays: Int,
+                                      nCores: Int,
+                                      nMshrs: Int = 4,
+                                      repSetFormat: BaseReplacementSetFormat,
+                                      enableMissInMiss: Boolean = false,
+                                      enablePrecedentEvents: Boolean = false,
+                                      enableWbEvents: Boolean = false
+                                    ) extends Module {
+  val io = IO(new CriticalityFilterIO(nWays, nCores, nMshrs, repSetFormat))
+
+  def mruFilter(baseCandidates: Vec[UInt], ucMask: Vec[Bool]): UInt = {
+    val anyUcInFirstSet = (~baseCandidates.asUInt).asUInt & ucMask.asUInt
+    val anyUcInSecondSet = baseCandidates.asUInt & ucMask.asUInt
+    val baseCandMask = WireDefault(0.U(nWays.W))
+
+    when(anyUcInFirstSet.orR) {
+      baseCandMask := anyUcInFirstSet
+    }.otherwise {
+      baseCandMask := anyUcInSecondSet
+    }
+
+    PriorityEncoder(baseCandMask)
+  }
+
+  def numericalFilter(baseCandidates: Vec[UInt], ucMask: Vec[Bool]): UInt = {
+    // Order the UC mask
+    val orderedUcMask = VecInit(Seq.fill(nWays)(false.B))
+    for (i <- 0 until nWays) {
+      orderedUcMask(i) := ucMask(baseCandidates(i))
+    }
+
+    baseCandidates(PriorityEncoder(orderedUcMask))
+  }
 
   // Default signals
   val replaceWay = WireDefault(0.U(log2Up(nWays).W))
@@ -65,13 +94,12 @@ class ContentionReplacementAlgorithm(
     coreAssignments(wayIdx) := assignedCoreIdx
   }
 
-  // Order the UC mask
-  val orderedUcMask = VecInit(Seq.fill(nWays)(false.B))
-  for (i <- 0 until nWays) {
-    orderedUcMask(i) := unlimitedWays(io.baseCandidates(i))
+  val firstUCWay = repSetFormat match {
+    case NumericalFormat() => numericalFilter(io.baseCandidates, unlimitedWays)
+    case MruFormat() => mruFilter(io.baseCandidates, unlimitedWays)
+    case _ => throw new IllegalArgumentException("Unrecognized replacement set format.")
   }
 
-  val firstUCWay = io.baseCandidates(PriorityEncoder(orderedUcMask))
   val firstUCSetWayCoreCritical = criticalWays(firstUCWay)
   val firstUCSetWayCore = coreAssignments(firstUCWay)
   val anyNonCriticalWays = criticalWays.map(x => !x).reduce((x, y) => x || y)
@@ -121,7 +149,7 @@ class ContentionReplacementAlgorithm(
     // This will address both miss in miss and miss-q events
     val nonCritMissCnt = VecInit(Seq.fill(nMshrs)(false.B))
     for (i <- 0 until nMshrs) {
-      nonCritMissCnt(i) := io.missQueueValidCores(i) && !io.criticalCores(io.missQueueCores(i)) // !io.missQueueCritCores(i)
+      nonCritMissCnt(i) := io.missQueueValidCores(i) && !io.criticalCores(io.missQueueCores(i))
     }
 
     val missInMissEvent = isReqCoreCritical && io.evict && nonCritMissCnt.reduce((x, y) => x || y) // TODO: Can replace io.evict with !io.hit and isReqValid instead
@@ -151,6 +179,7 @@ class ContentionReplacementAlgorithm(
 
   }
 
+  // TODO: This creates a long combinational path
   val newCoreLimits = VecInit(Seq.fill(nCores)(0.U(CONTENTION_LIMIT_WIDTH.W)))
   for (i <- 0 until nCores) {
     val decrAmount = WireDefault(0.U(log2Up(nMshrs + 3).W))

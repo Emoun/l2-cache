@@ -26,8 +26,6 @@ case class CacheRequest(
                          expectedData: Option[String] = None
                        ) extends TestAction
 
-// TODO: Should add an optional parameter that says that a response for a request should be received after a response to some other request has been received
-
 case class Stall(stallCycles: Int = 0) extends TestAction()
 
 case class ExpectFinishedRejectedResponse(coreId: Int, reqId: Int, expectedData: String) extends TestAction()
@@ -52,6 +50,7 @@ case class CacheConfiguration(
                                repPolConfig: PolicyConfiguration,
                                memBeatSize: Int,
                                memBurstLen: Int,
+                               repSetFormat: Option[BaseReplacementSetFormat],
                                memFile: Option[String],
                                nHalfMissCmds: Option[Int] = None
                              )
@@ -60,9 +59,9 @@ case class BitPlruConfiguration() extends PolicyConfiguration
 
 case class TreePlruConfiguration() extends PolicyConfiguration
 
-case class ContentionConfiguration(base: PolicyConfiguration, mim: Boolean = false, precedent: Boolean = false, wb: Boolean = false) extends PolicyConfiguration
+case class ContentionConfiguration(base: BasePolicyType, mim: Boolean = false, precedent: Boolean = false, wb: Boolean = false) extends PolicyConfiguration
 
-case class TimeoutConfiguration(base: PolicyConfiguration) extends PolicyConfiguration
+case class TimeoutConfiguration(base: BasePolicyType) extends PolicyConfiguration
 
 object Tests {
   // Test actions for bit and tree PLRUs
@@ -379,15 +378,18 @@ object Tests {
     CacheRequest(coreId = 2, reqId = 11, tag = 18, index = 74, blockOffset = 0, rw = false, expectedData = Some("c70d484dfb1674c75d14d293ce30ec7c")), // MISS, way: 1, evict non-critical line, cause wb
     CacheRequest(coreId = 0, reqId = 12, tag = 21, index = 74, blockOffset = 1, rw = false, expectedData = Some("efc887ce8779c45512b89afb7423b4d5")), // MISS, way: 2, contention event, reach contention limit for core 2
     CacheRequest(coreId = 3, reqId = 13, tag = 39, index = 74, blockOffset = 3, rw = false, expectedData = Some("b638aaa4ef343eee6a4757cb65a2f78c")), // MISS, way: 3, contention event, critical wb, reach contention limit for core 1
-    CacheRequest(coreId = 1, reqId = 14, tag = 57, index = 74, blockOffset = 2, rw = false, expectedData = Some("26f4756810b9c7b7fc87a234ac62fee6")), // MISS, way: 2,
+    CacheRequest(coreId = 1, reqId = 14, tag = 57, index = 74, blockOffset = 1, rw = true, wData = Some("hdeadbeefdeadbeefdeadbeefdeadbeef"), byteEn = Some("b0000111100000000")), // MISS, way: 2,
     CacheRequest(coreId = 2, reqId = 15, tag = 41, index = 74, blockOffset = 1, rw = false, expectedData = Some("8f2a3009871c1b8fb22ed80f63229d0f")), // MISS, way: 3,
     CacheRequest(coreId = 0, reqId = 16, tag = 41, index = 72, blockOffset = 1, rw = false, expectedData = Some("abbd90af6dbb29366ec5bd141df45023")), // MISS, way: 0,
     CacheRequest(coreId = 1, reqId = 17, tag = 41, index = 72, blockOffset = 0, rw = false, expectedData = Some("a64a45812e63b4001eafac68edee5dd6")), // MISS, way: 1, not a half-miss since the core reached contention limit
     CacheRequest(coreId = 2, reqId = 18, tag = 41, index = 72, blockOffset = 2, rw = false, expectedData = Some("b1a10cf29e0b684ae2dd8277b34d19f1")), // MISS, way: 2, not a half-miss since the core reached contention limit
     CacheRequest(coreId = 0, reqId = 19, tag = 8, index = 74, blockOffset = 0, rw = false, expectedData = Some("e83fb23952953ff164bdb8d5685d2bd3"), rejected = true), // MISS, way: rejected
+    Stall(100),
+    CacheRequest(coreId = 1, reqId = 20, tag = 57, index = 74, blockOffset = 2, rw = false, expectedData = Some("26f4756810b9c7b7fc87a234ac62fee6")), // HIT,
     Stall(300),
     PerformSchedulerOperation(2, false),
-    ExpectFinishedRejectedResponse(coreId = 0, reqId = 19, expectedData = "e83fb23952953ff164bdb8d5685d2bd3")
+    CacheRequest(coreId = 1, reqId = 21, tag = 57, index = 74, blockOffset = 1, rw = false, expectedData = Some("60874082deadbeefa97a1896ff0b1476")),
+    ExpectFinishedRejectedResponse(coreId = 0, reqId = 19, expectedData = "e83fb23952953ff164bdb8d5685d2bd3"),
   )
 }
 
@@ -403,6 +405,7 @@ object CacheConfigs {
     repPolConfig = BitPlruConfiguration(),
     memBeatSize = 4,
     memBurstLen = 4,
+    repSetFormat = None,
     memFile = Some("./hex/test_mem_32w.hex"),
     nHalfMissCmds = Some(6)
   )
@@ -418,6 +421,7 @@ object CacheConfigs {
     repPolConfig = TreePlruConfiguration(),
     memBeatSize = 4,
     memBurstLen = 4,
+    repSetFormat = None,
     memFile = Some("./hex/test_mem_32w.hex")
   )
 
@@ -429,9 +433,10 @@ object CacheConfigs {
     reqIdWidth = 16,
     bytesPerBlock = 64,
     bytesPerSubBlock = 16,
-    repPolConfig = TimeoutConfiguration(BitPlruConfiguration()),
+    repPolConfig = TimeoutConfiguration(BasePolicies.BIT_PLRU),
     memBeatSize = 4,
     memBurstLen = 4,
+    repSetFormat = Some(new MruFormat),
     memFile = Some("./hex/test_mem_32w.hex")
   )
 
@@ -443,9 +448,10 @@ object CacheConfigs {
     reqIdWidth = 16,
     bytesPerBlock = 64,
     bytesPerSubBlock = 16,
-    repPolConfig = ContentionConfiguration(BitPlruConfiguration()),
+    repPolConfig = ContentionConfiguration(BasePolicies.BIT_PLRU),
     memBeatSize = 4,
     memBurstLen = 4,
+    repSetFormat = Some(new MruFormat),
     memFile = Some("./hex/test_mem_32w.hex")
   )
 
@@ -457,9 +463,10 @@ object CacheConfigs {
     reqIdWidth = 16,
     bytesPerBlock = 64,
     bytesPerSubBlock = 16,
-    repPolConfig = ContentionConfiguration(BitPlruConfiguration(), wb = true),
+    repPolConfig = ContentionConfiguration(BasePolicies.BIT_PLRU, wb = true),
     memBeatSize = 4,
     memBurstLen = 4,
+    repSetFormat = Some(new MruFormat),
     memFile = Some("./hex/test_mem_32w.hex")
   )
 
@@ -471,9 +478,10 @@ object CacheConfigs {
     reqIdWidth = 16,
     bytesPerBlock = 64,
     bytesPerSubBlock = 16,
-    repPolConfig = ContentionConfiguration(BitPlruConfiguration(), mim = true, precedent = true),
+    repPolConfig = ContentionConfiguration(BasePolicies.BIT_PLRU, mim = true, precedent = true),
     memBeatSize = 4,
     memBurstLen = 4,
+    repSetFormat = Some(new MruFormat),
     memFile = Some("./hex/test_mem_32w.hex")
   )
 
@@ -485,9 +493,10 @@ object CacheConfigs {
     reqIdWidth = 16,
     bytesPerBlock = 64,
     bytesPerSubBlock = 16,
-    repPolConfig = ContentionConfiguration(BitPlruConfiguration(), mim = true, precedent = true, wb = true),
+    repPolConfig = ContentionConfiguration(BasePolicies.BIT_PLRU, mim = true, precedent = true, wb = true),
     memBeatSize = 4,
     memBurstLen = 4,
+    repSetFormat = Some(new MruFormat),
     memFile = Some("./hex/test_mem_32w.hex")
   )
 }
@@ -504,7 +513,8 @@ object SharedPipelinedCacheTest {
       cacheConfig.repPolConfig,
       cacheConfig.nWays,
       nSets,
-      cacheConfig.nCores
+      cacheConfig.nCores,
+      cacheConfig.repSetFormat
     )
 
     val indexWidth = log2Up(nSets)
@@ -529,12 +539,15 @@ object SharedPipelinedCacheTest {
     (cacheGenFun, cacheConfig.nCores, indexWidth, blockOffsetWidth, byteOffsetWidth)
   }
 
-  def generateReplacementPolicy(policyConfig: PolicyConfiguration, nWays: Int, nSets: Int, nCores: Int): () => SharedCacheReplacementPolicyType = {
+  def generateReplacementPolicy(policyConfig: PolicyConfiguration, nWays: Int, nSets: Int, nCores: Int, repSetFormat: Option[BaseReplacementSetFormat]): () => SharedCacheReplacementPolicyType = {
+    def buildPolicy(repSetFormat: Option[BaseReplacementSetFormat])(default: => SharedCacheReplacementPolicyType, withFormat: BaseReplacementSetFormat => SharedCacheReplacementPolicyType): SharedCacheReplacementPolicyType =
+      repSetFormat.map(withFormat).getOrElse(default)
+
     val policy = policyConfig match {
-      case BitPlruConfiguration() => () => new BitPlruReplacementPolicy(nWays, nSets, nCores)
-      case TreePlruConfiguration() => () => new TreePlruReplacementPolicy(nWays, nSets, nCores)
-      case ContentionConfiguration(base, mim, precedent, wb) => () => new ContentionReplacementPolicy(nWays, nSets, nCores, generateReplacementPolicy(base, nWays, nSets, nCores), enableMissInMiss = mim, enablePrecedentEvents = precedent, enableWbEvents = wb)
-      case TimeoutConfiguration(base) => () => new TimeoutReplacementPolicy(nWays, nSets, nCores, generateReplacementPolicy(base, nWays, nSets, nCores))
+      case BitPlruConfiguration() => () => buildPolicy(repSetFormat)(new BitPlruReplacementPolicy(nWays, nSets, nCores), fmt => new BitPlruReplacementPolicy(nWays, nSets, nCores, fmt))
+      case TreePlruConfiguration() => () => buildPolicy(repSetFormat)(new TreePlruReplacementPolicy(nWays, nSets, nCores), fmt => new TreePlruReplacementPolicy(nWays, nSets, nCores, fmt))
+      case ContentionConfiguration(base, mim, precedent, wb) => () => buildPolicy(repSetFormat)(new ContentionReplacementPolicy(nWays, nSets, nCores, base, mim, precedent, wb), fmt => new ContentionReplacementPolicy(nWays, nSets, nCores, base, mim, precedent, wb, repSetFormat = fmt))
+      case TimeoutConfiguration(base) => () => buildPolicy(repSetFormat)(new TimeoutReplacementPolicy(nWays, nSets, nCores, base), fmt => new TimeoutReplacementPolicy(nWays, nSets, nCores, base, fmt))
       case _ => throw new Exception("Unexpected policy configuration")
     }
 

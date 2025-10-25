@@ -65,65 +65,86 @@ class TimerMemory(nWays: Int, nSets: Int) extends Module {
  * Timeout replacement policy. When critical cores access a line, a counter is initiated for that line.
  * Any non-critical core can only evict lines whose timer has reached zero, i.e. lines that are owned by non-critical
  * cores or critical core lines that have timed out.
- *
- * @param nWays      number of ways in a cache set
- * @param nSets      number of sets in a cache
- * @param nCores     number of cores sharing the cache
- * @param basePolicy the base replacement policy module generating function
  */
-class TimeoutReplacementPolicy(nWays: Int, nSets: Int, nCores: Int, basePolicy: () => SharedCacheReplacementPolicyType) extends SharedCacheReplacementPolicyType(nWays, nSets, nCores, TIMEOUT_LIMIT_WIDTH) {
-  //--------------- Base Policy ---------------------
-  val basePolicyInst = Module(basePolicy())
+class TimeoutReplacementPolicy(
+                                nWays: Int,
+                                nSets: Int,
+                                nCores: Int,
+                                basePolicyType: BasePolicyType,
+                                repSetFormat: BaseReplacementSetFormat = new NumericalFormat
+                              ) extends SharedCacheReplacementPolicyType(nWays, nSets, nCores, TIMEOUT_LIMIT_WIDTH, repSetFormat = repSetFormat) {
+  override def printConfig(): Unit = println(s"Timeout replacement policy configuration: " +
+    s"base policy type: ${basePolicyType.getName}, " +
+    s"replacement set format: ${repSetFormat.getName}, " +
+    s"ways: $nWays, " +
+    s"sets: $nSets, " +
+    s"cores: $nCores" + "\n"
+  )
 
-  override def printConfig(): Unit = println(s"Timeout replacement policy configuration: Base policy: ${basePolicyInst.getClass.getSimpleName}, ways: $nWays, sets: $nSets, cores: $nCores" + "\n")
-
-  // Default assignments to base policy
-  basePolicyInst.io.control <> 0.U.asTypeOf(basePolicyInst.io.control)
-  basePolicyInst.io.scheduler <> 0.U.asTypeOf(basePolicyInst.io.scheduler)
-
-  // Update base policy
-  basePolicyInst.io.control.setIdx := io.control.setIdx
-  basePolicyInst.io.control.update.valid := io.control.update.valid
-  basePolicyInst.io.control.update.bits := io.control.update.bits
-  basePolicyInst.io.control.stall := io.control.stall
+  //--------------- Read Stage ---------------------
+  val basePolRead = Module(basePolicyType.buildBasePolicyRead(nWays, nSets, repSetFormat))
+  val timerMemory = Module(new TimerMemory(nWays, nSets))
 
   // Need to delay this signal by two CCs because PLRU has 2 stages
-  val setIdxDelayReg = PipelineReg(io.control.setIdx, 0.U, !io.control.stall) // Delay once for accessing base policy mem
-  val setIdxPipeReg = PipelineReg(setIdxDelayReg, 0.U, !io.control.stall) // Delay twice for computing replacement set
-
-  //-------------------------------------
-  val decIdx = WireDefault(0.U(log2Up(nSets).W))
+  val idxDelayReg = PipelineReg(io.control.setIdx, 0.U, !io.control.stall)
+  val wbStageSetIdx = WireDefault(0.U(log2Up(nSets).W))
+  val wbStageMruBits = WireDefault(0.U(basePolRead.stateWidth.W))
+  val decrementIdx = WireDefault(0.U(log2Up(nSets).W))
   val timerMemWrEn = WireDefault(false.B)
   val timerMemWrData = VecInit(Seq.fill(nWays)(0.U(TIMEOUT_LIMIT_WIDTH.W)))
   val timerMemWrIdx = WireDefault(0.U(log2Up(nSets).W))
 
-  val timerMemory = Module(new TimerMemory(nWays, nSets))
+  basePolRead.io.stall := io.control.stall
+  basePolRead.io.rIdx := io.control.setIdx
+  basePolRead.io.wrEn := io.control.update.valid
+  basePolRead.io.wIdx := wbStageSetIdx
+  basePolRead.io.wData := wbStageMruBits
+  basePolRead.io.fwd := wbStageSetIdx === idxDelayReg && io.control.update.valid
+
   timerMemory.io.stall := io.control.stall
-  timerMemory.io.rIdx1 := decIdx
-  timerMemory.io.rIdx2 := setIdxDelayReg
+  timerMemory.io.rIdx1 := decrementIdx
+  timerMemory.io.rIdx2 := idxDelayReg
   timerMemory.io.wrEn := timerMemWrEn
   timerMemory.io.wIdx := timerMemWrIdx
   timerMemory.io.wData := timerMemWrData
 
+  val replaceSetPipeReg = PipelineReg(basePolRead.io.replacementSet, getDefaultRepSet, !io.control.stall)
+  val mruBitsPipeReg = PipelineReg(basePolRead.io.readState, 0.U, !io.control.stall)
+  val setIdxPipeReg = PipelineReg(idxDelayReg, 0.U, !io.control.stall)
+
+  // ---------------- Update stage ----------------
   val coreTimeoutTable = Module(new CoreTimeoutTable(nCores))
+  val timeoutFilter = Module(new TimeoutFilter(nWays, nSets, nCores, repSetFormat))
+  val basePolUpdate = Module(basePolicyType.buildBasePolicyUpdate(nWays))
+
   coreTimeoutTable.io.scheduler <> io.scheduler
 
-  val timeoutAlgo = Module(new TimeoutReplacementAlgorithm(nWays = nWays, nSets = nSets, nCores = nCores))
-  timeoutAlgo.io.setIdx := setIdxPipeReg
-  timeoutAlgo.io.update := io.control.update
-  timeoutAlgo.io.updateCoreId := io.control.updateCoreId
-  timeoutAlgo.io.baseCandidates := basePolicyInst.io.control.replacementSet
-  timeoutAlgo.io.coreTimeouts := coreTimeoutTable.io.rCoreTimeouts
-  timeoutAlgo.io.decIdxTimers := timerMemory.io.rTimers1
-  timeoutAlgo.io.updateIdxTimers := timerMemory.io.rTimers2
-  decIdx := timeoutAlgo.io.decIdx
+  timeoutFilter.io.setIdx := setIdxPipeReg
+  timeoutFilter.io.update := io.control.update
+  timeoutFilter.io.updateCoreId := io.info.updateCoreId
+  timeoutFilter.io.baseCandidates := replaceSetPipeReg
+  timeoutFilter.io.coreTimeouts := coreTimeoutTable.io.rCoreTimeouts
+  timeoutFilter.io.decIdxTimers := timerMemory.io.rTimers1
+  timeoutFilter.io.updateIdxTimers := timerMemory.io.rTimers2
+
+  // Update base policy
+  basePolUpdate.io.hitWay := io.control.update.bits
+  basePolUpdate.io.stateIn := mruBitsPipeReg
+
+  // Base policy forwarding signals
+  wbStageSetIdx := setIdxPipeReg
+  wbStageMruBits := basePolUpdate.io.stateOut
+
+  // Timer memory write signals
+  decrementIdx := timeoutFilter.io.decIdx
   timerMemWrEn := true.B // TODO: Should write enable always be high since we are always decrementing something ???
-  timerMemWrData := timeoutAlgo.io.wTimers
-  timerMemWrIdx := timeoutAlgo.io.wIdx
+  timerMemWrData := timeoutFilter.io.wTimers
+  timerMemWrIdx := timeoutFilter.io.wIdx
 
   // Default output assignments
   io.control <> 0.U.asTypeOf(io.control)
+  io.info <> 0.U.asTypeOf(io.info)
 
-  io.control.replaceWay := timeoutAlgo.io.replaceWay
-  io.control.isValid := timeoutAlgo.io.isRepValid
+  io.control.replaceWay := timeoutFilter.io.replaceWay
+  io.control.isValid := timeoutFilter.io.isRepValid
 }
