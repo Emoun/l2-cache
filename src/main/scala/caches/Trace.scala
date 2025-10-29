@@ -671,18 +671,18 @@ object Trace2Sim {
     val l2Latency = 15
     val memLatency = 60
     val l1BurstSize = 4
-    val l2BurstSize = 64
+    val l2BurstSize = 16
     val memBurstSize = 64
 
-    // 1KB L1 cache
+    // 8KB L1 cache
     val l1LineSize=l2BurstSize
     val l1Ways = 4
     val l1Sets = 128
 
-    // 8KB L2 cache
+    // 64KB L2 cache
     val l2LineSize=memBurstSize
     val l2Ways = 8
-    val l2Sets = 2048
+    val l2Sets = 128
 
     val l1LruDtuCache = () => new LruCache(l1LineSize,l1Ways,l1Sets)
     var l2ContCacheGen = (simId: String, limit:Int, sets: Int, clock: () => Long) => {
@@ -698,6 +698,11 @@ object Trace2Sim {
       })
     }
 
+    var l2LruCacheGen = (sets: Int) => {
+      val cache = new LruCache(l2LineSize, l2Ways, sets)
+      (cache, (coreId:Int) => {})
+    }
+
     var l2PartitionCacheGen = (simId: String, sets: Int, wayPart: Int) => {
       val cache = new PartitionedCache(l2LineSize, l2Ways, sets)
       for(i <- 0 until wayPart) {
@@ -708,12 +713,22 @@ object Trace2Sim {
       })
     }
 
+    var l2TimoutCacheGen = (timout:Int, sets: Int) => {
+      val cache = new TimeoutCache(l2LineSize, l2Ways, sets, timout)
+      for(i <- 0 until l2Ways) {
+        cache.setPriority(0,i)
+      }
+      (cache, (coreId:Int) => {
+        cache.removePriority(coreId)
+      })
+    }
+
     val defaultJobName = "Slot1_Cell0_Task0_Parallel0_Kernel"
 
     val cacheSizes = Array(
       (l2Sets, "Full", ""),
-      (l2Sets/2, "Half", "(L2 half size)"),
-      (l2Sets/4, "Quart", "(L2 quarter size)"),
+      //(l2Sets/2, "Half", "(L2 half size)"),
+      //(l2Sets/4, "Quart", "(L2 quarter size)"),
     )
 
     for(writeBack <- Array(/*(true,"Write"),*/ (false,""))) {
@@ -733,6 +748,40 @@ object Trace2Sim {
           "Lru",
           "Contention",
           "Single core alone " + size._3,
+        );
+
+        configs +:= (
+          "mixed4Lru" + size._2 + writeBack._2,
+          HashMap(defaultJobName -> HashSet[Int](0, 1, 2, 3)),
+          l1LruDtuCache,
+          (clock: () => Long, simID: String) => l2LruCacheGen(size._1),
+          l1Latency,
+          l2Latency,
+          memLatency,
+          l1BurstSize,
+          l2BurstSize,
+          memBurstSize,
+          writeBack._1,
+          "Lru",
+          "Lru",
+          "4 cores"
+        );
+
+        configs +:= (
+          "mixed8Lru" + size._2 + writeBack._2,
+          HashMap(defaultJobName -> HashSet[Int](0, 1, 2, 3, 4, 5, 6, 7)),
+          l1LruDtuCache,
+          (clock: () => Long, simID: String) => l2LruCacheGen(size._1),
+          l1Latency,
+          l2Latency,
+          memLatency,
+          l1BurstSize,
+          l2BurstSize,
+          memBurstSize,
+          writeBack._1,
+          "Lru",
+          "Lru",
+          "8 cores"
         );
 
         val limits = Array(
@@ -825,10 +874,53 @@ object Trace2Sim {
             "8 cores, Critical partition " + part._2 + " " + size._3,
           );
         }
+
+        val timouts = Array(
+          (1000, "1k"),
+          (10000, "10k"),
+          (50000, "50k"),
+          (100000, "100k"),
+          (200000, "200k"),
+          (500000, "500k"),
+        )
+        for (time <- timouts) {
+          configs +:= (
+            "mixed4Timeout" + time._2 + size._2 + writeBack._2,
+            HashMap(defaultJobName -> HashSet[Int](0, 1, 2, 3)),
+            l1LruDtuCache,
+            (clock: () => Long, simID: String) => l2TimoutCacheGen(time._1, size._1),
+            l1Latency,
+            l2Latency,
+            memLatency,
+            l1BurstSize,
+            l2BurstSize,
+            memBurstSize,
+            writeBack._1,
+            "Lru",
+            "Timeout",
+            "4 cores, Timeout " + time._2 + " " + size._3,
+          );
+
+          configs +:= (
+            "mixed8Timeout" + time._2 + size._2 + writeBack._2,
+            HashMap(defaultJobName -> HashSet[Int](0, 1, 2, 3, 4, 5, 6, 7)),
+            l1LruDtuCache,
+            (clock: () => Long, simID: String) => l2TimoutCacheGen(time._1, size._1),
+            l1Latency,
+            l2Latency,
+            memLatency,
+            l1BurstSize,
+            l2BurstSize,
+            memBurstSize,
+            writeBack._1,
+            "Lru",
+            "Timeout",
+            "8 cores, Timeout " + time._2 + " " + size._3,
+          );
+        }
+
       }
     }
-
-
 
     try {
       accessTimesFile.write("simId,coreNr,jobId,instanceNr,clockFinish,latency\n")
